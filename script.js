@@ -823,11 +823,11 @@ seek.addEventListener('touchstart', () => isSeeking = true);
 seek.addEventListener('input', () => {
   if (isDurationUsable()){
     const t = (seek.value / 1000) * video.duration;
+    video.currentTime = t;
     timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
   }
 });
 seek.addEventListener('change', () => {
-  if (isDurationUsable()) video.currentTime = (seek.value / 1000) * video.duration;
   isSeeking = false;
 });
 
