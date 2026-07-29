@@ -22,6 +22,7 @@ const centerIconPlay = document.getElementById('center-icon-play');
 const centerIconPause = document.getElementById('center-icon-pause');
 
 // --- overlay settings controls ---
+const ovToggle = document.getElementById('ov-toggle');
 const ovSize = document.getElementById('ov-size');
 const ovSizeVal = document.getElementById('ov-size-val');
 const ovColor = document.getElementById('ov-color');
@@ -30,9 +31,10 @@ const ovOpacityVal = document.getElementById('ov-opacity-val');
 const posButtons = document.querySelectorAll('.pos-btn');
 let selectedPosition = 'bottom-right';
 
-ovSize.addEventListener('input', () => { ovSizeVal.textContent = ovSize.value + 'px'; applyOverlaySettings(); });
-ovColor.addEventListener('input', () => { applyOverlaySettings(); });
-ovOpacity.addEventListener('input', () => { ovOpacityVal.textContent = ovOpacity.value + '%'; applyOverlaySettings(); });
+ovToggle.addEventListener('change', () => { applyOverlaySettings(); saveSettings(); });
+ovSize.addEventListener('input', () => { ovSizeVal.textContent = ovSize.value + 'px'; applyOverlaySettings(); saveSettings(); });
+ovColor.addEventListener('input', () => { applyOverlaySettings(); saveSettings(); });
+ovOpacity.addEventListener('input', () => { ovOpacityVal.textContent = ovOpacity.value + '%'; applyOverlaySettings(); saveSettings(); });
 posButtons.forEach(btn => {
   btn.addEventListener('click', () => {
     posButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
@@ -40,6 +42,7 @@ posButtons.forEach(btn => {
     btn.setAttribute('aria-pressed', 'true');
     selectedPosition = btn.dataset.pos;
     applyOverlaySettings();
+    saveSettings();
   });
 });
 
@@ -60,6 +63,7 @@ function applyOverlaySettings(){
   ovTime.style.color = color;
   overlayEl.classList.remove('pos-top-left','pos-top-right','pos-bottom-left','pos-bottom-right');
   overlayEl.classList.add('pos-' + selectedPosition);
+  overlayEl.style.display = ovToggle.checked ? 'flex' : 'none';
 }
 
 let currentObjectUrl = null;
@@ -107,6 +111,7 @@ function niceTitleFromFilename(name){
 // --- запоминание тайминга просмотра (localStorage) ---
 const PROGRESS_PREFIX = 'lp_progress:';
 const HANDLE_KEY_PREFIX = PROGRESS_PREFIX + 'h:';
+const SETTINGS_PREFIX = 'lp_settings:';
 let currentFileKey = null;
 let currentFileName = null;
 let progressInterval = null;
@@ -116,6 +121,9 @@ function fileKey(file){
 }
 function handleFileKey(handleName){
   return HANDLE_KEY_PREFIX + handleName;
+}
+function settingsKey(key){
+  return SETTINGS_PREFIX + key.replace(PROGRESS_PREFIX, '');
 }
 
 function saveProgress(){
@@ -134,6 +142,111 @@ function saveProgress(){
   } catch(e){ /* хранилище недоступно — просто пропускаем */ }
 }
 
+function saveSettings(){
+  if (!currentFileKey) return;
+  try{
+    const settings = {
+      drToggle: drToggle.checked,
+      drStrength: drStrength.value,
+      drBoost: drBoost.value,
+      drSpeed: drSpeed.value,
+      drBrightness: drBrightness.value,
+      zoomLevel: zoomLevel,
+      ovToggle: ovToggle.checked,
+      ovSize: ovSize.value,
+      ovColor: ovColor.value,
+      ovOpacity: ovOpacity.value,
+      selectedPosition: selectedPosition,
+      titleInput: titleInput.value,
+      volume: video.volume,
+      muted: video.muted
+    };
+    localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
+  } catch(e){ /* хранилище недоступно */ }
+}
+
+function loadSettings(){
+  if (!currentFileKey) return false;
+  try{
+    const raw = localStorage.getItem(settingsKey(currentFileKey));
+    if (!raw) return false;
+    const settings = JSON.parse(raw);
+    if (!settings) return false;
+    
+    // Восстанавливаем настройки
+    drToggle.checked = settings.drToggle !== undefined ? settings.drToggle : true;
+    drStrength.value = settings.drStrength || 55;
+    drStrengthVal.textContent = drStrength.value + '%';
+    drBoost.value = settings.drBoost || 100;
+    drBoostVal.textContent = drBoost.value + '%';
+    drSpeed.value = settings.drSpeed || 1;
+    drSpeedVal.textContent = drSpeed.value + 'x';
+    video.playbackRate = parseFloat(drSpeed.value);
+    
+    drBrightness.value = settings.drBrightness || 100;
+    drBrightnessVal.textContent = drBrightness.value + '%';
+    video.style.filter = `brightness(${drBrightness.value / 100})`;
+    
+    zoomLevel = settings.zoomLevel || 100;
+    zoomVal.textContent = zoomLevel + '%';
+    video.style.transform = zoomLevel === 100 ? '' : `scale(${zoomLevel / 100})`;
+    
+    ovToggle.checked = settings.ovToggle !== undefined ? settings.ovToggle : true;
+    ovSize.value = settings.ovSize || 16;
+    ovSizeVal.textContent = ovSize.value + 'px';
+    ovColor.value = settings.ovColor || '#ffffff';
+    ovOpacity.value = settings.ovOpacity || 22;
+    ovOpacityVal.textContent = ovOpacity.value + '%';
+    selectedPosition = settings.selectedPosition || 'bottom-right';
+    
+    // Обновляем визуальное состояние кнопок позиций
+    posButtons.forEach(b => { 
+      b.classList.remove('active'); 
+      b.setAttribute('aria-pressed', 'false');
+    });
+    const activePosBtn = document.querySelector(`.pos-btn[data-pos="${selectedPosition}"]`);
+    if (activePosBtn){
+      activePosBtn.classList.add('active');
+      activePosBtn.setAttribute('aria-pressed', 'true');
+    }
+    
+    titleInput.value = settings.titleInput || niceTitleFromFilename(currentFileName);
+    ovTitle.textContent = titleInput.value || '—';
+    
+    applyOverlaySettings();
+    
+    // Восстанавливаем громкость
+    if (settings.volume !== undefined){
+      video.volume = settings.volume;
+      volumeRange.value = settings.volume;
+    } else {
+      video.volume = 1;
+      volumeRange.value = 1;
+    }
+    
+    // Восстанавливаем состояние мута
+    if (settings.muted !== undefined){
+      video.muted = settings.muted;
+    } else {
+      video.muted = false;
+    }
+    updateVolumeIcon();
+    
+    // Обновляем аудио-граф
+    drEnabled = drToggle.checked;
+    if (audioCtx){
+      if (boostGain){
+        boostGain.gain.setTargetAtTime(drBoost.value / 100, audioCtx.currentTime, 0.01);
+      }
+      updateCompressor();
+      connectGraph();
+    }
+    
+    return true;
+  } catch(e){ /* повреждённая запись — игнорируем */ }
+  return false;
+}
+
 function restoreProgress(){
   if (!currentFileKey) return;
   try{
@@ -148,11 +261,15 @@ function restoreProgress(){
 
 function startProgressTracking(){
   clearInterval(progressInterval);
-  progressInterval = setInterval(saveProgress, 4000);
+  progressInterval = setInterval(() => {
+    saveProgress();
+    saveSettings();
+  }, 4000);
 }
 function stopProgressTracking(){
   clearInterval(progressInterval);
   saveProgress();
+  saveSettings();
 }
 
 function escapeHtml(str){
@@ -319,9 +436,53 @@ function loadFile(file, handle){
   if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
   currentObjectUrl = URL.createObjectURL(file);
   video.src = currentObjectUrl;
-  resetSpeed();
-  resetBrightness();
-  resetZoom();
+
+  // Проверяем, есть ли сохранённые настройки для файла
+  const hasSettings = loadSettings();
+  
+  if (!hasSettings){
+    // Если нет настроек — сбрасываем настройки до дефолтных
+    resetSpeed();
+    resetBrightness();
+    resetZoom();
+    
+    // Сбрасываем оверлей настройки
+    ovToggle.checked = true;
+    ovSize.value = 16;
+    ovSizeVal.textContent = '16px';
+    ovColor.value = '#ffffff';
+    ovOpacity.value = 22;
+    ovOpacityVal.textContent = '22%';
+    selectedPosition = 'bottom-right';
+    posButtons.forEach(b => { 
+      b.classList.remove('active'); 
+      b.setAttribute('aria-pressed', 'false');
+    });
+    const defaultPosBtn = document.querySelector('.pos-btn[data-pos="bottom-right"]');
+    if (defaultPosBtn){
+      defaultPosBtn.classList.add('active');
+      defaultPosBtn.setAttribute('aria-pressed', 'true');
+    }
+    
+    drToggle.checked = true;
+    drStrength.value = 55;
+    drStrengthVal.textContent = '55%';
+    drBoost.value = 100;
+    drBoostVal.textContent = '100%';
+    drEnabled = true;
+    if (audioCtx){
+      if (boostGain) boostGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+      updateCompressor();
+      connectGraph();
+    }
+    
+    // Сбрасываем громкость до дефолтного значения
+    video.volume = 1;
+    volumeRange.value = 1;
+    video.muted = false;
+    lastVolume = 1;
+    updateVolumeIcon();
+  }
 
   const niceTitle = niceTitleFromFilename(file.name);
   titleInput.value = niceTitle;
@@ -400,6 +561,8 @@ const volumeRange = document.getElementById('volume-range');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const iconFsOpen = document.getElementById('icon-fs-open');
 const iconFsClose = document.getElementById('icon-fs-close');
+const screenshotBtn = document.getElementById('screenshot-btn');
+const pipBtn = document.getElementById('pip-btn');
 const drBtn = document.getElementById('dr-btn');
 const drPanel = document.getElementById('dr-panel');
 const drToggle = document.getElementById('dr-toggle');
@@ -439,6 +602,7 @@ function connectGraph(){
   sourceNode.disconnect();
   boostGain.disconnect();
   compressorNode.disconnect();
+  
   sourceNode.connect(boostGain);
   if (drEnabled){
     boostGain.connect(compressorNode);
@@ -476,11 +640,13 @@ drToggle.addEventListener('change', () => {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   drEnabled = drToggle.checked;
   connectGraph();
+  saveSettings();
 });
 
 drStrength.addEventListener('input', () => {
   drStrengthVal.textContent = drStrength.value + '%';
   updateCompressor();
+  saveSettings();
 });
 
 drBoost.addEventListener('input', () => {
@@ -490,6 +656,7 @@ drBoost.addEventListener('input', () => {
   if (boostGain){
     boostGain.gain.setTargetAtTime(drBoost.value / 100, audioCtx.currentTime, 0.01);
   }
+  saveSettings();
 });
 
 // --- скорость воспроизведения ---
@@ -497,6 +664,7 @@ drSpeed.addEventListener('input', () => {
   const rate = parseFloat(drSpeed.value);
   video.playbackRate = rate;
   drSpeedVal.textContent = rate + 'x';
+  saveSettings();
 });
 function resetSpeed(){
   video.playbackRate = 1;
@@ -509,6 +677,7 @@ drBrightness.addEventListener('input', () => {
   const brightness = drBrightness.value / 100;
   video.style.filter = `brightness(${brightness})`;
   drBrightnessVal.textContent = drBrightness.value + '%';
+  saveSettings();
 });
 function resetBrightness(){
   video.style.filter = '';
@@ -525,10 +694,12 @@ function applyZoom(){
 zoomOutBtn.addEventListener('click', () => {
   zoomLevel = Math.max(50, zoomLevel - 5);
   applyZoom();
+  saveSettings();
 });
 zoomInBtn.addEventListener('click', () => {
   zoomLevel = Math.min(200, zoomLevel + 5);
   applyZoom();
+  saveSettings();
 });
 function resetZoom(){
   zoomLevel = 100;
@@ -539,15 +710,23 @@ function togglePlay(){
   if (video.paused) video.play(); else video.pause();
 }
 let centerIconTimeout = null;
+
 function showCenterIcon(isPlaying){
   centerIconPlay.style.display = isPlaying ? 'none' : '';
   centerIconPause.style.display = isPlaying ? '' : 'none';
   centerPlayIcon.classList.add('show');
+  
+  // Отменяем все предыдущие таймеры
   clearTimeout(centerIconTimeout);
+  
   if (isPlaying){
+    // При воспроизведении скрываем иконку через 600мс
     centerIconTimeout = setTimeout(() => {
       centerPlayIcon.classList.remove('show');
     }, 600);
+  } else {
+    // При паузе НЕ скрываем иконку автоматически - она должна оставаться видимой
+    // Иконка скрывается только при следующем воспроизведении
   }
 }
 playBtn.addEventListener('click', togglePlay);
@@ -571,24 +750,53 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+let isUpdatingPlayState = false;
+
+function syncPlayStateUI(){
+  const isPlaying = !video.paused;
+  
+  if (isPlaying){
+    iconPlay.style.display = 'none';
+    iconPause.style.display = '';
+    playBtn.setAttribute('aria-pressed', 'true');
+    playBtn.setAttribute('aria-label', 'Пауза');
+  } else {
+    iconPlay.style.display = '';
+    iconPause.style.display = 'none';
+    playBtn.setAttribute('aria-pressed', 'false');
+    playBtn.setAttribute('aria-label', 'Воспроизведение');
+  }
+}
+
 video.addEventListener('play', () => {
-  iconPlay.style.display = 'none';
-  iconPause.style.display = '';
-  playBtn.setAttribute('aria-pressed', 'true');
-  playBtn.setAttribute('aria-label', 'Пауза');
+  syncPlayStateUI();
   startProgressTracking();
   showCenterIcon(true);
 });
 video.addEventListener('pause', () => {
-  iconPlay.style.display = '';
-  iconPause.style.display = 'none';
-  playBtn.setAttribute('aria-pressed', 'false');
-  playBtn.setAttribute('aria-label', 'Воспроизведение');
+  syncPlayStateUI();
   stopProgressTracking();
+  
+  // Отменяем все таймеры скрытия иконки
+  clearTimeout(centerIconTimeout);
+  
   centerPlayIcon.classList.add('show');
   centerIconPlay.style.display = '';
   centerIconPause.style.display = 'none';
 });
+
+// Постоянная синхронизация UI с фактическим состоянием видео
+setInterval(() => {
+  const isPlaying = !video.paused;
+  const iconPlayVisible = iconPlay.style.display !== 'none';
+  
+  // Если UI не соответствует фактическому состоянию - исправляем
+  if (isPlaying && iconPlayVisible){
+    syncPlayStateUI();
+  } else if (!isPlaying && !iconPlayVisible){
+    syncPlayStateUI();
+  }
+}, 100);
 video.addEventListener('ended', () => {
   if (currentFileKey){
     try{ localStorage.removeItem(currentFileKey); } catch(e){}
@@ -637,6 +845,7 @@ volumeRange.addEventListener('input', () => {
   video.muted = Number(volumeRange.value) === 0;
   if (video.volume > 0) lastVolume = video.volume;
   updateVolumeIcon();
+  saveSettings();
 });
 muteBtn.addEventListener('click', () => {
   video.muted = !video.muted;
@@ -648,6 +857,7 @@ muteBtn.addEventListener('click', () => {
     volumeRange.value = video.volume;
   }
   updateVolumeIcon();
+  saveSettings();
 });
 updateVolumeIcon();
 
@@ -664,6 +874,53 @@ document.addEventListener('fullscreenchange', () => {
   iconFsClose.style.display = isFs ? '' : 'none';
   fullscreenBtn.setAttribute('aria-pressed', String(isFs));
   fullscreenBtn.setAttribute('aria-label', isFs ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим');
+});
+
+// --- скриншот ---
+screenshotBtn.addEventListener('click', () => {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    
+    // Применяем CSS фильтры к canvas
+    const brightness = drBrightness.value / 100;
+    ctx.filter = `brightness(${brightness})`;
+    
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const link = document.createElement('a');
+    const timestamp = formatTime(video.currentTime).replace(/:/g, '-');
+    link.download = `screenshot-${timestamp}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch(e) {
+    console.error('Ошибка скриншота:', e);
+  }
+});
+
+// --- Picture-in-Picture ---
+pipBtn.addEventListener('click', async () => {
+  if (document.pictureInPictureElement) {
+    await document.exitPictureInPicture();
+  } else {
+    try {
+      await video.requestPictureInPicture();
+    } catch(e) {
+      console.error('PiP ошибка:', e);
+    }
+  }
+});
+
+video.addEventListener('enterpictureinpicture', () => {
+  pipBtn.setAttribute('aria-pressed', 'true');
+  pipBtn.setAttribute('aria-label', 'Закрыть картинку в картинке');
+});
+
+video.addEventListener('leavepictureinpicture', () => {
+  pipBtn.setAttribute('aria-pressed', 'false');
+  pipBtn.setAttribute('aria-label', 'Картинка в картинке');
 });
 
 // --- автоскрытие панели при воспроизведении ---
@@ -690,16 +947,17 @@ function adjustVolume(delta){
   volumeRange.value = v;
   if (v > 0) lastVolume = v;
   updateVolumeIcon();
+  saveSettings();
 }
 document.addEventListener('keydown', (e) => {
   if (!playerView.classList.contains('active')) return;
   if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
   if (e.code === 'Space'){ e.preventDefault(); togglePlay(); showControls(); }
-  else if (e.key === 'f' || e.key === 'F'){ fullscreenBtn.click(); }
-  else if (e.key === 'ArrowRight'){ video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); showControls(); }
-  else if (e.key === 'ArrowLeft'){ video.currentTime = Math.max(0, video.currentTime - 5); showControls(); }
-  else if (e.key === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.05); showControls(); }
-  else if (e.key === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.05); showControls(); }
+  else if (e.code === 'KeyF'){ fullscreenBtn.click(); }
+  else if (e.code === 'ArrowRight'){ video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); showControls(); }
+  else if (e.code === 'ArrowLeft'){ video.currentTime = Math.max(0, video.currentTime - 5); showControls(); }
+  else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.05); showControls(); }
+  else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.05); showControls(); }
 });
 
 const videoErrorEl = document.getElementById('video-error');
@@ -726,6 +984,7 @@ video.addEventListener('loadeddata', () => {
 // --- editable title ---
 titleInput.addEventListener('input', () => {
   ovTitle.textContent = titleInput.value || '—';
+  saveSettings();
 });
 
 // --- back to drop view ---
