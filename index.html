@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Локальный плеер</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23F2C245'/%3E%3Cpolygon points='20,16 48,32 20,48' fill='%230B0D10'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.cdnfonts.com/css/coolvetica" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="reel-strip"></div>
+
+<div id="drop-view">
+  <h1 class="title-font">Локальный плеер</h1>
+
+  <div class="resume-panel" id="resume-panel">
+    <div class="os-title">Найден сохранённый прогресс</div>
+    <div class="hint-sub" id="resume-sub">Браузер не может открыть файл с диска сам — перетащи тот же файл ещё раз, и плеер продолжит с этого места.</div>
+
+    <div class="resume-row" id="continue-row" style="display:none;">
+      <div class="cc-info">
+        <div class="cc-name" id="cc-name">—</div>
+        <div class="cc-time" id="cc-time"></div>
+      </div>
+      <button type="button" id="cc-open-btn">Продолжить</button>
+    </div>
+
+    <div id="resume-list"></div>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+    </svg>
+    <div class="main-txt">Перетащи файл</div>
+    <div class="sub-txt">или нажми, чтобы выбрать &nbsp;·&nbsp; <code>.mp4 .webm .mov</code></div>
+  </div>
+  <input type="file" id="file-input" accept="video/*">
+  <div class="err-msg" id="err-msg"></div>
+</div>
+
+<div id="player-view">
+  <div class="toolbar">
+    <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">← Назад</button>
+    <h1 class="title-font player-title" id="fname"></h1>
+  </div>
+  <div class="stage" id="stage">
+    <video id="video"></video>
+    <div class="click-catcher" id="click-catcher" aria-hidden="true"></div>
+    <div class="overlay">
+      <span class="ov-title" id="ov-title">—</span>
+      <span class="ov-time" id="ov-time">00:00 / 00:00</span>
+    </div>
+    <div class="controls-bar" id="controls-bar">
+      <button class="ctrl-btn" id="play-btn" title="Пробел" aria-label="Воспроизведение" aria-pressed="false">
+        <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      </button>
+      <span class="time-display" id="time-display">00:00 / 00:00</span>
+      <input type="range" id="seek" min="0" max="1000" value="0" step="0.1" aria-label="Перемотка">
+      <div class="volume-group">
+        <button class="ctrl-btn" id="mute-btn" title="Выключить звук" aria-label="Выключить звук" aria-pressed="false">
+          <svg id="icon-vol-on" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          <svg id="icon-vol-off" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+        </button>
+        <input type="range" id="volume-range" min="0" max="1" value="1" step="0.05" aria-label="Громкость">
+      </div>
+      <button class="ctrl-btn" id="dr-btn" title="Настройки" aria-label="Настройки" aria-expanded="false" aria-controls="dr-panel">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+      </button>
+      <button class="ctrl-btn" id="fullscreen-btn" title="F" aria-label="Полноэкранный режим" aria-pressed="false">
+        <svg id="icon-fs-open" viewBox="0 0 24 24" fill="currentColor"><path d="M7 3H3v4h2V5h2zm14 0h-4v2h2v2h2zM5 15H3v4h4v-2H5zm14 4v-4h-2v2h-2v2z"/></svg>
+        <svg id="icon-fs-close" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M9 3H3v6h2V5h4zm12 0h-6v2h4v4h2zM5 15H3v6h6v-2H5zm14 4h-4v2h6v-6h-2z"/></svg>
+      </button>
+    </div>
+    <div class="dr-panel" id="dr-panel">
+      <div class="dr-section-title">Звук</div>
+      <div class="dr-row">
+        <label class="checkbox">
+          <input type="checkbox" id="dr-toggle" checked aria-label="Выровнять звук">
+          <span class="box"></span>
+        </label>
+        <span class="dr-label">Нормализация звука</span>
+      </div>
+      <div class="dr-row">
+        <label for="dr-strength">Интенсивность</label>
+        <input type="range" id="dr-strength" min="0" max="100" value="55">
+        <span class="dr-val" id="dr-strength-val">55%</span>
+      </div>
+      <div class="dr-row" title="Усиление сверх стандартного максимума громкости">
+        <label for="dr-boost">Усиление</label>
+        <input type="range" id="dr-boost" min="100" max="500" value="100">
+        <span class="dr-val" id="dr-boost-val">100%</span>
+      </div>
+
+      <div class="dr-divider"></div>
+      <div class="dr-section-title">Видео</div>
+      <div class="dr-row">
+        <label for="dr-speed">Скорость</label>
+        <input type="range" id="dr-speed" min="0.25" max="2" step="0.25" value="1">
+        <span class="dr-val" id="dr-speed-val">1x</span>
+      </div>
+      <div class="dr-row">
+        <label for="dr-brightness">Яркость</label>
+        <input type="range" id="dr-brightness" min="100" max="200" value="100">
+        <span class="dr-val" id="dr-brightness-val">100%</span>
+      </div>
+      <div class="dr-row">
+        <label id="zoom-label">Масштаб</label>
+        <div class="zoom-controls">
+          <button type="button" class="zoom-btn" id="zoom-out" title="Уменьшить" aria-label="Уменьшить масштаб">－</button>
+          <span class="zoom-val" id="zoom-val">100%</span>
+          <button type="button" class="zoom-btn" id="zoom-in" title="Увеличить" aria-label="Увеличить масштаб">＋</button>
+        </div>
+      </div>
+
+      <div class="dr-divider"></div>
+      <div class="dr-section-title">Оверлей</div>
+      <div class="dr-row">
+        <label for="title-input">Текст</label>
+        <input type="text" id="title-input" class="dr-text-input" placeholder="Название фильма">
+      </div>
+      <div class="dr-row">
+        <label for="ov-size">Размер</label>
+        <input type="range" id="ov-size" min="10" max="32" value="16">
+        <span class="dr-val" id="ov-size-val">16px</span>
+      </div>
+      <div class="dr-row">
+        <label for="ov-color">Цвет</label>
+        <input type="color" id="ov-color" value="#ffffff" aria-label="Цвет оверлея">
+        <input type="range" id="ov-opacity" min="0" max="100" value="15" aria-label="Прозрачность оверлея">
+        <span class="dr-val" id="ov-opacity-val">15%</span>
+      </div>
+      <div class="dr-row">
+        <label id="pos-label">Расположение</label>
+        <div class="corner-grid" role="group" aria-labelledby="pos-label">
+          <button type="button" class="pos-btn" data-pos="top-left" title="Слева сверху" aria-label="Слева сверху" aria-pressed="false">↖</button>
+          <button type="button" class="pos-btn" data-pos="top-right" title="Справа сверху" aria-label="Справа сверху" aria-pressed="false">↗</button>
+          <button type="button" class="pos-btn" data-pos="bottom-left" title="Слева снизу" aria-label="Слева снизу" aria-pressed="false">↙</button>
+          <button type="button" class="pos-btn active" data-pos="bottom-right" title="Справа снизу" aria-label="Справа снизу" aria-pressed="true">↘</button>
+        </div>
+      </div>
+    </div>
+    <div class="center-play-icon" id="center-play-icon">
+      <svg id="center-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg id="center-icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+    </div>
+    <div class="video-error" id="video-error" style="display:none"></div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
