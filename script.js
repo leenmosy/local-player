@@ -67,6 +67,8 @@ function applyOverlaySettings(){
 }
 
 let currentObjectUrl = null;
+let durationChangeHandler = null;
+let uiSyncInterval = null;
 
 // --- фикс Infinity/NaN-длительности ---
 // Некоторые контейнеры (в т.ч. часть mkv-рипов, webm с "unknown duration" и т.п.)
@@ -84,10 +86,16 @@ function fixInfiniteDuration(onReady){
     return;
   }
   seek.disabled = true;
+  // Приостанавливаем воспроизведение на время "прощупывания" длины,
+  // чтобы пользователь не увидел вспышку последнего кадра/щелчок звука
+  // в момент служебного скачка в конец файла и обратно.
+  const wasPlaying = !video.paused;
+  if (wasPlaying) video.pause();
   const onTimeUpdate = () => {
     video.removeEventListener('timeupdate', onTimeUpdate);
     video.currentTime = 0;
     seek.disabled = !isDurationUsable();
+    if (wasPlaying) video.play().catch(()=>{});
     if (onReady) onReady();
   };
   video.addEventListener('timeupdate', onTimeUpdate);
@@ -100,7 +108,7 @@ function formatTime(sec){
   const m = Math.floor((sec%3600)/60);
   const s = Math.floor(sec%60);
   const pad = n => String(n).padStart(2,'0');
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
 function niceTitleFromFilename(name){
@@ -175,7 +183,7 @@ function loadSettings(){
     
     // Восстанавливаем настройки
     drToggle.checked = settings.drToggle !== undefined ? settings.drToggle : true;
-    drStrength.value = settings.drStrength || 55;
+    drStrength.value = settings.drStrength !== undefined ? settings.drStrength : 55;
     drStrengthVal.textContent = drStrength.value + '%';
     drBoost.value = settings.drBoost || 100;
     drBoostVal.textContent = drBoost.value + '%';
@@ -195,7 +203,7 @@ function loadSettings(){
     ovSize.value = settings.ovSize || 16;
     ovSizeVal.textContent = ovSize.value + 'px';
     ovColor.value = settings.ovColor || '#ffffff';
-    ovOpacity.value = settings.ovOpacity || 22;
+    ovOpacity.value = settings.ovOpacity !== undefined ? settings.ovOpacity : 22;
     ovOpacityVal.textContent = ovOpacity.value + '%';
     selectedPosition = settings.selectedPosition || 'bottom-right';
     
@@ -210,7 +218,7 @@ function loadSettings(){
       activePosBtn.setAttribute('aria-pressed', 'true');
     }
     
-    titleInput.value = settings.titleInput || niceTitleFromFilename(currentFileName);
+    titleInput.value = settings.titleInput !== undefined ? settings.titleInput : niceTitleFromFilename(currentFileName);
     ovTitle.textContent = titleInput.value || '—';
     
     applyOverlaySettings();
@@ -485,9 +493,11 @@ function loadFile(file, handle){
     updateVolumeIcon();
   }
 
-  const niceTitle = niceTitleFromFilename(file.name);
-  titleInput.value = niceTitle;
-  ovTitle.textContent = niceTitle;
+  if (!hasSettings){
+    const niceTitle = niceTitleFromFilename(file.name);
+    titleInput.value = niceTitle;
+    ovTitle.textContent = niceTitle;
+  }
   fnameEl.textContent = file.name.replace(/\.[^/.]+$/, '');
   ovTime.textContent = '00:00 / 00:00';
   applyOverlaySettings();
@@ -497,9 +507,13 @@ function loadFile(file, handle){
   }, { once: true });
   // подстраховка: если браузер сам пришлёт durationchange позже (без нашего трюка) —
   // снимаем блокировку сика, если раньше он завис из-за Infinity
-  video.addEventListener('durationchange', () => {
+  if (durationChangeHandler){
+    video.removeEventListener('durationchange', durationChangeHandler);
+  }
+  durationChangeHandler = () => {
     if (isDurationUsable()) seek.disabled = false;
-  });
+  };
+  video.addEventListener('durationchange', durationChangeHandler);
 
   dropView.style.display = 'none';
   playerView.classList.add('active');
@@ -578,6 +592,7 @@ const drBrightnessVal = document.getElementById('dr-brightness-val');
 const zoomOutBtn = document.getElementById('zoom-out');
 const zoomInBtn = document.getElementById('zoom-in');
 const zoomVal = document.getElementById('zoom-val');
+const drResetBtn = document.getElementById('dr-reset-btn');
 
 let isSeeking = false;
 
@@ -707,6 +722,48 @@ function resetZoom(){
   applyZoom();
 }
 
+// --- сброс всех настроек панели к дефолтам ---
+function resetAllSettings(){
+  drToggle.checked = true;
+  drStrength.value = 55;
+  drStrengthVal.textContent = '55%';
+  drBoost.value = 100;
+  drBoostVal.textContent = '100%';
+  drEnabled = true;
+  if (audioCtx){
+    if (boostGain) boostGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+    updateCompressor();
+    connectGraph();
+  }
+
+  resetSpeed();
+  resetBrightness();
+  resetZoom();
+
+  ovToggle.checked = true;
+  ovSize.value = 16;
+  ovSizeVal.textContent = '16px';
+  ovColor.value = '#ffffff';
+  ovOpacity.value = 22;
+  ovOpacityVal.textContent = '22%';
+  selectedPosition = 'bottom-right';
+  posButtons.forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-pressed', 'false');
+  });
+  const defaultPosBtn = document.querySelector('.pos-btn[data-pos="bottom-right"]');
+  if (defaultPosBtn){
+    defaultPosBtn.classList.add('active');
+    defaultPosBtn.setAttribute('aria-pressed', 'true');
+  }
+  titleInput.value = niceTitleFromFilename(currentFileName || '');
+  ovTitle.textContent = titleInput.value || '—';
+  applyOverlaySettings();
+
+  saveSettings();
+}
+drResetBtn.addEventListener('click', resetAllSettings);
+
 function togglePlay(){
   if (video.paused) video.play(); else video.pause();
 }
@@ -769,14 +826,37 @@ function syncPlayStateUI(){
   }
 }
 
+// Постоянная синхронизация UI с фактическим состоянием видео —
+// работает только пока видео реально играет, а не всё время жизни страницы
+function startUiSync(){
+  if (uiSyncInterval) return;
+  uiSyncInterval = setInterval(() => {
+    const isPlaying = !video.paused;
+    const iconPlayVisible = iconPlay.style.display !== 'none';
+
+    // Если UI не соответствует фактическому состоянию - исправляем
+    if (isPlaying && iconPlayVisible){
+      syncPlayStateUI();
+    } else if (!isPlaying && !iconPlayVisible){
+      syncPlayStateUI();
+    }
+  }, 100);
+}
+function stopUiSync(){
+  clearInterval(uiSyncInterval);
+  uiSyncInterval = null;
+}
+
 video.addEventListener('play', () => {
   syncPlayStateUI();
   startProgressTracking();
+  startUiSync();
   showCenterIcon(true);
 });
 video.addEventListener('pause', () => {
   syncPlayStateUI();
   stopProgressTracking();
+  stopUiSync();
   
   // Отменяем все таймеры скрытия иконки
   clearTimeout(centerIconTimeout);
@@ -785,19 +865,6 @@ video.addEventListener('pause', () => {
   centerIconPlay.style.display = '';
   centerIconPause.style.display = 'none';
 });
-
-// Постоянная синхронизация UI с фактическим состоянием видео
-setInterval(() => {
-  const isPlaying = !video.paused;
-  const iconPlayVisible = iconPlay.style.display !== 'none';
-  
-  // Если UI не соответствует фактическому состоянию - исправляем
-  if (isPlaying && iconPlayVisible){
-    syncPlayStateUI();
-  } else if (!isPlaying && !iconPlayVisible){
-    syncPlayStateUI();
-  }
-}, 100);
 video.addEventListener('ended', () => {
   if (currentFileKey){
     try{ localStorage.removeItem(currentFileKey); } catch(e){}
