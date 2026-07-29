@@ -218,10 +218,8 @@ function loadSettings(){
     // Восстанавливаем громкость
     if (settings.volume !== undefined){
       video.volume = settings.volume;
-      volumeRange.value = settings.volume;
     } else {
       video.volume = 1;
-      volumeRange.value = 1;
     }
     
     // Восстанавливаем состояние мута
@@ -230,6 +228,9 @@ function loadSettings(){
     } else {
       video.muted = false;
     }
+    
+    // Шкала громкости должна показывать 0 если звук замучен
+    volumeRange.value = video.muted ? 0 : video.volume;
     updateVolumeIcon();
     
     // Обновляем аудио-граф
