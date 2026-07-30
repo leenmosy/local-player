@@ -8,7 +8,7 @@
 :root{
   --bg: #0B0D10;
   --surface: #121418;
-  --surface-2: #121418;
+  --surface-2: #1e2228;
   --text: #E7E5E0;
   --muted: #8B8F98;
   --accent: #FFFFFF;
@@ -494,7 +494,7 @@ input[type=range]::-moz-range-thumb{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: none;
   border: none;
   cursor: pointer;
@@ -576,7 +576,7 @@ input[type=range]::-moz-range-thumb{
   transition: background .15s ease;
 }
 .timing-range:hover{
-  background: #1e2228;
+  background: var(--surface-2);
 }
 .timing-remove-btn{
   background: transparent; padding: 4px 6px; font-size: 14px; line-height:1;
