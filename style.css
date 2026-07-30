@@ -546,8 +546,9 @@ input[type=range]::-moz-range-thumb{
 .timing-dash{ color: var(--muted); flex-shrink:0; }
 .timing-add-btn{
   width: 26px; height: 26px; padding: 0; flex-shrink:0;
-  background: var(--accent-orange); color: #0B0D10; font-size: 16px; font-weight: 700; line-height:1;
+  background: var(--accent-orange); color: #0B0D10; font-size: 16px; font-weight: 700;
   border-radius: 6px; display:flex; align-items:center; justify-content:center;
+  transform: translateY(-2px);
 }
 .timing-add-btn:hover{ opacity:.9; }
 .timing-err{
@@ -563,6 +564,13 @@ input[type=range]::-moz-range-thumb{
 .timing-item:last-child{ border-bottom:none; }
 .timing-range{
   font-family:'JetBrains Mono', monospace; font-size: 12.5px; color: var(--text);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background .15s ease;
+}
+.timing-range:hover{
+  background: #1e2228;
 }
 .timing-remove-btn{
   background: transparent; padding: 4px 6px; font-size: 14px; line-height:1;
