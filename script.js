@@ -207,6 +207,10 @@ function saveSettings(){
   // Устанавливаем новый таймер
   saveSettingsTimeout = setTimeout(() => {
     try{
+      // Сначала загружаем текущие настройки из localStorage
+      const existingRaw = localStorage.getItem(settingsKey(currentFileKey));
+      const existingSettings = existingRaw ? JSON.parse(existingRaw) : {};
+      
       const settings = {
         drToggle: drToggle.checked,
         drStrength: drStrength.value,
@@ -224,7 +228,17 @@ function saveSettings(){
         ovAlign: ovAlign,
         titleInput: titleInput.value,
         volume: video.volume,
-        muted: video.muted
+        muted: video.muted,
+        subsToggle: subsToggle.checked,
+        subsSize: subsSize.value,
+        subsColor: subsColor.value,
+        subsOpacity: subsOpacity.value,
+        subsBg: subsBg.value,
+        subsBgOpacity: subsBgOpacity.value,
+        subsBottom: subsBottom.value,
+        // Сохраняем существующий subsContent если есть, иначе используем текущий
+        subsContent: existingSettings.subsContent || (subtitlesData.length > 0 ? JSON.stringify(subtitlesData) : null),
+        subsFileName: existingSettings.subsFileName || subsFileName.textContent
       };
       localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
     } catch(e){ /* хранилище недоступно */ }
@@ -256,7 +270,16 @@ function saveSettingsImmediate(){
       ovAlign: ovAlign,
       titleInput: titleInput.value,
       volume: video.volume,
-      muted: video.muted
+      muted: video.muted,
+      subsToggle: subsToggle.checked,
+      subsSize: subsSize.value,
+      subsColor: subsColor.value,
+      subsOpacity: subsOpacity.value,
+      subsBg: subsBg.value,
+      subsBgOpacity: subsBgOpacity.value,
+      subsBottom: subsBottom.value,
+      subsContent: savedSubsContent || (subtitlesData.length > 0 ? JSON.stringify(subtitlesData) : null),
+      subsFileName: subsFileName.textContent
     };
     localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
   } catch(e){ /* хранилище недоступно */ }
@@ -654,6 +677,7 @@ function niceTitleFromFilename(name){
 const PROGRESS_PREFIX = 'lp_progress:';
 const HANDLE_KEY_PREFIX = PROGRESS_PREFIX + 'h:';
 const SETTINGS_PREFIX = 'lp_settings:';
+const SUBS_PREFIX = 'lp_subs:';
 let currentFileKey = null;
 let currentFileName = null;
 let progressInterval = null;
@@ -667,20 +691,24 @@ function handleFileKey(handleName){
 function settingsKey(key){
   return SETTINGS_PREFIX + key.replace(PROGRESS_PREFIX, '');
 }
+function subsKey(key){
+  return SUBS_PREFIX + key.replace(PROGRESS_PREFIX, '');
+}
 
 function saveProgress(){
   if (!currentFileKey || !video.duration || !isFinite(video.duration)) return;
   try{
     if (video.currentTime < 5 || video.currentTime > video.duration - 8){
+      localStorage.removeItem(settingsKey(currentFileKey));
       localStorage.removeItem(currentFileKey);
-    } else {
-      localStorage.setItem(currentFileKey, JSON.stringify({
-        t: video.currentTime,
-        duration: video.duration,
-        name: currentFileName,
-        ts: Date.now()
-      }));
+      return;
     }
+    localStorage.setItem(currentFileKey, JSON.stringify({
+      t: video.currentTime,
+      duration: video.duration,
+      ts: Date.now(),
+      name: currentFileName
+    }));
   } catch(e){ /* хранилище недоступно — просто пропускаем */ }
 }
 
@@ -711,9 +739,12 @@ function saveSettings(){
 }
 
 function loadSettings(){
-  if (!currentFileKey) return false;
+  if (!currentFileKey) {
+    return false;
+  }
   try{
-    const raw = localStorage.getItem(settingsKey(currentFileKey));
+    const key = settingsKey(currentFileKey);
+    const raw = localStorage.getItem(key);
     if (!raw) return false;
     const settings = JSON.parse(raw);
     if (!settings || typeof settings !== 'object') return false;
@@ -749,6 +780,12 @@ function loadSettings(){
     settings.ovSize = validateNumber(settings.ovSize, 10, 32, OV_DEFAULT_SIZE);
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
     
+    // Валидация настроек субтитров
+    settings.subsSize = validateNumber(settings.subsSize, 20, 40, 30);
+    settings.subsOpacity = validateNumber(settings.subsOpacity, 0, 100, 100);
+    settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 50);
+    settings.subsBottom = validateNumber(settings.subsBottom, 0, 25, 15);
+    
     // Валидация позиций оверлея
     if (settings.ovPosX !== undefined) {
       settings.ovPosX = validateNumber(settings.ovPosX, OV_POS_MIN, OV_POS_MAX, OV_DEFAULT_POS_X);
@@ -762,9 +799,18 @@ function loadSettings(){
       settings.ovColor = OV_DEFAULT_COLOR;
     }
     
+    // Валидация цветов субтитров
+    if (typeof settings.subsColor !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(settings.subsColor)) {
+      settings.subsColor = '#ffffff';
+    }
+    if (typeof settings.subsBg !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(settings.subsBg)) {
+      settings.subsBg = '#000000';
+    }
+    
     // Валидация boolean значений
     if (typeof settings.drToggle !== 'boolean') settings.drToggle = true;
     if (typeof settings.ovToggle !== 'boolean') settings.ovToggle = true;
+    if (typeof settings.subsToggle !== 'boolean') settings.subsToggle = true;
     if (typeof settings.muted !== 'boolean') settings.muted = false;
     
     // Валидация выравнивания
@@ -823,6 +869,54 @@ function loadSettings(){
     ovTitle.textContent = titleInput.value || '—';
     
     applyOverlaySettings();
+    
+    // Восстанавливаем настройки субтитров
+    subsToggle.checked = settings.subsToggle !== undefined ? settings.subsToggle : true;
+    subtitles.style.display = subsToggle.checked ? 'block' : 'none';
+    
+    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 30;
+    subsSizeVal.textContent = subsSize.value + 'px';
+    
+    subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#ffffff';
+    subsOpacity.value = settings.subsOpacity !== undefined ? settings.subsOpacity : 100;
+    subsOpacityVal.textContent = subsOpacity.value + '%';
+    
+    subsBg.value = settings.subsBg !== undefined ? settings.subsBg : '#000000';
+    subsBgOpacity.value = settings.subsBgOpacity !== undefined ? settings.subsBgOpacity : 50;
+    subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
+    
+    subsBottom.value = settings.subsBottom !== undefined ? settings.subsBottom : 15;
+    subsBottomVal.textContent = subsBottom.value + '%';
+    
+    applySubtitlesStyle();
+    
+    // Восстанавливаем содержимое субтитров из отдельного ключа
+    const subsRaw = localStorage.getItem(subsKey(currentFileKey));
+    if (subsRaw) {
+      try {
+        const subsData = JSON.parse(subsRaw);
+        subtitlesData = JSON.parse(subsData.content);
+        savedSubsContent = subsData.content;
+        isSubtitlesLoaded = true;
+        if (subsData.fileName) {
+          subsFileName.textContent = subsData.fileName;
+        }
+      } catch(e) {
+        subtitlesData = [];
+        savedSubsContent = null;
+        isSubtitlesLoaded = false;
+      }
+    } else {
+      savedSubsContent = null;
+      isSubtitlesLoaded = false;
+    }
+    
+    // Инициализация стилей субтитров при загрузке (если нет сохраненных настроек)
+    if (settings.subsToggle === undefined) {
+      subsToggle.checked = true;
+      subtitles.style.display = 'block';
+      applySubtitlesStyle();
+    }
     
     // Восстанавливаем громкость
     video.volume = settings.volume;
@@ -1090,6 +1184,15 @@ function loadFile(file, handle){
       connectGraph();
     }
     
+    // Сбрасываем субтитры только если нет сохраненных
+    if (!isSubtitlesLoaded) {
+      subtitlesData = [];
+      savedSubsContent = null;
+      subtitles.innerHTML = '';
+      subsFileName.textContent = 'Файл не выбран';
+      subsFile.value = '';
+    }
+    
     // Сбрасываем громкость до дефолтного значения
     video.volume = 1;
     volumeRange.value = 1;
@@ -1261,6 +1364,23 @@ const iconFsOpen = document.getElementById('icon-fs-open');
 const iconFsClose = document.getElementById('icon-fs-close');
 const drBtn = document.getElementById('dr-btn');
 const drPanel = document.getElementById('dr-panel');
+const subsBtn = document.getElementById('subs-btn');
+const subsPanel = document.getElementById('subs-panel');
+const subtitles = document.getElementById('subtitles');
+const subsToggle = document.getElementById('subs-toggle');
+const subsFile = document.getElementById('subs-file');
+const subsLoadBtn = document.getElementById('subs-load-btn');
+const subsFileName = document.getElementById('subs-file-name');
+const subsSize = document.getElementById('subs-size');
+const subsSizeVal = document.getElementById('subs-size-val');
+const subsColor = document.getElementById('subs-color');
+const subsOpacity = document.getElementById('subs-opacity');
+const subsOpacityVal = document.getElementById('subs-opacity-val');
+const subsBg = document.getElementById('subs-bg');
+const subsBgOpacity = document.getElementById('subs-bg-opacity');
+const subsBgOpacityVal = document.getElementById('subs-bg-opacity-val');
+const subsBottom = document.getElementById('subs-bottom');
+const subsBottomVal = document.getElementById('subs-bottom-val');
 const drToggle = document.getElementById('dr-toggle');
 const drStrength = document.getElementById('dr-strength');
 const drStrengthVal = document.getElementById('dr-strength-val');
@@ -1339,6 +1459,197 @@ function setDrPanelOpen(open){
 }
 drBtn.addEventListener('click', () => {
   setDrPanelOpen(!drPanel.classList.contains('open'));
+});
+
+// --- Панель субтитров ---
+function setSubsPanelOpen(open){
+  subsPanel.classList.toggle('open', open);
+  subsBtn.setAttribute('aria-expanded', String(open));
+  
+  // При открытии панели всегда сворачиваем все категории
+  if (open) {
+    categoryHeaders.forEach(header => {
+      header.setAttribute('aria-expanded', 'false');
+      const content = header.nextElementSibling;
+      if (content && content.classList.contains('dr-category-content')) {
+        content.classList.add('collapsed');
+      }
+    });
+  }
+}
+subsBtn.addEventListener('click', () => {
+  setSubsPanelOpen(!subsPanel.classList.contains('open'));
+});
+
+// --- Загрузка субтитров ---
+let subtitlesData = []; // Массив {start, end, text}
+let savedSubsContent = null; // Сохраненное содержимое субтитров из localStorage
+let isSubtitlesLoaded = false; // Флаг, были ли загружены субтитры
+
+subsLoadBtn.addEventListener('click', () => {
+  subsFile.click();
+});
+
+subsFile.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  subsFileName.textContent = file.name;
+  
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const content = event.target.result;
+    parseSubtitles(content, file.name.endsWith('.srt') ? 'srt' : 'vtt');
+    // Сохраняем содержимое в отдельный ключ
+    const subsData = {
+      content: JSON.stringify(subtitlesData),
+      fileName: file.name
+    };
+    localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
+    savedSubsContent = JSON.stringify(subtitlesData);
+    isSubtitlesLoaded = true;
+    // Применяем стили сразу после загрузки
+    applySubtitlesStyle();
+  };
+  reader.readAsText(file);
+});
+
+function parseSubtitles(content, format) {
+  subtitlesData = [];
+  const lines = content.split('\n');
+  let i = 0;
+  
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    
+    if (format === 'srt') {
+      // SRT формат
+      if (line.match(/^\d+$/)) {
+        // Индекс
+        i++;
+        if (i >= lines.length) break;
+        
+        // Тайминг - поддерживаем форматы 00:00:00,000 и 00:00:00,000 --> 00:00:00,000
+        const timeLine = lines[i].trim();
+        const timeMatch = timeLine.match(/(\d{1,2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{1,2}:\d{2}:\d{2},\d{3})/);
+        if (timeMatch) {
+          const start = parseSRTTime(timeMatch[1]);
+          const end = parseSRTTime(timeMatch[2]);
+          
+          // Текст
+          i++;
+          let text = '';
+          while (i < lines.length && lines[i].trim() !== '') {
+            text += lines[i] + '\n';
+            i++;
+          }
+          
+          if (text.trim()) {
+            subtitlesData.push({ start, end, text: text.trim() });
+          }
+        }
+      }
+      i++;
+    } else {
+      // WebVTT формат - поддерживаем форматы 00:00:00.000 и 00:00:00.000 --> 00:00:00.000
+      if (line.match(/\d{1,2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}\.\d{3}/)) {
+        const timeMatch = line.match(/(\d{1,2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}\.\d{3})/);
+        if (timeMatch) {
+          const start = parseVTTTime(timeMatch[1]);
+          const end = parseVTTTime(timeMatch[2]);
+          
+          // Текст
+          i++;
+          let text = '';
+          while (i < lines.length && lines[i].trim() !== '') {
+            text += lines[i] + '\n';
+            i++;
+          }
+          
+          if (text.trim()) {
+            subtitlesData.push({ start, end, text: text.trim() });
+          }
+        }
+      }
+      i++;
+    }
+  }
+}
+
+function parseSRTTime(timeStr) {
+  const parts = timeStr.split(':');
+  const hours = parseInt(parts[0]);
+  const minutes = parseInt(parts[1]);
+  const secondsParts = parts[2].split(',');
+  const seconds = parseInt(secondsParts[0]);
+  const milliseconds = parseInt(secondsParts[1]);
+  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+}
+
+function parseVTTTime(timeStr) {
+  const parts = timeStr.split(':');
+  const hours = parseInt(parts[0]);
+  const minutes = parseInt(parts[1]);
+  const secondsParts = parts[2].split('.');
+  const seconds = parseInt(secondsParts[0]);
+  const milliseconds = parseInt(secondsParts[1]);
+  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+}
+
+// --- Настройки субтитров ---
+function applySubtitlesStyle() {
+  const size = subsSize.value + 'px';
+  const color = hexToRgba(subsColor.value, subsOpacity.value / 100);
+  const bgColor = hexToRgba(subsBg.value, subsBgOpacity.value / 100);
+  const bottom = subsBottom.value + '%';
+  
+  subtitles.style.bottom = bottom;
+  
+  const span = subtitles.querySelector('span');
+  if (span) {
+    span.style.fontSize = size;
+    span.style.color = color;
+    span.style.background = bgColor;
+  }
+}
+
+subsToggle.addEventListener('change', () => {
+  subtitles.style.display = subsToggle.checked ? 'block' : 'none';
+  saveSettings();
+});
+
+subsSize.addEventListener('input', () => {
+  subsSizeVal.textContent = subsSize.value + 'px';
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsColor.addEventListener('input', () => {
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsOpacity.addEventListener('input', () => {
+  subsOpacityVal.textContent = subsOpacity.value + '%';
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsBg.addEventListener('input', () => {
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsBgOpacity.addEventListener('input', () => {
+  subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsBottom.addEventListener('input', () => {
+  subsBottomVal.textContent = subsBottom.value + '%';
+  applySubtitlesStyle();
+  saveSettings();
 });
 
 // --- Сворачивание категорий настроек ---
@@ -1474,18 +1785,36 @@ clickCatcher.addEventListener('click', () => {
     setDrPanelOpen(false);
     return;
   }
+  if (subsPanel.classList.contains('open')){
+    setSubsPanelOpen(false);
+    return;
+  }
   togglePlay();
 });
 
-// --- закрытие панели настроек по клику вне неё или по Esc ---
+// --- закрытие панелей по клику вне них или по Esc ---
 document.addEventListener('click', (e) => {
-  if (!drPanel.classList.contains('open')) return;
-  if (drPanel.contains(e.target) || drBtn.contains(e.target)) return;
-  setDrPanelOpen(false);
+  // Закрытие панели настроек
+  if (drPanel.classList.contains('open')) {
+    if (!drPanel.contains(e.target) && !drBtn.contains(e.target)) {
+      setDrPanelOpen(false);
+    }
+  }
+  // Закрытие панели субтитров
+  if (subsPanel.classList.contains('open')) {
+    if (!subsPanel.contains(e.target) && !subsBtn.contains(e.target)) {
+      setSubsPanelOpen(false);
+    }
+  }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && drPanel.classList.contains('open')){
-    setDrPanelOpen(false);
+  if (e.key === 'Escape') {
+    if (drPanel.classList.contains('open')) {
+      setDrPanelOpen(false);
+    }
+    if (subsPanel.classList.contains('open')) {
+      setSubsPanelOpen(false);
+    }
   }
 });
 
@@ -1560,12 +1889,36 @@ video.addEventListener('timeupdate', () => {
   if (!isSeeking && isDurationUsable()){
     seek.value = (video.currentTime / video.duration) * 1000;
   }
+  
+  // Обновление блюра
   const blurActive = isInBlurRange(video.currentTime);
-  if (blurActive !== lastBlurActive){
-    lastBlurActive = blurActive;
+  if (blurActive !== lastBlurActive) {
     updateVideoFilter();
+    lastBlurActive = blurActive;
   }
+  
+  // Обновление субтитров
+  updateSubtitles();
 });
+
+function updateSubtitles() {
+  if (!subsToggle.checked || subtitlesData.length === 0) {
+    subtitles.innerHTML = '';
+    return;
+  }
+  
+  const currentTime = video.currentTime;
+  const currentSub = subtitlesData.find(sub => 
+    currentTime >= sub.start && currentTime < sub.end
+  );
+  
+  if (currentSub) {
+    subtitles.innerHTML = `<span>${currentSub.text.replace(/\n/g, '<br>')}</span>`;
+    applySubtitlesStyle();
+  } else {
+    subtitles.innerHTML = '';
+  }
+}
 video.addEventListener('loadedmetadata', () => {
   const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
   ovTime.textContent = txt;
