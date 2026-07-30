@@ -27,7 +27,7 @@ html, body{
 }
 .title-font{ font-family:'Helvetica', sans-serif; letter-spacing: .02em; font-weight: 400; }
 
-/* ---------- DROP VIEW ---------- */
+/* ---------- ЭКРАН ВЫБОРА ФАЙЛА ---------- */
 #drop-view{
   flex: 1; display:flex; flex-direction:column; align-items:center; justify-content:center;
   padding: 40px 20px;
@@ -64,7 +64,7 @@ input[type=file]{ display:none; }
   display:none;
 }
 
-/* ---------- RESUME PANEL (File System Access + fallback list) ---------- */
+/* ---------- ПАНЕЛЬ ПРОДОЛЖЕНИЯ ПРОСМОТРА ---------- */
 .resume-panel{
   width: min(640px, 90vw);
   margin-bottom: 22px;
@@ -201,7 +201,7 @@ input[type=color]{
 }
 .pos-pad:active .pos-pad-handle{ cursor: grabbing; }
 
-/* ---------- PLAYER VIEW ---------- */
+/* ---------- ЭКРАН ПЛЕЕРА ---------- */
 #player-view{ display:none; flex:1; flex-direction:column; }
 #player-view.active{ display:flex; }
 
@@ -256,7 +256,7 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
 
 .subtitles{
   position: absolute;
-  bottom: 5%;
+  bottom: 15%;
   left: 50%;
   transform: translateX(-50%);
   width: 80%;
@@ -309,9 +309,9 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
   margin-bottom: 6px;
 }
 
-/* ---------- CUSTOM CONTROLS ---------- */
-.stage:fullscreen{ margin: 0; border-radius: 0; }
-.stage:fullscreen video{ max-height: 100vh; }
+/* ---------- ПАНЕЛЬ УПРАВЛЕНИЯ ---------- */
+.stage:fullscreen, .stage:-webkit-full-screen{ margin: 0; border-radius: 0; }
+.stage:fullscreen video, .stage:-webkit-full-screen video{ max-height: 100vh; }
 
 .click-catcher{ position:absolute; inset:0; z-index: 1; cursor: default; }
 
@@ -359,7 +359,7 @@ input[type=range]:disabled{
 #seek{ flex: 1 1 140px; min-width: 60px; }
 #volume-range{ width: 80px; }
 
-/* Fix: make thumb not block clicks on the track */
+/* Ползунок не перехватывает клики по треку */
 input[type=range]::-webkit-slider-thumb{
   pointer-events: none;
 }
@@ -372,7 +372,7 @@ input[type=range]::-moz-range-thumb{
 .overlay{ z-index: 2; }
 .video-error{ z-index: 5; }
 
-/* ---------- CENTER PLAY/PAUSE ICON ---------- */
+/* ---------- ИКОНКА ПЛЕЙ/ПАУЗА ПО ЦЕНТРУ ---------- */
 .center-play-icon{
   position: absolute;
   top: 50%;
@@ -403,7 +403,7 @@ input[type=range]::-moz-range-thumb{
   opacity: 0 !important;
 }
 
-/* ---------- DYNAMICS / BOOST PANEL ---------- */
+/* ---------- ПАНЕЛЬ ЗВУКА (НОРМАЛИЗАЦИЯ/БУСТ) ---------- */
 .dr-panel{
   position:absolute; right: 12px; left: 12px; bottom: 62px; z-index: 6;
   width: auto; max-width: 300px; margin-left: auto;
@@ -438,8 +438,8 @@ input[type=range]::-moz-range-thumb{
 .dr-panel.open{ display:block; }
 #subs-panel{ display:none; }
 #subs-panel.open{ display:block; }
-.stage.controls-hidden .dr-panel{ opacity:0; pointer-events:none; }
-.stage.controls-hidden #subs-panel{ opacity:0; pointer-events:none; }
+.stage.controls-hidden .dr-panel:not(.open){ opacity:0; pointer-events:none; }
+.stage.controls-hidden #subs-panel:not(.open){ opacity:0; pointer-events:none; }
 .dr-row{
   display:flex; align-items:center; gap: 10px; margin-bottom: 13px;
 }
@@ -541,6 +541,12 @@ input[type=range]::-moz-range-thumb{
   padding: 6px 9px; flex:1; min-width:0;
 }
 
+.subs-file-name{
+  font-size: 12px; color: var(--muted); flex: 1 1 auto;
+  min-width: 0; /* чтобы сжимался и не выталкивал кнопку удаления */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .timing-hint{
   font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-bottom: 12px;
 }
@@ -633,7 +639,7 @@ input[type=range]::-moz-range-thumb{
   width: 14px; height: 14px;
 }
 
-/* ---------- RESPONSIVE / MOBILE ---------- */
+/* ---------- АДАПТИВНОСТЬ / МОБИЛЬНЫЕ ---------- */
 @media (max-width: 720px){
   .stage{ margin: 0 10px 10px; }
   .toolbar{ padding: 16px 10px 12px; gap: 10px; }
