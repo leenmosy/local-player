@@ -21,6 +21,8 @@ const videoErrorEl = document.getElementById('video-error');
 const centerPlayIcon = document.getElementById('center-play-icon');
 const centerIconPlay = document.getElementById('center-icon-play');
 const centerIconPause = document.getElementById('center-icon-pause');
+const subsFileName = document.getElementById('subs-file-name');
+const subsRemoveBtn = document.getElementById('subs-remove-btn');
 
 // --- category headers for collapsible settings ---
 const categoryHeaders = document.querySelectorAll('.dr-category-header');
@@ -901,6 +903,8 @@ function loadSettings(){
         if (subsData.fileName) {
           subsFileName.textContent = subsData.fileName;
         }
+        // Показываем кнопку удаления если есть загруженные субтитры
+        subsRemoveBtn.style.display = 'flex';
       } catch(e) {
         subtitlesData = [];
         savedSubsContent = null;
@@ -1370,7 +1374,6 @@ const subtitles = document.getElementById('subtitles');
 const subsToggle = document.getElementById('subs-toggle');
 const subsFile = document.getElementById('subs-file');
 const subsLoadBtn = document.getElementById('subs-load-btn');
-const subsFileName = document.getElementById('subs-file-name');
 const subsSize = document.getElementById('subs-size');
 const subsSizeVal = document.getElementById('subs-size-val');
 const subsColor = document.getElementById('subs-color');
@@ -1510,8 +1513,31 @@ subsFile.addEventListener('change', (e) => {
     isSubtitlesLoaded = true;
     // Применяем стили сразу после загрузки
     applySubtitlesStyle();
+    // Показываем кнопку удаления
+    subsRemoveBtn.style.display = 'flex';
   };
   reader.readAsText(file);
+});
+
+// --- Удаление субтитров ---
+subsRemoveBtn.addEventListener('click', () => {
+  subtitlesData = [];
+  savedSubsContent = null;
+  isSubtitlesLoaded = false;
+  subtitles.innerHTML = '';
+  subsFileName.textContent = 'Файл не выбран';
+  subsFile.value = '';
+  subsRemoveBtn.style.display = 'none';
+  
+  // Удаляем из localStorage
+  if (currentFileKey) {
+    try {
+      localStorage.removeItem(subsKey(currentFileKey));
+    } catch(e) {}
+  }
+  
+  // Сохраняем настройки
+  saveSettingsImmediate();
 });
 
 function parseSubtitles(content, format) {
