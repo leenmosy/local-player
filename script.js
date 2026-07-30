@@ -24,10 +24,10 @@ const centerIconPause = document.getElementById('center-icon-pause');
 const subsFileName = document.getElementById('subs-file-name');
 const subsRemoveBtn = document.getElementById('subs-remove-btn');
 
-// --- category headers for collapsible settings ---
+// --- заголовки сворачиваемых категорий ---
 const categoryHeaders = document.querySelectorAll('.dr-category-header');
 
-// --- overlay settings controls ---
+// --- элементы управления оверлеем ---
 const ovToggle = document.getElementById('ov-toggle');
 const ovSize = document.getElementById('ov-size');
 const ovSizeVal = document.getElementById('ov-size-val');
@@ -192,6 +192,7 @@ function applyOverlaySettings(){
 
 let currentObjectUrl = null;
 let durationChangeHandler = null;
+let loadedMetadataHandler = null;
 let uiSyncInterval = null;
 
 // Debouncing для saveSettings
@@ -209,10 +210,6 @@ function saveSettings(){
   // Устанавливаем новый таймер
   saveSettingsTimeout = setTimeout(() => {
     try{
-      // Сначала загружаем текущие настройки из localStorage
-      const existingRaw = localStorage.getItem(settingsKey(currentFileKey));
-      const existingSettings = existingRaw ? JSON.parse(existingRaw) : {};
-      
       const settings = {
         drToggle: drToggle.checked,
         drStrength: drStrength.value,
@@ -237,10 +234,7 @@ function saveSettings(){
         subsOpacity: subsOpacity.value,
         subsBg: subsBg.value,
         subsBgOpacity: subsBgOpacity.value,
-        subsBottom: subsBottom.value,
-        // Сохраняем существующий subsContent если есть, иначе используем текущий
-        subsContent: existingSettings.subsContent || (subtitlesData.length > 0 ? JSON.stringify(subtitlesData) : null),
-        subsFileName: existingSettings.subsFileName || subsFileName.textContent
+        subsBottom: subsBottom.value
       };
       localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
     } catch(e){ /* хранилище недоступно */ }
@@ -279,9 +273,7 @@ function saveSettingsImmediate(){
       subsOpacity: subsOpacity.value,
       subsBg: subsBg.value,
       subsBgOpacity: subsBgOpacity.value,
-      subsBottom: subsBottom.value,
-      subsContent: savedSubsContent || (subtitlesData.length > 0 ? JSON.stringify(subtitlesData) : null),
-      subsFileName: subsFileName.textContent
+      subsBottom: subsBottom.value
     };
     localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
   } catch(e){ /* хранилище недоступно */ }
@@ -340,6 +332,11 @@ let blurRanges = []; // [{ from: сек, to: сек }, ...], отсортиро�
 let currentEditingItem = null; // текущий редактируемый элемент
 let isEditing = false; // флаг для предотвращения одновременного редактирования
 
+// Проверка пересечения с существующими диапазонами (excludeIdx — свой же индекс при редактировании)
+function findOverlappingRange(from, to, excludeIdx){
+  return blurRanges.some((r, i) => i !== excludeIdx && !(to < r.from || from > r.to));
+}
+
 function parseTimeToSeconds(str){
   if (!str) return null;
   const parts = str.trim().split(':');
@@ -389,6 +386,7 @@ function renderBlurRanges(){
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       blurRanges.splice(idx, 1);
+      stopEditingSession();
       renderBlurRanges();
       updateVideoFilter();
       saveSettingsImmediate();
@@ -406,14 +404,29 @@ function renderBlurRanges(){
   });
 }
 
+let activeOutsideClickHandler = null;
+
+// Единая точка завершения сессии редактирования — снимает обработчик клика вне поля
+// и сбрасывает флаги, чтобы состояние редактирования не «зависало» между рендерами
+function stopEditingSession(){
+  if (activeOutsideClickHandler){
+    document.removeEventListener('click', activeOutsideClickHandler, true);
+    activeOutsideClickHandler = null;
+  }
+  currentEditingItem = null;
+  isEditing = false;
+}
+
 function startEditingRange(idx, item, rangeText) {
-  // Предотвращаем одновременное редактирование
-  if (isEditing) return;
-  
-  // Если уже редактируем другой диапазон, сначала сбрасываем
-  if (currentEditingItem !== null && currentEditingItem !== item) {
+  // Если кликнули на уже редактируемый диапазон, ничего не делаем
+  if (currentEditingItem === item) {
+    return;
+  }
+
+  // Если уже редактируем другой диапазон — закрываем его и переключаемся на новый
+  if (currentEditingItem !== null) {
+    stopEditingSession();
     renderBlurRanges();
-    currentEditingItem = null;
     // После перерендеринга находим новый элемент по индексу
     setTimeout(() => {
       const newItems = timingList.querySelectorAll('.timing-item');
@@ -425,11 +438,6 @@ function startEditingRange(idx, item, rangeText) {
         }
       }
     }, 0);
-    return;
-  }
-  
-  // Если кликнули на уже редактируемый диапазон, ничего не делаем
-  if (currentEditingItem === item) {
     return;
   }
   
@@ -515,32 +523,42 @@ function startEditingRange(idx, item, rangeText) {
       toInput.title = 'Время окончания должно быть больше времени начала';
       return;
     }
+
+    if (findOverlappingRange(from, to, idx)) {
+      fromInput.style.borderColor = '#E08B7D';
+      toInput.style.borderColor = '#E08B7D';
+      fromInput.title = 'Этот диапазон пересекается с другим';
+      toInput.title = 'Этот диапазон пересекается с другим';
+      return;
+    }
+
+    if (isDurationUsable() && to > video.duration) {
+      fromInput.style.borderColor = '#E08B7D';
+      toInput.style.borderColor = '#E08B7D';
+      fromInput.title = 'Время окончания превышает длительность видео';
+      toInput.title = 'Время окончания превышает длительность видео';
+      return;
+    }
     
     // Сбрасываем стили ошибок
     fromInput.style.borderColor = '';
     toInput.style.borderColor = '';
+    fromInput.title = '';
+    toInput.title = '';
     
     // Обновляем диапазон
     blurRanges[idx] = { from, to };
     blurRanges.sort((a, b) => a.from - b.from);
-    currentEditingItem = null;
-    isEditing = false;
+    stopEditingSession();
     renderBlurRanges();
     updateVideoFilter();
     saveSettingsImmediate();
-    
-    // Убираем обработчик
-    document.removeEventListener('click', closeOnClickOutside, true);
   };
   
   // Функция отмены
   const cancelEdit = () => {
-    currentEditingItem = null;
-    isEditing = false;
+    stopEditingSession();
     renderBlurRanges();
-    
-    // Убираем обработчик
-    document.removeEventListener('click', closeOnClickOutside, true);
   };
   
   // Обработчики
@@ -569,16 +587,15 @@ function startEditingRange(idx, item, rangeText) {
   const closeOnClickOutside = (e) => {
     // Если клик не в редактируемом элементе и не в контейнере редактирования
     if (!editContainer.contains(e.target) && !item.contains(e.target)) {
-      currentEditingItem = null;
-      isEditing = false;
+      stopEditingSession();
       renderBlurRanges();
-      document.removeEventListener('click', closeOnClickOutside, true);
     }
   };
   
   // Добавляем обработчик в capture фазе, чтобы перехватить клики раньше
   setTimeout(() => {
     document.addEventListener('click', closeOnClickOutside, true);
+    activeOutsideClickHandler = closeOnClickOutside;
   }, 10);
   
   // Сохранение при Enter
@@ -635,7 +652,7 @@ timingAddBtn.addEventListener('click', () => {
     return;
   }
   // Проверка на пересечение с существующими диапазонами
-  const hasOverlap = blurRanges.some(r => !(to < r.from || from > r.to));
+  const hasOverlap = findOverlappingRange(from, to, -1);
   if (hasOverlap){
     showTimingError('Этот диапазон пересекается с существующим');
     return;
@@ -675,6 +692,12 @@ function niceTitleFromFilename(name){
   return withoutExt.replace(/[._]/g, ' ').trim();
 }
 
+// Имя файла обрезается многоточием — дублируем в title для наведения
+function setSubsFileNameDisplay(name){
+  subsFileName.textContent = name;
+  subsFileName.title = name === 'Файл не выбран' ? '' : name;
+}
+
 // --- запоминание тайминга просмотра (localStorage) ---
 const PROGRESS_PREFIX = 'lp_progress:';
 const HANDLE_KEY_PREFIX = PROGRESS_PREFIX + 'h:';
@@ -687,8 +710,8 @@ let progressInterval = null;
 function fileKey(file){
   return PROGRESS_PREFIX + file.name + ':' + file.size + ':' + (file.lastModified || 0);
 }
-function handleFileKey(handleName){
-  return HANDLE_KEY_PREFIX + handleName;
+function handleFileKey(handleName, size, lastModified){
+  return HANDLE_KEY_PREFIX + handleName + ':' + (size || 0) + ':' + (lastModified || 0);
 }
 function settingsKey(key){
   return SETTINGS_PREFIX + key.replace(PROGRESS_PREFIX, '');
@@ -700,8 +723,8 @@ function subsKey(key){
 function saveProgress(){
   if (!currentFileKey || !video.duration || !isFinite(video.duration)) return;
   try{
+    // Тут храним только прогресс просмотра, не настройки (settingsKey не трогаем)
     if (video.currentTime < 5 || video.currentTime > video.duration - 8){
-      localStorage.removeItem(settingsKey(currentFileKey));
       localStorage.removeItem(currentFileKey);
       return;
     }
@@ -714,31 +737,7 @@ function saveProgress(){
   } catch(e){ /* хранилище недоступно — просто пропускаем */ }
 }
 
-function saveSettings(){
-  if (!currentFileKey) return;
-  try{
-    const settings = {
-      drToggle: drToggle.checked,
-      drStrength: drStrength.value,
-      drBoost: drBoost.value,
-      drSpeed: drSpeed.value,
-      drBrightness: drBrightness.value,
-      zoomLevel: zoomLevel,
-      blurRanges: blurRanges,
-      ovToggle: ovToggle.checked,
-      ovSize: ovSize.value,
-      ovColor: ovColor.value,
-      ovOpacity: ovOpacity.value,
-      ovPosX: ovPosX,
-      ovPosY: ovPosY,
-      ovAlign: ovAlign,
-      titleInput: titleInput.value,
-      volume: video.volume,
-      muted: video.muted
-    };
-    localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
-  } catch(e){ /* хранилище недоступно */ }
-}
+// (дублирующий saveSettings удалён, актуальная версия — выше, с дебаунсом)
 
 function loadSettings(){
   if (!currentFileKey) {
@@ -901,7 +900,7 @@ function loadSettings(){
         savedSubsContent = subsData.content;
         isSubtitlesLoaded = true;
         if (subsData.fileName) {
-          subsFileName.textContent = subsData.fileName;
+          setSubsFileNameDisplay(subsData.fileName);
         }
         // Показываем кнопку удаления если есть загруженные субтитры
         subsRemoveBtn.style.display = 'flex';
@@ -913,6 +912,11 @@ function loadSettings(){
     } else {
       savedSubsContent = null;
       isSubtitlesLoaded = false;
+      subtitlesData = [];
+      subtitles.innerHTML = '';
+      setSubsFileNameDisplay('Файл не выбран');
+      subsFile.value = '';
+      subsRemoveBtn.style.display = 'none';
     }
     
     // Инициализация стилей субтитров при загрузке (если нет сохраненных настроек)
@@ -924,6 +928,7 @@ function loadSettings(){
     
     // Восстанавливаем громкость
     video.volume = settings.volume;
+    if (video.volume > 0) lastVolume = video.volume;
     
     // Восстанавливаем состояние мута
     video.muted = settings.muted;
@@ -1077,7 +1082,14 @@ async function checkSavedHandle(){
     if (!handle){ continueRow.style.display = 'none'; updatePanelVisibility(); return; }
     savedHandle = handle;
     let raw = null;
-    try{ raw = localStorage.getItem(handleFileKey(handle.name)); } catch(e){}
+    try{
+      // Ключ должен совпадать с тем, что использует loadFile (см. handleFileKey)
+      const previewFile = await handle.getFile();
+      raw = localStorage.getItem(handleFileKey(handle.name, previewFile.size, previewFile.lastModified));
+    } catch(e){
+      // Доступ ещё не разрешён — покажем кнопку без точного времени
+      raw = null;
+    }
     const data = raw ? JSON.parse(raw) : null;
     ccName.textContent = handle.name;
     ccTime.textContent = data ? `${formatTime(data.t)}${data.duration ? ' / ' + formatTime(data.duration) : ''}` : 'с начала';
@@ -1133,7 +1145,7 @@ function loadFile(file, handle){
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
   if (handle){
-    currentFileKey = handleFileKey(handle.name);
+    currentFileKey = handleFileKey(handle.name, file.size, file.lastModified);
     currentFileName = handle.name;
   } else {
     currentFileKey = fileKey(file);
@@ -1188,20 +1200,34 @@ function loadFile(file, handle){
       connectGraph();
     }
     
-    // Сбрасываем субтитры только если нет сохраненных
-    if (!isSubtitlesLoaded) {
-      subtitlesData = [];
-      savedSubsContent = null;
-      subtitles.innerHTML = '';
-      subsFileName.textContent = 'Файл не выбран';
-      subsFile.value = '';
-    }
-    
-    // Сбрасываем громкость до дефолтного значения
-    video.volume = 1;
-    volumeRange.value = 1;
+    // Субтитры (контент и стиль) всегда сбрасываются для файла без настроек
+    subtitlesData = [];
+    savedSubsContent = null;
+    isSubtitlesLoaded = false;
+    subtitles.innerHTML = '';
+    subsFileName.textContent = 'Файл не выбран';
+    subsFileName.title = '';
+    subsFile.value = '';
+    subsRemoveBtn.style.display = 'none';
+
+    subsToggle.checked = true;
+    subtitles.style.display = 'block';
+    subsSize.value = 30;
+    subsSizeVal.textContent = '30px';
+    subsColor.value = '#ffffff';
+    subsOpacity.value = 100;
+    subsOpacityVal.textContent = '100%';
+    subsBg.value = '#000000';
+    subsBgOpacity.value = 50;
+    subsBgOpacityVal.textContent = '50%';
+    subsBottom.value = 15;
+    subsBottomVal.textContent = '15%';
+    applySubtitlesStyle();
+
+    // Громкость нового файла — как в текущей сессии, а не всегда 100%
+    video.volume = lastVolume > 0 ? lastVolume : 1;
+    volumeRange.value = video.volume;
     video.muted = false;
-    lastVolume = 1;
     updateVolumeIcon();
   }
 
@@ -1214,9 +1240,13 @@ function loadFile(file, handle){
   ovTime.textContent = '00:00 / 00:00';
   applyOverlaySettings();
 
-  video.addEventListener('loadedmetadata', () => {
+  if (loadedMetadataHandler){
+    video.removeEventListener('loadedmetadata', loadedMetadataHandler);
+  }
+  loadedMetadataHandler = () => {
     fixInfiniteDuration(restoreProgress);
-  }, { once: true });
+  };
+  video.addEventListener('loadedmetadata', loadedMetadataHandler, { once: true });
   // подстраховка: если браузер сам пришлёт durationchange позже (без нашего трюка) —
   // снимаем блокировку сика, если раньше он завис из-за Infinity
   if (durationChangeHandler){
@@ -1234,7 +1264,7 @@ function loadFile(file, handle){
   video.play().catch(()=>{});
 }
 
-// --- drag & drop ---
+// --- перетаскивание файла ---
 ['dragenter','dragover'].forEach(evt =>
   dropzone.addEventListener(evt, e => { 
     e.preventDefault(); 
@@ -1349,7 +1379,7 @@ dropzone.addEventListener('click', async () => {
 });
 fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
 
-// --- overlay + custom controls sync ---
+// --- оверлей и синхронизация controls ---
 const stage = document.getElementById('stage');
 const clickCatcher = document.getElementById('click-catcher');
 const playBtn = document.getElementById('play-btn');
@@ -1445,19 +1475,24 @@ function ensureAudioGraph(){
   }
 }
 
+function collapseCategoriesIn(panelEl){
+  panelEl.querySelectorAll('.dr-category-header').forEach(header => {
+    header.setAttribute('aria-expanded', 'false');
+    const content = header.nextElementSibling;
+    if (content && content.classList.contains('dr-category-content')) {
+      content.classList.add('collapsed');
+    }
+  });
+}
+
 function setDrPanelOpen(open){
   drPanel.classList.toggle('open', open);
   drBtn.setAttribute('aria-expanded', String(open));
   
-  // При открытии панели всегда сворачиваем все категории
+  // Сворачиваем свои категории и закрываем панель субтитров (не должны перекрываться)
   if (open) {
-    categoryHeaders.forEach(header => {
-      header.setAttribute('aria-expanded', 'false');
-      const content = header.nextElementSibling;
-      if (content && content.classList.contains('dr-category-content')) {
-        content.classList.add('collapsed');
-      }
-    });
+    collapseCategoriesIn(drPanel);
+    setSubsPanelOpen(false);
   }
 }
 drBtn.addEventListener('click', () => {
@@ -1469,15 +1504,10 @@ function setSubsPanelOpen(open){
   subsPanel.classList.toggle('open', open);
   subsBtn.setAttribute('aria-expanded', String(open));
   
-  // При открытии панели всегда сворачиваем все категории
+  // Аналогично: свои категории сворачиваем, панель настроек закрываем
   if (open) {
-    categoryHeaders.forEach(header => {
-      header.setAttribute('aria-expanded', 'false');
-      const content = header.nextElementSibling;
-      if (content && content.classList.contains('dr-category-content')) {
-        content.classList.add('collapsed');
-      }
-    });
+    collapseCategoriesIn(subsPanel);
+    setDrPanelOpen(false);
   }
 }
 subsBtn.addEventListener('click', () => {
@@ -1497,12 +1527,12 @@ subsFile.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   
-  subsFileName.textContent = file.name;
+  setSubsFileNameDisplay(file.name);
   
   const reader = new FileReader();
   reader.onload = (event) => {
     const content = event.target.result;
-    parseSubtitles(content, file.name.endsWith('.srt') ? 'srt' : 'vtt');
+    parseSubtitles(content, file.name.toLowerCase().endsWith('.srt') ? 'srt' : 'vtt');
     // Сохраняем содержимое в отдельный ключ
     const subsData = {
       content: JSON.stringify(subtitlesData),
@@ -1526,6 +1556,7 @@ subsRemoveBtn.addEventListener('click', () => {
   isSubtitlesLoaded = false;
   subtitles.innerHTML = '';
   subsFileName.textContent = 'Файл не выбран';
+  subsFileName.title = '';
   subsFile.value = '';
   subsRemoveBtn.style.display = 'none';
   
@@ -1939,7 +1970,7 @@ function updateSubtitles() {
   );
   
   if (currentSub) {
-    subtitles.innerHTML = `<span>${currentSub.text.replace(/\n/g, '<br>')}</span>`;
+    subtitles.innerHTML = `<span>${escapeHtml(currentSub.text).replace(/\n/g, '<br>')}</span>`;
     applySubtitlesStyle();
   } else {
     subtitles.innerHTML = '';
@@ -1995,19 +2026,34 @@ muteBtn.addEventListener('click', () => {
 });
 updateVolumeIcon();
 
+// Обёртки для Fullscreen API — с поддержкой старого Safari/iOS
+function getFullscreenElement(){
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+function requestFs(el){
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (fn) return fn.call(el);
+}
+function exitFs(){
+  const fn = document.exitFullscreen || document.webkitExitFullscreen;
+  if (fn) return fn.call(document);
+}
+
 fullscreenBtn.addEventListener('click', () => {
-  if (!document.fullscreenElement){
-    stage.requestFullscreen();
+  if (!getFullscreenElement()){
+    requestFs(stage);
   } else {
-    document.exitFullscreen();
+    exitFs();
   }
 });
-document.addEventListener('fullscreenchange', () => {
-  const isFs = !!document.fullscreenElement;
-  iconFsOpen.style.display = isFs ? 'none' : '';
-  iconFsClose.style.display = isFs ? '' : 'none';
-  fullscreenBtn.setAttribute('aria-pressed', String(isFs));
-  fullscreenBtn.setAttribute('aria-label', isFs ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим');
+['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    const isFs = !!getFullscreenElement();
+    iconFsOpen.style.display = isFs ? 'none' : '';
+    iconFsClose.style.display = isFs ? '' : 'none';
+    fullscreenBtn.setAttribute('aria-pressed', String(isFs));
+    fullscreenBtn.setAttribute('aria-label', isFs ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим');
+  });
 });
 
 // --- автоскрытие панели при воспроизведении ---
@@ -2036,13 +2082,16 @@ function adjustVolume(delta){
   updateVolumeIcon();
   saveSettings();
 }
+document.querySelectorAll('input[type="range"]').forEach(r => {
+  r.addEventListener('change', () => r.blur());
+});
 document.addEventListener('keydown', (e) => {
   if (!playerView.classList.contains('active')) return;
   if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
   if (e.code === 'Space'){ e.preventDefault(); togglePlay(); showControls(); }
   else if (e.code === 'KeyF'){ fullscreenBtn.click(); }
-  else if (e.code === 'ArrowRight'){ video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); showControls(); }
-  else if (e.code === 'ArrowLeft'){ video.currentTime = Math.max(0, video.currentTime - 5); showControls(); }
+  else if (e.code === 'ArrowRight'){ seekBy(5); showControls(); }
+  else if (e.code === 'ArrowLeft'){ seekBy(-5); showControls(); }
   else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.05); showControls(); }
   else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.05); showControls(); }
 });
@@ -2090,13 +2139,9 @@ video.addEventListener('loadeddata', () => {
   videoErrorEl.style.display = 'none';
 });
 
-// --- editable title ---
-titleInput.addEventListener('input', () => {
-  ovTitle.textContent = titleInput.value || '—';
-  saveSettings();
-});
+// (второй обработчик titleInput удалён — он уже есть в начале файла)
 
-// --- back to drop view ---
+// --- возврат к выбору файла ---
 backBtn.addEventListener('click', () => {
   stopProgressTracking();
   video.pause();
