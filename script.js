@@ -279,12 +279,6 @@ function saveSettingsImmediate(){
   } catch(e){ /* хранилище недоступно */ }
 }
 
-// --- фикс Infinity/NaN-длительности ---
-// Некоторые контейнеры (в т.ч. часть mkv-рипов, webm с "unknown duration" и т.п.)
-// репортят video.duration === Infinity сразу после loadedmetadata, и настоящая
-// длина становится известна браузеру только после того, как он "прощупает" конец
-// потока перемоткой. Без этого таймер/сик застревают в нулях НЕ только для .mkv,
-// а для любого файла с таким поведением.
 function isDurationUsable(){
   return isFinite(video.duration) && video.duration > 0;
 }
@@ -2138,8 +2132,6 @@ video.addEventListener('error', () => {
 video.addEventListener('loadeddata', () => {
   videoErrorEl.style.display = 'none';
 });
-
-// (второй обработчик titleInput удалён — он уже есть в начале файла)
 
 // --- возврат к выбору файла ---
 backBtn.addEventListener('click', () => {
