@@ -1,3 +1,10 @@
+@font-face {
+  font-family: 'Helvetica';
+  src: url('fonts/helvetica_regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+}
+
 :root{
   --bg: #0B0D10;
   --surface: #121418;
@@ -18,13 +25,7 @@ html, body{
   display:flex; flex-direction:column;
   overflow-x: hidden;
 }
-.title-font{ font-family:'Coolvetica', sans-serif; letter-spacing: .02em; }
-
-.reel-strip{
-  height: 12px; flex: 0 0 auto;
-  background-image: radial-gradient(circle, var(--surface-2) 3px, transparent 3.2px);
-  background-size: 22px 12px; background-position: center;
-}
+.title-font{ font-family:'Helvetica', sans-serif; letter-spacing: .02em; font-weight: 400; }
 
 /* ---------- DROP VIEW ---------- */
 #drop-view{
@@ -53,7 +54,7 @@ html, body{
   background: #1a170d;
 }
 .dropzone svg{ width: 40px; height: 40px; stroke: var(--accent); }
-.dropzone .main-txt{ font-family:'Coolvetica', sans-serif; letter-spacing: .02em; font-size: 19px; font-weight: 400; }
+.dropzone .main-txt{ font-family:'Helvetica', sans-serif; letter-spacing: .02em; font-size: 19px; font-weight: 300; }
 .dropzone .sub-txt{ color: var(--muted); font-size: 13px; }
 .dropzone .sub-txt code{ background: var(--surface-2); padding: 1px 6px; border-radius: 5px; font-family:'JetBrains Mono', monospace; }
 input[type=file]{ display:none; }
@@ -63,8 +64,6 @@ input[type=file]{ display:none; }
   display:none;
 }
 
-/* ---------- OVERLAY SETTINGS (drop view) ---------- */
-/* ---------- RESUME HINT (drop view) ---------- */
 /* ---------- RESUME PANEL (File System Access + fallback list) ---------- */
 .resume-panel{
   width: min(640px, 90vw);
@@ -207,7 +206,7 @@ input[type=color]{
 
 .toolbar{
   display:flex; align-items:center; justify-content: center; gap: 18px;
-  padding: 22px 24px 16px; position: relative;
+  padding: 60px 24px 16px; position: relative;
 }
 .back-btn{
   font-size: 12px; padding: 6px 11px; background: var(--surface-2); color: var(--muted);
@@ -472,14 +471,6 @@ input[type=range]::-moz-range-thumb{
 .checkbox input:checked + .box{ background: var(--accent-orange); border-color: var(--accent-orange); }
 .checkbox input:checked + .box:after{ opacity:1; }
 
-.dr-divider{
-  height:1px; background:#23272e; margin: 14px 0;
-}
-.dr-section-title{
-  font-family:'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing:.08em;
-  text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
-}
-
 /* ---------- Категории настроек ---------- */
 .dr-category{
   margin-bottom: 12px;
@@ -510,6 +501,7 @@ input[type=range]::-moz-range-thumb{
 .dr-category-title{
   font-family:'JetBrains Mono', monospace;
   font-size: 11px;
+  font-weight: 300;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--text);
@@ -539,7 +531,7 @@ input[type=range]::-moz-range-thumb{
 }
 .dr-text-input{
   background: var(--surface); border:1px solid #2a2f37; border-radius: 6px;
-  color: var(--text); font-family:'Coolvetica', sans-serif; letter-spacing:.02em; font-size: 13.5px;
+  color: var(--text); font-family:'Inter', sans-serif; font-size: 13.5px;
   padding: 6px 9px; flex:1; min-width:0;
 }
 
