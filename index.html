@@ -7,12 +7,9 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23F2C245'/%3E%3Cpolygon points='20,16 48,32 20,48' fill='%230B0D10'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-<link href="https://fonts.cdnfonts.com/css/coolvetica" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<div class="reel-strip"></div>
 
 <div id="drop-view">
   <h1 class="title-font">Локальный плеер</h1>
@@ -45,7 +42,7 @@
 
 <div id="player-view">
   <div class="toolbar">
-    <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">← Назад</button>
+    <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">Назад</button>
     <h1 class="title-font player-title" id="fname"></h1>
   </div>
   <div class="stage" id="stage">
@@ -299,7 +296,6 @@
       <svg id="center-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
       <svg id="center-icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
     </div>
-    <div class="video-error" id="video-error" style="display:none"></div>
   </div>
 </div>
 
