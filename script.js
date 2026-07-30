@@ -17,9 +17,13 @@ const continueRow = document.getElementById('continue-row');
 const ccName = document.getElementById('cc-name');
 const ccTime = document.getElementById('cc-time');
 const ccOpenBtn = document.getElementById('cc-open-btn');
+const videoErrorEl = document.getElementById('video-error');
 const centerPlayIcon = document.getElementById('center-play-icon');
 const centerIconPlay = document.getElementById('center-icon-play');
 const centerIconPause = document.getElementById('center-icon-pause');
+
+// --- category headers for collapsible settings ---
+const categoryHeaders = document.querySelectorAll('.dr-category-header');
 
 // --- overlay settings controls ---
 const ovToggle = document.getElementById('ov-toggle');
@@ -28,23 +32,135 @@ const ovSizeVal = document.getElementById('ov-size-val');
 const ovColor = document.getElementById('ov-color');
 const ovOpacity = document.getElementById('ov-opacity');
 const ovOpacityVal = document.getElementById('ov-opacity-val');
-const posButtons = document.querySelectorAll('.pos-btn');
-let selectedPosition = 'bottom-right';
+const posPad = document.getElementById('pos-pad');
+const posHandle = document.getElementById('pos-handle');
+const alignButtons = document.querySelectorAll('.align-btn');
+const presetButtons = document.querySelectorAll('.preset-btn');
+
+const OV_POS_MIN = 1.5;
+const OV_POS_MAX = 98.5;
+
+const OV_DEFAULT_SIZE = 19;
+const OV_DEFAULT_COLOR = '#ffffff';
+const OV_DEFAULT_OPACITY = 55;
+const OV_DEFAULT_POS_X = OV_POS_MAX;
+const OV_DEFAULT_POS_Y = OV_POS_MAX;
+const OV_DEFAULT_ALIGN = 'right';
+
+let ovPosX = OV_DEFAULT_POS_X;
+let ovPosY = OV_DEFAULT_POS_Y;
+let ovAlign = OV_DEFAULT_ALIGN;
 
 ovToggle.addEventListener('change', () => { applyOverlaySettings(); saveSettings(); });
 ovSize.addEventListener('input', () => { ovSizeVal.textContent = ovSize.value + 'px'; applyOverlaySettings(); saveSettings(); });
 ovColor.addEventListener('input', () => { applyOverlaySettings(); saveSettings(); });
 ovOpacity.addEventListener('input', () => { ovOpacityVal.textContent = ovOpacity.value + '%'; applyOverlaySettings(); saveSettings(); });
-posButtons.forEach(btn => {
+titleInput.addEventListener('input', () => {
+  ovTitle.textContent = titleInput.value || '—';
+  saveSettings();
+});
+
+function setOverlayAlign(align){
+  ovAlign = align;
+  alignButtons.forEach(b => {
+    const active = b.dataset.align === align;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
+}
+alignButtons.forEach(btn => {
   btn.addEventListener('click', () => {
-    posButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
-    btn.classList.add('active');
-    btn.setAttribute('aria-pressed', 'true');
-    selectedPosition = btn.dataset.pos;
+    setOverlayAlign(btn.dataset.align);
     applyOverlaySettings();
     saveSettings();
   });
 });
+
+function setOverlayPosition(x, y){
+  // не даём поставить оверлей впритык к краю кадра
+  ovPosX = Math.max(OV_POS_MIN, Math.min(OV_POS_MAX, x));
+  ovPosY = Math.max(OV_POS_MIN, Math.min(OV_POS_MAX, y));
+  posHandle.style.left = ovPosX + '%';
+  posHandle.style.top = ovPosY + '%';
+  syncPresetActiveState();
+}
+
+// --- пресеты быстрого позиционирования (4 угла) ---
+const OV_PRESETS = {
+  'top-left':     { x: OV_POS_MIN, y: OV_POS_MIN, align: 'left' },
+  'top-right':    { x: OV_POS_MAX, y: OV_POS_MIN, align: 'right' },
+  'bottom-left':  { x: OV_POS_MIN, y: OV_POS_MAX, align: 'left' },
+  'bottom-right': { x: OV_POS_MAX, y: OV_POS_MAX, align: 'right' }
+};
+
+function syncPresetActiveState(){
+  presetButtons.forEach(btn => {
+    const p = OV_PRESETS[btn.dataset.preset];
+    const match = p && Math.abs(p.x - ovPosX) < 0.01 && Math.abs(p.y - ovPosY) < 0.01;
+    btn.classList.toggle('active', !!match);
+  });
+}
+
+presetButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const p = OV_PRESETS[btn.dataset.preset];
+    if (!p) return;
+    overlayEl.classList.add('pos-smooth');
+    setOverlayPosition(p.x, p.y);
+    setOverlayAlign(p.align);
+    applyOverlaySettings();
+    saveSettings();
+  });
+});
+
+function posFromPointer(e){
+  const rect = posPad.getBoundingClientRect();
+  return {
+    x: ((e.clientX - rect.left) / rect.width) * 100,
+    y: ((e.clientY - rect.top) / rect.height) * 100
+  };
+}
+
+let draggingPad = false;
+let dragRafPending = false;
+let lastPointerEvent = null;
+
+function applyDragPosition(){
+  dragRafPending = false;
+  if (!lastPointerEvent) return;
+  const p = posFromPointer(lastPointerEvent);
+  setOverlayPosition(p.x, p.y);
+  applyOverlaySettings();
+}
+
+posPad.addEventListener('pointerdown', (e) => {
+  draggingPad = true;
+  overlayEl.classList.remove('pos-smooth');
+  posPad.setPointerCapture(e.pointerId);
+  const p = posFromPointer(e);
+  setOverlayPosition(p.x, p.y);
+  applyOverlaySettings();
+});
+posPad.addEventListener('pointermove', (e) => {
+  if (!draggingPad) return;
+  lastPointerEvent = e;
+  if (!dragRafPending){
+    dragRafPending = true;
+    requestAnimationFrame(applyDragPosition);
+  }
+});
+function endPadDrag(e){
+  if (!draggingPad) return;
+  draggingPad = false;
+  overlayEl.classList.add('pos-smooth');
+  try { posPad.releasePointerCapture(e.pointerId); } catch(err){ /* уже отпущено */ }
+  saveSettings();
+}
+posPad.addEventListener('pointerup', endPadDrag);
+posPad.addEventListener('pointercancel', endPadDrag);
+setOverlayPosition(ovPosX, ovPosY);
+setOverlayAlign(ovAlign);
+overlayEl.classList.add('pos-smooth');
 
 function hexToRgba(hex, alpha){
   const h = hex.replace('#','');
@@ -61,14 +177,90 @@ function applyOverlaySettings(){
   ovTime.style.fontSize = size;
   ovTitle.style.color = color;
   ovTime.style.color = color;
-  overlayEl.classList.remove('pos-top-left','pos-top-right','pos-bottom-left','pos-bottom-right');
-  overlayEl.classList.add('pos-' + selectedPosition);
+
+  overlayEl.style.left = ovPosX + '%';
+  overlayEl.style.top = ovPosY + '%';
+  // Непрерывная привязка: якорь смещается пропорционально позиции,
+  // без резких скачков при пересечении пороговых зон.
+  overlayEl.style.transform = `translate(${-ovPosX}%, ${-ovPosY}%)`;
+  overlayEl.style.alignItems = ovAlign === 'left' ? 'flex-start' : (ovAlign === 'right' ? 'flex-end' : 'center');
+
   overlayEl.style.display = ovToggle.checked ? 'flex' : 'none';
 }
 
 let currentObjectUrl = null;
 let durationChangeHandler = null;
 let uiSyncInterval = null;
+
+// Debouncing для saveSettings
+let saveSettingsTimeout = null;
+const SAVE_SETTINGS_DELAY = 1000; // 1 секунда
+
+function saveSettings(){
+  if (!currentFileKey) return;
+  
+  // Отменяем предыдущий таймер
+  if (saveSettingsTimeout) {
+    clearTimeout(saveSettingsTimeout);
+  }
+  
+  // Устанавливаем новый таймер
+  saveSettingsTimeout = setTimeout(() => {
+    try{
+      const settings = {
+        drToggle: drToggle.checked,
+        drStrength: drStrength.value,
+        drBoost: drBoost.value,
+        drSpeed: drSpeed.value,
+        drBrightness: drBrightness.value,
+        zoomLevel: zoomLevel,
+        blurRanges: blurRanges,
+        ovToggle: ovToggle.checked,
+        ovSize: ovSize.value,
+        ovColor: ovColor.value,
+        ovOpacity: ovOpacity.value,
+        ovPosX: ovPosX,
+        ovPosY: ovPosY,
+        ovAlign: ovAlign,
+        titleInput: titleInput.value,
+        volume: video.volume,
+        muted: video.muted
+      };
+      localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
+    } catch(e){ /* хранилище недоступно */ }
+  }, SAVE_SETTINGS_DELAY);
+}
+
+// Мгновенное сохранение (для критических изменений)
+function saveSettingsImmediate(){
+  if (!currentFileKey) return;
+  if (saveSettingsTimeout) {
+    clearTimeout(saveSettingsTimeout);
+    saveSettingsTimeout = null;
+  }
+  try{
+    const settings = {
+      drToggle: drToggle.checked,
+      drStrength: drStrength.value,
+      drBoost: drBoost.value,
+      drSpeed: drSpeed.value,
+      drBrightness: drBrightness.value,
+      zoomLevel: zoomLevel,
+      blurRanges: blurRanges,
+      ovToggle: ovToggle.checked,
+      ovSize: ovSize.value,
+      ovColor: ovColor.value,
+      ovOpacity: ovOpacity.value,
+      ovPosX: ovPosX,
+      ovPosY: ovPosY,
+      ovAlign: ovAlign,
+      titleInput: titleInput.value,
+      volume: video.volume,
+      muted: video.muted
+    };
+    localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
+  } catch(e){ /* хранилище недоступно */ }
+}
 
 // --- фикс Infinity/NaN-длительности ---
 // Некоторые контейнеры (в т.ч. часть mkv-рипов, webm с "unknown duration" и т.п.)
@@ -109,6 +301,348 @@ function formatTime(sec){
   const s = Math.floor(sec%60);
   const pad = n => String(n).padStart(2,'0');
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+// --- тайминги: экран размывается в заданные промежутки (бан-моменты для стримеров) ---
+const BLUR_AMOUNT_PX = 40;
+const timingFromInput = document.getElementById('timing-from');
+const timingToInput = document.getElementById('timing-to');
+const timingAddBtn = document.getElementById('timing-add-btn');
+const timingErr = document.getElementById('timing-err');
+const timingList = document.getElementById('timing-list');
+
+let blurRanges = []; // [{ from: сек, to: сек }, ...], отсортировано по from
+let currentEditingItem = null; // текущий редактируемый элемент
+let isEditing = false; // флаг для предотвращения одновременного редактирования
+
+function parseTimeToSeconds(str){
+  if (!str) return null;
+  const parts = str.trim().split(':');
+  if (parts.length < 2 || parts.length > 3) return null;
+  const nums = parts.map(p => p.trim());
+  if (nums.some(p => p === '' || !/^\d+$/.test(p))) return null;
+  const vals = nums.map(Number);
+  
+  let seconds;
+  if (vals.length === 2){
+    const [m, s] = vals;
+    // Проверяем валидность минут и секунд
+    if (s >= 60) return null; // секунды должны быть < 60
+    seconds = m * 60 + s;
+  } else {
+    const [h, m, s] = vals;
+    // Проверяем валидность часов, минут и секунд
+    if (m >= 60) return null; // минуты должны быть < 60
+    if (s >= 60) return null; // секунды должны быть < 60
+    seconds = h * 3600 + m * 60 + s;
+  }
+  return seconds >= 0 ? seconds : null;
+}
+
+function renderBlurRanges(){
+  timingList.innerHTML = '';
+  blurRanges.forEach((range, idx) => {
+    const item = document.createElement('div');
+    item.className = 'timing-item';
+    
+    const rangeText = document.createElement('span');
+    rangeText.className = 'timing-range';
+    rangeText.textContent = `${formatTime(range.from)} – ${formatTime(range.to)}`;
+    rangeText.style.cursor = 'pointer';
+    rangeText.title = 'Нажмите для редактирования';
+    
+    rangeText.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startEditingRange(idx, item, rangeText);
+    });
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'timing-remove-btn';
+    removeBtn.setAttribute('aria-label', 'Удалить тайминг');
+    removeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      blurRanges.splice(idx, 1);
+      renderBlurRanges();
+      updateVideoFilter();
+      saveSettingsImmediate();
+    });
+    
+    item.appendChild(rangeText);
+    item.appendChild(removeBtn);
+    
+    // Предотвращаем закрытие настроек при клике на элемент
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    
+    timingList.appendChild(item);
+  });
+}
+
+function startEditingRange(idx, item, rangeText) {
+  // Предотвращаем одновременное редактирование
+  if (isEditing) return;
+  
+  // Если уже редактируем другой диапазон, сначала сбрасываем
+  if (currentEditingItem !== null && currentEditingItem !== item) {
+    renderBlurRanges();
+    currentEditingItem = null;
+    // После перерендеринга находим новый элемент по индексу
+    setTimeout(() => {
+      const newItems = timingList.querySelectorAll('.timing-item');
+      if (newItems[idx]) {
+        const newItem = newItems[idx];
+        const newRangeText = newItem.querySelector('.timing-range');
+        if (newRangeText) {
+          startEditingRange(idx, newItem, newRangeText);
+        }
+      }
+    }, 0);
+    return;
+  }
+  
+  // Если кликнули на уже редактируемый диапазон, ничего не делаем
+  if (currentEditingItem === item) {
+    return;
+  }
+  
+  // Проверяем, что элемент всё ещё существует в DOM
+  if (!document.body.contains(item)) {
+    currentEditingItem = null;
+    return;
+  }
+  
+  isEditing = true;
+  currentEditingItem = item;
+  const range = blurRanges[idx];
+  
+  // Создаем редактируемые поля
+  const editContainer = document.createElement('div');
+  editContainer.className = 'timing-edit-container';
+  editContainer.style.display = 'flex';
+  editContainer.style.alignItems = 'center';
+  editContainer.style.gap = '6px';
+  editContainer.style.flex = '1';
+  
+  const fromInput = document.createElement('input');
+  fromInput.type = 'text';
+  fromInput.className = 'dr-text-input timing-time-input';
+  fromInput.value = formatTime(range.from);
+  fromInput.style.flex = '1';
+  
+  const dash = document.createElement('span');
+  dash.className = 'timing-dash';
+  dash.textContent = '–';
+  
+  const toInput = document.createElement('input');
+  toInput.type = 'text';
+  toInput.className = 'dr-text-input timing-time-input';
+  toInput.value = formatTime(range.to);
+  toInput.style.flex = '1';
+  
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'timing-add-btn';
+  saveBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+  saveBtn.title = 'Сохранить';
+  
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'timing-remove-btn';
+  cancelBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+  cancelBtn.title = 'Отмена';
+  
+  editContainer.appendChild(fromInput);
+  editContainer.appendChild(dash);
+  editContainer.appendChild(toInput);
+  editContainer.appendChild(saveBtn);
+  editContainer.appendChild(cancelBtn);
+  
+  // Заменяем текст на редактируемые поля
+  item.replaceChild(editContainer, rangeText);
+  
+  // Предотвращаем закрытие настроек при клике на контейнер редактирования
+  editContainer.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  
+  // Фокус на первое поле
+  fromInput.focus();
+  fromInput.select();
+  
+  // Функция сохранения
+  const saveEdit = () => {
+    const from = parseTimeToSeconds(fromInput.value);
+    const to = parseTimeToSeconds(toInput.value);
+    
+    if (from === null || to === null) {
+      fromInput.style.borderColor = '#E08B7D';
+      toInput.style.borderColor = '#E08B7D';
+      return;
+    }
+    
+    if (to <= from) {
+      fromInput.style.borderColor = '#E08B7D';
+      toInput.style.borderColor = '#E08B7D';
+      fromInput.title = 'Время окончания должно быть больше времени начала';
+      toInput.title = 'Время окончания должно быть больше времени начала';
+      return;
+    }
+    
+    // Сбрасываем стили ошибок
+    fromInput.style.borderColor = '';
+    toInput.style.borderColor = '';
+    
+    // Обновляем диапазон
+    blurRanges[idx] = { from, to };
+    blurRanges.sort((a, b) => a.from - b.from);
+    currentEditingItem = null;
+    isEditing = false;
+    renderBlurRanges();
+    updateVideoFilter();
+    saveSettingsImmediate();
+    
+    // Убираем обработчик
+    document.removeEventListener('click', closeOnClickOutside, true);
+  };
+  
+  // Функция отмены
+  const cancelEdit = () => {
+    currentEditingItem = null;
+    isEditing = false;
+    renderBlurRanges();
+    
+    // Убираем обработчик
+    document.removeEventListener('click', closeOnClickOutside, true);
+  };
+  
+  // Обработчики
+  saveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    saveEdit();
+  });
+  
+  cancelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    cancelEdit();
+  });
+  
+  // Предотвращаем закрытие при клике на инпуты
+  fromInput.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  
+  toInput.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  
+  // Закрытие редактирования при клике вне области
+  const closeOnClickOutside = (e) => {
+    // Если клик не в редактируемом элементе и не в контейнере редактирования
+    if (!editContainer.contains(e.target) && !item.contains(e.target)) {
+      currentEditingItem = null;
+      isEditing = false;
+      renderBlurRanges();
+      document.removeEventListener('click', closeOnClickOutside, true);
+    }
+  };
+  
+  // Добавляем обработчик в capture фазе, чтобы перехватить клики раньше
+  setTimeout(() => {
+    document.addEventListener('click', closeOnClickOutside, true);
+  }, 10);
+  
+  // Сохранение при Enter
+  fromInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      toInput.focus();
+      toInput.select();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  });
+  
+  toInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  });
+  
+  // Сброс стилей ошибок при вводе
+  fromInput.addEventListener('input', () => {
+    fromInput.style.borderColor = '';
+  });
+  
+  toInput.addEventListener('input', () => {
+    toInput.style.borderColor = '';
+  });
+}
+
+function showTimingError(msg){
+  timingErr.textContent = msg;
+  timingErr.classList.add('show');
+}
+function clearTimingError(){
+  timingErr.textContent = '';
+  timingErr.classList.remove('show');
+}
+
+timingAddBtn.addEventListener('click', () => {
+  clearTimingError();
+  const from = parseTimeToSeconds(timingFromInput.value);
+  const to = parseTimeToSeconds(timingToInput.value);
+  if (from === null || to === null){
+    showTimingError('Неверный формат времени. Используй мм:сс или ч:мм:сс');
+    return;
+  }
+  if (to <= from){
+    showTimingError('Время окончания должно быть больше времени начала');
+    return;
+  }
+  // Проверка на пересечение с существующими диапазонами
+  const hasOverlap = blurRanges.some(r => !(to < r.from || from > r.to));
+  if (hasOverlap){
+    showTimingError('Этот диапазон пересекается с существующим');
+    return;
+  }
+  // Проверка на превышение длительности видео
+  if (isDurationUsable() && to > video.duration){
+    showTimingError('Время окончания превышает длительность видео');
+    return;
+  }
+  blurRanges.push({ from, to });
+  blurRanges.sort((a, b) => a.from - b.from);
+  renderBlurRanges();
+  updateVideoFilter();
+  saveSettingsImmediate();
+  timingFromInput.value = '';
+  timingToInput.value = '';
+  timingFromInput.focus();
+});
+
+function isInBlurRange(t){
+  // "до" указывается с точностью до секунды — считаем её включительно
+  // до конца этой секунды, а не только до её начала.
+  return blurRanges.some(r => t >= r.from && t < r.to + 1);
+}
+
+// --- единая точка применения фильтров видео (яркость + размытие тайминга) ---
+function updateVideoFilter(){
+  const parts = [];
+  const brightness = drBrightness.value / 100;
+  if (brightness !== 1) parts.push(`brightness(${brightness})`);
+  if (isInBlurRange(video.currentTime)) parts.push(`blur(${BLUR_AMOUNT_PX}px)`);
+  video.style.filter = parts.join(' ');
 }
 
 function niceTitleFromFilename(name){
@@ -160,11 +694,14 @@ function saveSettings(){
       drSpeed: drSpeed.value,
       drBrightness: drBrightness.value,
       zoomLevel: zoomLevel,
+      blurRanges: blurRanges,
       ovToggle: ovToggle.checked,
       ovSize: ovSize.value,
       ovColor: ovColor.value,
       ovOpacity: ovOpacity.value,
-      selectedPosition: selectedPosition,
+      ovPosX: ovPosX,
+      ovPosY: ovPosY,
+      ovAlign: ovAlign,
       titleInput: titleInput.value,
       volume: video.volume,
       muted: video.muted
@@ -179,43 +716,107 @@ function loadSettings(){
     const raw = localStorage.getItem(settingsKey(currentFileKey));
     if (!raw) return false;
     const settings = JSON.parse(raw);
-    if (!settings) return false;
+    if (!settings || typeof settings !== 'object') return false;
+    
+    // Валидация blurRanges
+    if (settings.blurRanges) {
+      if (!Array.isArray(settings.blurRanges)) {
+        settings.blurRanges = [];
+      } else {
+        settings.blurRanges = settings.blurRanges.filter(range => {
+          return range && 
+                 typeof range.from === 'number' && 
+                 typeof range.to === 'number' && 
+                 range.from >= 0 && 
+                 range.to > range.from;
+        });
+      }
+    } else {
+      settings.blurRanges = [];
+    }
+    
+    // Валидация числовых значений
+    const validateNumber = (val, min, max, def) => {
+      if (typeof val !== 'number' || isNaN(val)) return def;
+      return Math.max(min, Math.min(max, val));
+    };
+    
+    settings.drStrength = validateNumber(settings.drStrength, 0, 100, 55);
+    settings.drBoost = validateNumber(settings.drBoost, 100, 500, 100);
+    settings.drSpeed = validateNumber(settings.drSpeed, 0.25, 2, 1);
+    settings.drBrightness = validateNumber(settings.drBrightness, 50, 200, 100);
+    settings.zoomLevel = validateNumber(settings.zoomLevel, 50, 200, 100);
+    settings.ovSize = validateNumber(settings.ovSize, 10, 32, OV_DEFAULT_SIZE);
+    settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
+    
+    // Валидация позиций оверлея
+    if (settings.ovPosX !== undefined) {
+      settings.ovPosX = validateNumber(settings.ovPosX, OV_POS_MIN, OV_POS_MAX, OV_DEFAULT_POS_X);
+    }
+    if (settings.ovPosY !== undefined) {
+      settings.ovPosY = validateNumber(settings.ovPosY, OV_POS_MIN, OV_POS_MAX, OV_DEFAULT_POS_Y);
+    }
+    
+    // Валидация цвета
+    if (typeof settings.ovColor !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(settings.ovColor)) {
+      settings.ovColor = OV_DEFAULT_COLOR;
+    }
+    
+    // Валидация boolean значений
+    if (typeof settings.drToggle !== 'boolean') settings.drToggle = true;
+    if (typeof settings.ovToggle !== 'boolean') settings.ovToggle = true;
+    if (typeof settings.muted !== 'boolean') settings.muted = false;
+    
+    // Валидация выравнивания
+    const validAligns = ['left', 'center', 'right'];
+    if (!validAligns.includes(settings.ovAlign)) {
+      settings.ovAlign = OV_DEFAULT_ALIGN;
+    }
+    
+    // Валидация громкости
+    if (settings.volume !== undefined) {
+      settings.volume = validateNumber(settings.volume, 0, 1, 1);
+    }
     
     // Восстанавливаем настройки
-    drToggle.checked = settings.drToggle !== undefined ? settings.drToggle : true;
-    drStrength.value = settings.drStrength !== undefined ? settings.drStrength : 55;
+    drToggle.checked = settings.drToggle;
+    drStrength.value = settings.drStrength;
     drStrengthVal.textContent = drStrength.value + '%';
-    drBoost.value = settings.drBoost || 100;
+    drBoost.value = settings.drBoost;
     drBoostVal.textContent = drBoost.value + '%';
-    drSpeed.value = settings.drSpeed || 1;
+    drSpeed.value = settings.drSpeed;
     drSpeedVal.textContent = drSpeed.value + 'x';
     video.playbackRate = parseFloat(drSpeed.value);
     
-    drBrightness.value = settings.drBrightness || 100;
+    drBrightness.value = settings.drBrightness;
     drBrightnessVal.textContent = drBrightness.value + '%';
-    video.style.filter = `brightness(${drBrightness.value / 100})`;
+
+    blurRanges = settings.blurRanges;
+    renderBlurRanges();
+    updateVideoFilter();
     
-    zoomLevel = settings.zoomLevel || 100;
+    zoomLevel = settings.zoomLevel;
+    drZoom.value = zoomLevel;
     zoomVal.textContent = zoomLevel + '%';
     video.style.transform = zoomLevel === 100 ? '' : `scale(${zoomLevel / 100})`;
     
-    ovToggle.checked = settings.ovToggle !== undefined ? settings.ovToggle : true;
-    ovSize.value = settings.ovSize || 16;
+    ovToggle.checked = settings.ovToggle;
+    ovSize.value = settings.ovSize;
     ovSizeVal.textContent = ovSize.value + 'px';
-    ovColor.value = settings.ovColor || '#ffffff';
-    ovOpacity.value = settings.ovOpacity !== undefined ? settings.ovOpacity : 22;
+    ovColor.value = settings.ovColor;
+    ovOpacity.value = settings.ovOpacity;
     ovOpacityVal.textContent = ovOpacity.value + '%';
-    selectedPosition = settings.selectedPosition || 'bottom-right';
-    
-    // Обновляем визуальное состояние кнопок позиций
-    posButtons.forEach(b => { 
-      b.classList.remove('active'); 
-      b.setAttribute('aria-pressed', 'false');
-    });
-    const activePosBtn = document.querySelector(`.pos-btn[data-pos="${selectedPosition}"]`);
-    if (activePosBtn){
-      activePosBtn.classList.add('active');
-      activePosBtn.setAttribute('aria-pressed', 'true');
+    setOverlayAlign(settings.ovAlign);
+
+    if (settings.ovPosX !== undefined && settings.ovPosY !== undefined){
+      setOverlayPosition(settings.ovPosX, settings.ovPosY);
+    } else if (settings.selectedPosition){
+      // конвертация старых настроек с позицией по углам
+      const cornerMap = { 'top-left': [OV_POS_MIN, OV_POS_MIN], 'top-right': [OV_POS_MAX, OV_POS_MIN], 'bottom-left': [OV_POS_MIN, OV_POS_MAX], 'bottom-right': [OV_POS_MAX, OV_POS_MAX] };
+      const [x, y] = cornerMap[settings.selectedPosition] || [OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y];
+      setOverlayPosition(x, y);
+    } else {
+      setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
     }
     
     titleInput.value = settings.titleInput !== undefined ? settings.titleInput : niceTitleFromFilename(currentFileName);
@@ -224,23 +825,15 @@ function loadSettings(){
     applyOverlaySettings();
     
     // Восстанавливаем громкость
-    if (settings.volume !== undefined){
-      video.volume = settings.volume;
-    } else {
-      video.volume = 1;
-    }
+    video.volume = settings.volume;
     
     // Восстанавливаем состояние мута
-    if (settings.muted !== undefined){
-      video.muted = settings.muted;
-    } else {
-      video.muted = false;
-    }
+    video.muted = settings.muted;
     
     // Шкала громкости должна показывать 0 если звук замучен
     volumeRange.value = video.muted ? 0 : video.volume;
     updateVolumeIcon();
-    
+
     // Обновляем аудио-граф
     drEnabled = drToggle.checked;
     if (audioCtx){
@@ -264,6 +857,8 @@ function restoreProgress(){
     const data = JSON.parse(raw);
     if (data && data.t > 3 && data.t < video.duration - 5){
       video.currentTime = data.t;
+      // Сразу применяем блюр после восстановления времени
+      updateVideoFilter();
     }
   } catch(e){ /* повреждённая запись — игнорируем */ }
 }
@@ -426,7 +1021,12 @@ checkSavedHandle();
 
 function loadFile(file, handle){
   if (!file){ return; }
-  if (!file.type.startsWith('video/')){
+  
+  // Проверяем по MIME type или по расширению
+  const isVideoByType = file.type.startsWith('video/');
+  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
+  
+  if (!isVideoByType && !isVideoByExtension){
     errMsg.textContent = 'Похоже, это не видеофайл. Попробуй другой файл.';
     errMsg.style.display = 'block';
     return;
@@ -442,9 +1042,19 @@ function loadFile(file, handle){
     currentFileName = file.name;
   }
 
-  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-  currentObjectUrl = URL.createObjectURL(file);
-  video.src = currentObjectUrl;
+  try {
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(file);
+    video.src = currentObjectUrl;
+  } catch (e) {
+    errMsg.textContent = 'Ошибка при загрузке файла: ' + e.message;
+    errMsg.style.display = 'block';
+    if (currentObjectUrl) {
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = null;
+    }
+    return;
+  }
 
   // Проверяем, есть ли сохранённые настройки для файла
   const hasSettings = loadSettings();
@@ -454,24 +1064,19 @@ function loadFile(file, handle){
     resetSpeed();
     resetBrightness();
     resetZoom();
+    blurRanges = [];
+    renderBlurRanges();
+    clearTimingError();
     
     // Сбрасываем оверлей настройки
     ovToggle.checked = true;
-    ovSize.value = 16;
-    ovSizeVal.textContent = '16px';
-    ovColor.value = '#ffffff';
-    ovOpacity.value = 22;
-    ovOpacityVal.textContent = '22%';
-    selectedPosition = 'bottom-right';
-    posButtons.forEach(b => { 
-      b.classList.remove('active'); 
-      b.setAttribute('aria-pressed', 'false');
-    });
-    const defaultPosBtn = document.querySelector('.pos-btn[data-pos="bottom-right"]');
-    if (defaultPosBtn){
-      defaultPosBtn.classList.add('active');
-      defaultPosBtn.setAttribute('aria-pressed', 'true');
-    }
+    ovSize.value = OV_DEFAULT_SIZE;
+    ovSizeVal.textContent = OV_DEFAULT_SIZE + 'px';
+    ovColor.value = OV_DEFAULT_COLOR;
+    ovOpacity.value = OV_DEFAULT_OPACITY;
+    ovOpacityVal.textContent = OV_DEFAULT_OPACITY + '%';
+    setOverlayAlign(OV_DEFAULT_ALIGN);
+    setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
     
     drToggle.checked = true;
     drStrength.value = 55;
@@ -524,12 +1129,39 @@ function loadFile(file, handle){
 
 // --- drag & drop ---
 ['dragenter','dragover'].forEach(evt =>
-  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('dragover'); })
+  dropzone.addEventListener(evt, e => { 
+    e.preventDefault(); 
+    e.stopPropagation();
+    dropzone.classList.add('dragover'); 
+  })
 );
 ['dragleave','drop'].forEach(evt =>
-  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('dragover'); })
+  dropzone.addEventListener(evt, e => { 
+    e.preventDefault(); 
+    e.stopPropagation();
+    dropzone.classList.remove('dragover'); 
+  })
 );
 dropzone.addEventListener('drop', async e => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const files = e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+  
+  const file = files[0];
+  if (!file) return;
+  
+  // Проверяем по MIME type или по расширению
+  const isVideoByType = file.type.startsWith('video/');
+  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
+  
+  if (!isVideoByType && !isVideoByExtension) {
+    errMsg.textContent = 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)';
+    errMsg.style.display = 'block';
+    return;
+  }
+  
   const dtItem = e.dataTransfer.items && e.dataTransfer.items[0];
   let handle = null;
   if (dtItem && typeof dtItem.getAsFileSystemHandle === 'function'){
@@ -538,7 +1170,56 @@ dropzone.addEventListener('drop', async e => {
       if (h && h.kind === 'file') handle = h;
     } catch(err){ handle = null; }
   }
-  const file = e.dataTransfer.files[0];
+  if (handle){
+    try{ await idbSet(IDB_HANDLE_KEY, handle); } catch(err){}
+  }
+  loadFile(file, handle);
+});
+
+// Глобальный drag & drop для всего body
+['dragenter','dragover'].forEach(evt =>
+  document.body.addEventListener(evt, e => {
+    e.preventDefault();
+    e.stopPropagation();
+  })
+);
+['dragleave','drop'].forEach(evt =>
+  document.body.addEventListener(evt, e => {
+    e.preventDefault();
+    e.stopPropagation();
+  })
+);
+document.body.addEventListener('drop', async e => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  // Если drop view не показан, игнорируем
+  if (dropView.style.display === 'none') return;
+  
+  const files = e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+  
+  const file = files[0];
+  if (!file) return;
+  
+  // Проверяем по MIME type или по расширению
+  const isVideoByType = file.type.startsWith('video/');
+  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
+  
+  if (!isVideoByType && !isVideoByExtension) {
+    errMsg.textContent = 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)';
+    errMsg.style.display = 'block';
+    return;
+  }
+  
+  const dtItem = e.dataTransfer.items && e.dataTransfer.items[0];
+  let handle = null;
+  if (dtItem && typeof dtItem.getAsFileSystemHandle === 'function'){
+    try{
+      const h = await dtItem.getAsFileSystemHandle();
+      if (h && h.kind === 'file') handle = h;
+    } catch(err){ handle = null; }
+  }
   if (handle){
     try{ await idbSet(IDB_HANDLE_KEY, handle); } catch(err){}
   }
@@ -568,6 +1249,8 @@ const playBtn = document.getElementById('play-btn');
 const iconPlay = document.getElementById('icon-play');
 const iconPause = document.getElementById('icon-pause');
 const timeDisplay = document.getElementById('time-display');
+const skipBackBtn = document.getElementById('skip-back-btn');
+const skipForwardBtn = document.getElementById('skip-forward-btn');
 const seek = document.getElementById('seek');
 const muteBtn = document.getElementById('mute-btn');
 const iconVolOn = document.getElementById('icon-vol-on');
@@ -576,8 +1259,6 @@ const volumeRange = document.getElementById('volume-range');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const iconFsOpen = document.getElementById('icon-fs-open');
 const iconFsClose = document.getElementById('icon-fs-close');
-const screenshotBtn = document.getElementById('screenshot-btn');
-const pipBtn = document.getElementById('pip-btn');
 const drBtn = document.getElementById('dr-btn');
 const drPanel = document.getElementById('dr-panel');
 const drToggle = document.getElementById('dr-toggle');
@@ -589,10 +1270,8 @@ const drSpeed = document.getElementById('dr-speed');
 const drSpeedVal = document.getElementById('dr-speed-val');
 const drBrightness = document.getElementById('dr-brightness');
 const drBrightnessVal = document.getElementById('dr-brightness-val');
-const zoomOutBtn = document.getElementById('zoom-out');
-const zoomInBtn = document.getElementById('zoom-in');
+const drZoom = document.getElementById('dr-zoom');
 const zoomVal = document.getElementById('zoom-val');
-const drResetBtn = document.getElementById('dr-reset-btn');
 
 let isSeeking = false;
 
@@ -646,9 +1325,48 @@ function ensureAudioGraph(){
 function setDrPanelOpen(open){
   drPanel.classList.toggle('open', open);
   drBtn.setAttribute('aria-expanded', String(open));
+  
+  // При открытии панели всегда сворачиваем все категории
+  if (open) {
+    categoryHeaders.forEach(header => {
+      header.setAttribute('aria-expanded', 'false');
+      const content = header.nextElementSibling;
+      if (content && content.classList.contains('dr-category-content')) {
+        content.classList.add('collapsed');
+      }
+    });
+  }
 }
 drBtn.addEventListener('click', () => {
   setDrPanelOpen(!drPanel.classList.contains('open'));
+});
+
+// --- Сворачивание категорий настроек ---
+// Инициализация: сворачиваем все категории при загрузке страницы
+categoryHeaders.forEach(header => {
+  header.setAttribute('aria-expanded', 'false');
+  const content = header.nextElementSibling;
+  if (content && content.classList.contains('dr-category-content')) {
+    content.classList.add('collapsed');
+  }
+});
+
+// Обработчики кликов
+categoryHeaders.forEach(header => {
+  header.addEventListener('click', () => {
+    const isExpanded = header.getAttribute('aria-expanded') === 'true';
+    header.setAttribute('aria-expanded', !isExpanded);
+    
+    // Добавляем/удаляем класс collapsed для контента
+    const content = header.nextElementSibling;
+    if (content && content.classList.contains('dr-category-content')) {
+      if (!isExpanded) {
+        content.classList.remove('collapsed');
+      } else {
+        content.classList.add('collapsed');
+      }
+    }
+  });
 });
 
 drToggle.addEventListener('change', () => {
@@ -690,15 +1408,14 @@ function resetSpeed(){
 
 // --- яркость видео ---
 drBrightness.addEventListener('input', () => {
-  const brightness = drBrightness.value / 100;
-  video.style.filter = `brightness(${brightness})`;
+  updateVideoFilter();
   drBrightnessVal.textContent = drBrightness.value + '%';
   saveSettings();
 });
 function resetBrightness(){
-  video.style.filter = '';
   drBrightness.value = 100;
   drBrightnessVal.textContent = '100%';
+  updateVideoFilter();
 }
 
 // --- масштаб картинки ---
@@ -707,66 +1424,30 @@ function applyZoom(){
   zoomVal.textContent = zoomLevel + '%';
   video.style.transform = zoomLevel === 100 ? '' : `scale(${zoomLevel / 100})`;
 }
-zoomOutBtn.addEventListener('click', () => {
-  zoomLevel = Math.max(50, zoomLevel - 5);
-  applyZoom();
-  saveSettings();
-});
-zoomInBtn.addEventListener('click', () => {
-  zoomLevel = Math.min(200, zoomLevel + 5);
+drZoom.addEventListener('input', () => {
+  zoomLevel = parseInt(drZoom.value, 10);
   applyZoom();
   saveSettings();
 });
 function resetZoom(){
   zoomLevel = 100;
+  drZoom.value = 100;
   applyZoom();
 }
-
-// --- сброс всех настроек панели к дефолтам ---
-function resetAllSettings(){
-  drToggle.checked = true;
-  drStrength.value = 55;
-  drStrengthVal.textContent = '55%';
-  drBoost.value = 100;
-  drBoostVal.textContent = '100%';
-  drEnabled = true;
-  if (audioCtx){
-    if (boostGain) boostGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
-    updateCompressor();
-    connectGraph();
-  }
-
-  resetSpeed();
-  resetBrightness();
-  resetZoom();
-
-  ovToggle.checked = true;
-  ovSize.value = 16;
-  ovSizeVal.textContent = '16px';
-  ovColor.value = '#ffffff';
-  ovOpacity.value = 22;
-  ovOpacityVal.textContent = '22%';
-  selectedPosition = 'bottom-right';
-  posButtons.forEach(b => {
-    b.classList.remove('active');
-    b.setAttribute('aria-pressed', 'false');
-  });
-  const defaultPosBtn = document.querySelector('.pos-btn[data-pos="bottom-right"]');
-  if (defaultPosBtn){
-    defaultPosBtn.classList.add('active');
-    defaultPosBtn.setAttribute('aria-pressed', 'true');
-  }
-  titleInput.value = niceTitleFromFilename(currentFileName || '');
-  ovTitle.textContent = titleInput.value || '—';
-  applyOverlaySettings();
-
-  saveSettings();
-}
-drResetBtn.addEventListener('click', resetAllSettings);
 
 function togglePlay(){
   if (video.paused) video.play(); else video.pause();
 }
+
+function seekBy(deltaSeconds){
+  if (!isDurationUsable()) return;
+  const t = Math.max(0, Math.min(video.duration, video.currentTime + deltaSeconds));
+  video.currentTime = t;
+  timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
+}
+skipBackBtn.addEventListener('click', () => seekBy(-5));
+skipForwardBtn.addEventListener('click', () => seekBy(5));
+
 let centerIconTimeout = null;
 
 function showCenterIcon(isPlaying){
@@ -871,12 +1552,18 @@ video.addEventListener('ended', () => {
   }
 });
 
+let lastBlurActive = false;
 video.addEventListener('timeupdate', () => {
   const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
   ovTime.textContent = txt;
   timeDisplay.textContent = txt;
   if (!isSeeking && isDurationUsable()){
     seek.value = (video.currentTime / video.duration) * 1000;
+  }
+  const blurActive = isInBlurRange(video.currentTime);
+  if (blurActive !== lastBlurActive){
+    lastBlurActive = blurActive;
+    updateVideoFilter();
   }
 });
 video.addEventListener('loadedmetadata', () => {
@@ -944,53 +1631,6 @@ document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.setAttribute('aria-label', isFs ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим');
 });
 
-// --- скриншот ---
-screenshotBtn.addEventListener('click', () => {
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    
-    // Применяем CSS фильтры к canvas
-    const brightness = drBrightness.value / 100;
-    ctx.filter = `brightness(${brightness})`;
-    
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const link = document.createElement('a');
-    const timestamp = formatTime(video.currentTime).replace(/:/g, '-');
-    link.download = `screenshot-${timestamp}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  } catch(e) {
-    console.error('Ошибка скриншота:', e);
-  }
-});
-
-// --- Picture-in-Picture ---
-pipBtn.addEventListener('click', async () => {
-  if (document.pictureInPictureElement) {
-    await document.exitPictureInPicture();
-  } else {
-    try {
-      await video.requestPictureInPicture();
-    } catch(e) {
-      console.error('PiP ошибка:', e);
-    }
-  }
-});
-
-video.addEventListener('enterpictureinpicture', () => {
-  pipBtn.setAttribute('aria-pressed', 'true');
-  pipBtn.setAttribute('aria-label', 'Закрыть картинку в картинке');
-});
-
-video.addEventListener('leavepictureinpicture', () => {
-  pipBtn.setAttribute('aria-pressed', 'false');
-  pipBtn.setAttribute('aria-label', 'Картинка в картинке');
-});
-
 // --- автоскрытие панели при воспроизведении ---
 let hideTimer = null;
 function showControls(){
@@ -1028,20 +1668,42 @@ document.addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.05); showControls(); }
 });
 
-const videoErrorEl = document.getElementById('video-error');
 const ERROR_MESSAGES = {
   1: 'Загрузка была прервана.',
   2: 'Ошибка сети при чтении файла.',
-  3: 'Браузер не смог декодировать файл — скорее всего, не поддерживается кодек видео или аудио внутри файла (частая история с рипами в H.265/HEVC, AC3, DTS).',
+  3: 'Браузер не смог декодировать файл — скорее всего, не поддерживается кодек видео или аудио.',
   4: 'Формат файла не поддерживается браузером вообще.',
 };
+
+const ERROR_SOLUTIONS = {
+  3: `
+    <div class="ve-solution">
+      <strong>Как исправить:</strong>
+      <br>• Скорее всего файл использует кодек H.265/HEVC, AC3 или DTS
+      <br>• Конвертируйте файл в H.264 + AAC (HandBrake — бесплатный)
+      <br>• Для стримеров: используйте H.264 для максимальной совместимости
+      <br>• Рекомендуемые настройки: H.264, AAC, 1080p или ниже
+    </div>
+  `,
+  4: `
+    <div class="ve-solution">
+      <strong>Решение:</strong>
+      <br>• Попробуйте другой формат (.mp4 с H.264)
+      <br>• Конвертируйте файл через HandBrake или VLC
+    </div>
+  `
+};
+
 video.addEventListener('error', () => {
   const err = video.error;
   const code = err ? err.code : null;
   const msg = ERROR_MESSAGES[code] || 'Не удалось воспроизвести файл по неизвестной причине.';
+  const solution = ERROR_SOLUTIONS[code] || '';
+  
   videoErrorEl.innerHTML = `
     <div class="ve-title">Не получилось воспроизвести файл</div>
     <div class="ve-detail">${msg}<br>Код ошибки браузера: ${code ?? '—'}</div>
+    ${solution}
   `;
   videoErrorEl.style.display = 'flex';
 });
