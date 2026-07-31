@@ -195,6 +195,29 @@ let durationChangeHandler = null;
 let loadedMetadataHandler = null;
 let uiSyncInterval = null;
 
+// --- уведомление о недоступности localStorage (переполнена квота, приватный режим и т.п.) ---
+const storageToast = document.getElementById('storage-toast');
+let storageToastTimeout = null;
+let storageErrorShown = false; // не спамим одним и тем же сообщением на каждое авто-сохранение
+
+function showStorageToast(msg){
+  storageToast.textContent = msg;
+  storageToast.classList.add('show');
+  clearTimeout(storageToastTimeout);
+  storageToastTimeout = setTimeout(() => storageToast.classList.remove('show'), 5000);
+}
+
+function notifyStorageIssue(){
+  if (storageErrorShown) return;
+  storageErrorShown = true;
+  showStorageToast('Не удалось сохранить настройки или прогресс — хранилище браузера недоступно или переполнено.');
+}
+
+// Вызывается после любой удачной записи, чтобы следующий сбой снова показал уведомление
+function markStorageOk(){
+  storageErrorShown = false;
+}
+
 // Debouncing для saveSettings
 let saveSettingsTimeout = null;
 const SAVE_SETTINGS_DELAY = 1000; // 1 секунда
@@ -237,7 +260,8 @@ function saveSettings(){
         subsBottom: subsBottom.value
       };
       localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
-    } catch(e){ /* хранилище недоступно */ }
+      markStorageOk();
+    } catch(e){ notifyStorageIssue(); }
   }, SAVE_SETTINGS_DELAY);
 }
 
@@ -276,7 +300,8 @@ function saveSettingsImmediate(){
       subsBottom: subsBottom.value
     };
     localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
-  } catch(e){ /* хранилище недоступно */ }
+    markStorageOk();
+  } catch(e){ notifyStorageIssue(); }
 }
 
 function isDurationUsable(){
@@ -728,7 +753,8 @@ function saveProgress(){
       ts: Date.now(),
       name: currentFileName
     }));
-  } catch(e){ /* хранилище недоступно — просто пропускаем */ }
+    markStorageOk();
+  } catch(e){ notifyStorageIssue(); }
 }
 
 // (дублирующий saveSettings удалён, актуальная версия — выше, с дебаунсом)
@@ -1532,7 +1558,9 @@ subsFile.addEventListener('change', (e) => {
       content: JSON.stringify(subtitlesData),
       fileName: file.name
     };
-    localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
+    try{
+      localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
+    } catch(e){ /* хранилище недоступно — не мешаем применить субтитры для текущей сессии */ }
     savedSubsContent = JSON.stringify(subtitlesData);
     isSubtitlesLoaded = true;
     // Применяем стили сразу после загрузки
