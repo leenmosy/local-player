@@ -842,7 +842,7 @@ function loadSettings(){
     
     // Валидация громкости
     if (settings.volume !== undefined) {
-      settings.volume = validateNumber(settings.volume, 0, 1, 1);
+      settings.volume = validateNumber(settings.volume, 0, 1, 0.3);
     }
     
     // Восстанавливаем настройки
@@ -2025,7 +2025,7 @@ function updateVolumeIcon(){
   muteBtn.setAttribute('aria-label', isOff ? 'Включить звук' : 'Выключить звук');
 }
 
-let lastVolume = 1;
+let lastVolume = 0.3;
 
 volumeRange.addEventListener('input', () => {
   video.volume = volumeRange.value;
