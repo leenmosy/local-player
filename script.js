@@ -530,38 +530,38 @@ function startEditingRange(idx, item, rangeText) {
     const to = parseTimeToSeconds(toInput.value);
     
     if (from === null || to === null) {
-      fromInput.style.borderColor = '#E08B7D';
-      toInput.style.borderColor = '#E08B7D';
+      fromInput.classList.add('has-error');
+      toInput.classList.add('has-error');
       return;
     }
     
     if (to <= from) {
-      fromInput.style.borderColor = '#E08B7D';
-      toInput.style.borderColor = '#E08B7D';
+      fromInput.classList.add('has-error');
+      toInput.classList.add('has-error');
       fromInput.title = 'Время окончания должно быть больше времени начала';
       toInput.title = 'Время окончания должно быть больше времени начала';
       return;
     }
 
     if (findOverlappingRange(from, to, idx)) {
-      fromInput.style.borderColor = '#E08B7D';
-      toInput.style.borderColor = '#E08B7D';
+      fromInput.classList.add('has-error');
+      toInput.classList.add('has-error');
       fromInput.title = 'Этот диапазон пересекается с другим';
       toInput.title = 'Этот диапазон пересекается с другим';
       return;
     }
 
     if (isDurationUsable() && to > video.duration) {
-      fromInput.style.borderColor = '#E08B7D';
-      toInput.style.borderColor = '#E08B7D';
+      fromInput.classList.add('has-error');
+      toInput.classList.add('has-error');
       fromInput.title = 'Время окончания превышает длительность видео';
       toInput.title = 'Время окончания превышает длительность видео';
       return;
     }
     
     // Сбрасываем стили ошибок
-    fromInput.style.borderColor = '';
-    toInput.style.borderColor = '';
+    fromInput.classList.remove('has-error');
+    toInput.classList.remove('has-error');
     fromInput.title = '';
     toInput.title = '';
     
@@ -641,11 +641,11 @@ function startEditingRange(idx, item, rangeText) {
   
   // Сброс стилей ошибок при вводе
   fromInput.addEventListener('input', () => {
-    fromInput.style.borderColor = '';
+    fromInput.classList.remove('has-error');
   });
   
   toInput.addEventListener('input', () => {
-    toInput.style.borderColor = '';
+    toInput.classList.remove('has-error');
   });
 }
 
