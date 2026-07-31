@@ -49,6 +49,10 @@ const OV_DEFAULT_POS_X = OV_POS_MAX;
 const OV_DEFAULT_POS_Y = OV_POS_MAX;
 const OV_DEFAULT_ALIGN = 'right';
 
+// Громкость по умолчанию для файла, у которого ещё нет сохранённых настроек —
+// именно ползунок в плеере, а не что-то из панели настроек.
+const DEFAULT_VOLUME = 0.2;
+
 let ovPosX = OV_DEFAULT_POS_X;
 let ovPosY = OV_DEFAULT_POS_Y;
 let ovAlign = OV_DEFAULT_ALIGN;
@@ -240,6 +244,7 @@ function saveSettings(){
         drSpeed: drSpeed.value,
         drBrightness: drBrightness.value,
         zoomLevel: zoomLevel,
+        mirror: mirrorEnabled,
         blurRanges: blurRanges,
         ovToggle: ovToggle.checked,
         ovSize: ovSize.value,
@@ -280,6 +285,7 @@ function saveSettingsImmediate(){
       drSpeed: drSpeed.value,
       drBrightness: drBrightness.value,
       zoomLevel: zoomLevel,
+      mirror: mirrorEnabled,
       blurRanges: blurRanges,
       ovToggle: ovToggle.checked,
       ovSize: ovSize.value,
@@ -352,8 +358,9 @@ let currentEditingItem = null; // текущий редактируемый эл
 let isEditing = false; // флаг для предотвращения одновременного редактирования
 
 // Проверка пересечения с существующими диапазонами (excludeIdx — свой же индекс при редактировании)
+// Диапазоны, стыкующиеся впритык (конец одного равен началу другого), пересечением не считаются.
 function findOverlappingRange(from, to, excludeIdx){
-  return blurRanges.some((r, i) => i !== excludeIdx && !(to < r.from || from > r.to));
+  return blurRanges.some((r, i) => i !== excludeIdx && !(to <= r.from || from >= r.to));
 }
 
 function parseTimeToSeconds(str){
@@ -763,11 +770,16 @@ function loadSettings(){
   if (!currentFileKey) {
     return false;
   }
+
+  // --- Фаза 1: разбор и валидация JSON из localStorage ---
+  // Если тут что-то падает — записи действительно нет/она нечитаема,
+  // и возврат false (→ сброс на дефолт) оправдан.
+  let settings;
   try{
     const key = settingsKey(currentFileKey);
     const raw = localStorage.getItem(key);
     if (!raw) return false;
-    const settings = JSON.parse(raw);
+    settings = JSON.parse(raw);
     if (!settings || typeof settings !== 'object') return false;
     
     // Валидация blurRanges
@@ -833,6 +845,7 @@ function loadSettings(){
     if (typeof settings.ovToggle !== 'boolean') settings.ovToggle = true;
     if (typeof settings.subsToggle !== 'boolean') settings.subsToggle = true;
     if (typeof settings.muted !== 'boolean') settings.muted = false;
+    if (typeof settings.mirror !== 'boolean') settings.mirror = false;
     
     // Валидация выравнивания
     const validAligns = ['left', 'center', 'right'];
@@ -840,11 +853,21 @@ function loadSettings(){
       settings.ovAlign = OV_DEFAULT_ALIGN;
     }
     
-    // Валидация громкости
-    if (settings.volume !== undefined) {
-      settings.volume = validateNumber(settings.volume, 0, 1, 0.3);
-    }
-    
+    // Валидация громкости — нормализуем всегда, а не только если поле присутствует,
+    // иначе settings.volume останется undefined и video.volume = undefined кинет
+    // исключение, обрушив восстановление всех остальных, уже провалидированных настроек.
+    settings.volume = validateNumber(settings.volume, 0, 1, DEFAULT_VOLUME);
+  } catch(e){
+    /* повреждённая запись — считаем, что настроек нет */
+    return false;
+  }
+
+  // --- Фаза 2: применение провалидированных настроек к DOM/видео ---
+  // settings на этом этапе гарантированно валиден. Если что-то всё же упадёт
+  // при применении (например, из-за будущего изменения разметки), это больше
+  // не должно "откатывать" уже распарсенные настройки обратно на дефолт —
+  // мы возвращаем true, т.к. реальные пользовательские данные у нас есть.
+  try{
     // Восстанавливаем настройки
     drToggle.checked = settings.drToggle;
     drStrength.value = settings.drStrength;
@@ -865,7 +888,9 @@ function loadSettings(){
     zoomLevel = settings.zoomLevel;
     drZoom.value = zoomLevel;
     zoomVal.textContent = zoomLevel + '%';
-    video.style.transform = zoomLevel === 100 ? '' : `scale(${zoomLevel / 100})`;
+    mirrorEnabled = settings.mirror;
+    mirrorToggle.checked = mirrorEnabled;
+    applyVideoTransform();
     
     ovToggle.checked = settings.ovToggle;
     ovSize.value = settings.ovSize;
@@ -968,8 +993,12 @@ function loadSettings(){
     }
     
     return true;
-  } catch(e){ /* повреждённая запись — игнорируем */ }
-  return false;
+  } catch(e){
+    // Что-то не применилось к DOM/видео, но сами настройки были валидны и
+    // разобраны успешно — не сбрасываем их на дефолт из-за частного сбоя применения.
+    console.warn('Настройки применены частично:', e);
+    return true;
+  }
 }
 
 function restoreProgress(){
@@ -988,15 +1017,17 @@ function restoreProgress(){
 
 function startProgressTracking(){
   clearInterval(progressInterval);
+  // Тут сохраняем только прогресс просмотра. Настройки сохраняются собственными
+  // input/change-обработчиками (см. saveSettings/saveSettingsImmediate) и досрочно
+  // дозаписываются в flushPendingSave() при уходе со страницы — дублировать их
+  // сохранение здесь каждые 4с не нужно, это просто лишняя запись в localStorage.
   progressInterval = setInterval(() => {
     saveProgress();
-    saveSettings();
   }, 4000);
 }
 function stopProgressTracking(){
   clearInterval(progressInterval);
   saveProgress();
-  saveSettings();
 }
 
 function escapeHtml(str){
@@ -1048,8 +1079,16 @@ resumeList.addEventListener('click', (e) => {
 
 renderResumeList();
 
-window.addEventListener('beforeunload', saveProgress);
-document.addEventListener('visibilitychange', () => { if (document.hidden) saveProgress(); });
+function flushPendingSave(){
+  saveProgress();
+  // Если есть отложенное (дебаунсированное) сохранение настроек — досрочно
+  // фиксируем его, иначе при обновлении/закрытии страницы оно потеряется.
+  if (saveSettingsTimeout){
+    saveSettingsImmediate();
+  }
+}
+window.addEventListener('beforeunload', flushPendingSave);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushPendingSave(); });
 
 // --- File System Access API: запоминаем сам файл, не только тайминг ---
 const FS_ACCESS_SUPPORTED = typeof window.showOpenFilePicker === 'function';
@@ -1194,6 +1233,7 @@ function loadFile(file, handle){
     resetSpeed();
     resetBrightness();
     resetZoom();
+    resetMirror();
     blurRanges = [];
     renderBlurRanges();
     clearTimingError();
@@ -1244,8 +1284,9 @@ function loadFile(file, handle){
     subsBottomVal.textContent = '15%';
     applySubtitlesStyle();
 
-    // Громкость нового файла — как в текущей сессии, а не всегда 100%
-    video.volume = lastVolume > 0 ? lastVolume : 1;
+    // Громкость нового файла (без сохранённых настроек) — фиксированные 20%,
+    // а не громкость, оставшаяся от предыдущего файла в этой сессии.
+    video.volume = DEFAULT_VOLUME;
     volumeRange.value = video.volume;
     video.muted = false;
     updateVolumeIcon();
@@ -1445,6 +1486,7 @@ const drBrightness = document.getElementById('dr-brightness');
 const drBrightnessVal = document.getElementById('dr-brightness-val');
 const drZoom = document.getElementById('dr-zoom');
 const zoomVal = document.getElementById('zoom-val');
+const mirrorToggle = document.getElementById('mirror-toggle');
 
 let isSeeking = false;
 
@@ -1595,8 +1637,17 @@ subsRemoveBtn.addEventListener('click', () => {
 
 function parseSubtitles(content, format) {
   subtitlesData = [];
-  const lines = content.split('\n');
+  let skippedCount = 0;
+  // Нормализуем переносы строк (CRLF/одиночный CR → LF) один раз в начале,
+  // чтобы \r никогда не попадал внутрь текста реплики — раньше он выживал
+  // между строками текста, т.к. text.trim() обрезает только края всего блока.
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   let i = 0;
+  
+  // Реплика с NaN-таймингом или end <= start раньше тихо попадала в subtitlesData
+  // и никогда не показывалась без единого сообщения об ошибке — теперь такие
+  // реплики пропускаются с подсчётом, чтобы можно было предупредить пользователя.
+  const isValidTiming = (start, end) => isFinite(start) && isFinite(end) && end > start;
   
   while (i < lines.length) {
     const line = lines[i].trim();
@@ -1624,7 +1675,11 @@ function parseSubtitles(content, format) {
           }
           
           if (text.trim()) {
-            subtitlesData.push({ start, end, text: text.trim() });
+            if (isValidTiming(start, end)) {
+              subtitlesData.push({ start, end, text: text.trim() });
+            } else {
+              skippedCount++;
+            }
           }
         }
       }
@@ -1646,12 +1701,21 @@ function parseSubtitles(content, format) {
           }
           
           if (text.trim()) {
-            subtitlesData.push({ start, end, text: text.trim() });
+            if (isValidTiming(start, end)) {
+              subtitlesData.push({ start, end, text: text.trim() });
+            } else {
+              skippedCount++;
+            }
           }
         }
       }
       i++;
     }
+  }
+
+  if (skippedCount > 0){
+    console.warn(`Субтитры: пропущено ${skippedCount} строк с некорректным таймингом`);
+    showStorageToast(`Не удалось разобрать ${skippedCount} ${skippedCount === 1 ? 'реплику' : 'реплик'} субтитров — тайминг повреждён, они пропущены.`);
   }
 }
 
@@ -1808,11 +1872,20 @@ function resetBrightness(){
   updateVideoFilter();
 }
 
-// --- масштаб картинки ---
+// --- масштаб картинки + отзеркаливание (общий transform на video) ---
 let zoomLevel = 100;
+let mirrorEnabled = false;
+
+function applyVideoTransform(){
+  const parts = [];
+  if (mirrorEnabled) parts.push('scaleX(-1)');
+  if (zoomLevel !== 100) parts.push(`scale(${zoomLevel / 100})`);
+  video.style.transform = parts.join(' ');
+}
+
 function applyZoom(){
   zoomVal.textContent = zoomLevel + '%';
-  video.style.transform = zoomLevel === 100 ? '' : `scale(${zoomLevel / 100})`;
+  applyVideoTransform();
 }
 drZoom.addEventListener('input', () => {
   zoomLevel = parseInt(drZoom.value, 10);
@@ -1823,6 +1896,17 @@ function resetZoom(){
   zoomLevel = 100;
   drZoom.value = 100;
   applyZoom();
+}
+
+mirrorToggle.addEventListener('change', () => {
+  mirrorEnabled = mirrorToggle.checked;
+  applyVideoTransform();
+  saveSettings();
+});
+function resetMirror(){
+  mirrorEnabled = false;
+  mirrorToggle.checked = false;
+  applyVideoTransform();
 }
 
 function togglePlay(){
@@ -2025,7 +2109,7 @@ function updateVolumeIcon(){
   muteBtn.setAttribute('aria-label', isOff ? 'Включить звук' : 'Выключить звук');
 }
 
-let lastVolume = 0.3;
+let lastVolume = DEFAULT_VOLUME;
 
 volumeRange.addEventListener('input', () => {
   video.volume = volumeRange.value;
