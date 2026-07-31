@@ -676,3 +676,26 @@ input[type=range]::-moz-range-thumb{
   .center-play-icon{ width: 52px; height: 52px; }
   .center-play-icon svg{ width: 22px; height: 22px; }
 }
+
+.storage-toast{
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 12px);
+  max-width: min(420px, calc(100% - 32px));
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #2A1D1A;
+  border: 1px solid #E08B7D;
+  color: #F2E4DF;
+  font-size: 13px;
+  line-height: 1.4;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+}
+.storage-toast.show{
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
