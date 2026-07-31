@@ -224,7 +224,7 @@ function markStorageOk(){
 
 // Debouncing для saveSettings
 let saveSettingsTimeout = null;
-const SAVE_SETTINGS_DELAY = 1000; // 1 секунда
+const SAVE_SETTINGS_DELAY = 150; // 150 мс - баланс между UX и производительностью
 
 function saveSettings(){
   if (!currentFileKey) return;
@@ -239,17 +239,17 @@ function saveSettings(){
     try{
       const settings = {
         drToggle: drToggle.checked,
-        drStrength: drStrength.value,
-        drBoost: drBoost.value,
-        drSpeed: drSpeed.value,
-        drBrightness: drBrightness.value,
+        drStrength: parseFloat(drStrength.value),
+        drBoost: parseFloat(drBoost.value),
+        drSpeed: parseFloat(drSpeed.value),
+        drBrightness: parseFloat(drBrightness.value),
         zoomLevel: zoomLevel,
         mirror: mirrorEnabled,
         blurRanges: blurRanges,
         ovToggle: ovToggle.checked,
-        ovSize: ovSize.value,
+        ovSize: parseFloat(ovSize.value),
         ovColor: ovColor.value,
-        ovOpacity: ovOpacity.value,
+        ovOpacity: parseFloat(ovOpacity.value),
         ovPosX: ovPosX,
         ovPosY: ovPosY,
         ovAlign: ovAlign,
@@ -257,12 +257,12 @@ function saveSettings(){
         volume: video.volume,
         muted: video.muted,
         subsToggle: subsToggle.checked,
-        subsSize: subsSize.value,
+        subsSize: parseFloat(subsSize.value),
         subsColor: subsColor.value,
-        subsOpacity: subsOpacity.value,
+        subsOpacity: parseFloat(subsOpacity.value),
         subsBg: subsBg.value,
-        subsBgOpacity: subsBgOpacity.value,
-        subsBottom: subsBottom.value
+        subsBgOpacity: parseFloat(subsBgOpacity.value),
+        subsBottom: parseFloat(subsBottom.value)
       };
       localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
       markStorageOk();
@@ -280,17 +280,17 @@ function saveSettingsImmediate(){
   try{
     const settings = {
       drToggle: drToggle.checked,
-      drStrength: drStrength.value,
-      drBoost: drBoost.value,
-      drSpeed: drSpeed.value,
-      drBrightness: drBrightness.value,
+      drStrength: parseFloat(drStrength.value),
+      drBoost: parseFloat(drBoost.value),
+      drSpeed: parseFloat(drSpeed.value),
+      drBrightness: parseFloat(drBrightness.value),
       zoomLevel: zoomLevel,
       mirror: mirrorEnabled,
       blurRanges: blurRanges,
       ovToggle: ovToggle.checked,
-      ovSize: ovSize.value,
+      ovSize: parseFloat(ovSize.value),
       ovColor: ovColor.value,
-      ovOpacity: ovOpacity.value,
+      ovOpacity: parseFloat(ovOpacity.value),
       ovPosX: ovPosX,
       ovPosY: ovPosY,
       ovAlign: ovAlign,
@@ -298,17 +298,19 @@ function saveSettingsImmediate(){
       volume: video.volume,
       muted: video.muted,
       subsToggle: subsToggle.checked,
-      subsSize: subsSize.value,
+      subsSize: parseFloat(subsSize.value),
       subsColor: subsColor.value,
-      subsOpacity: subsOpacity.value,
+      subsOpacity: parseFloat(subsOpacity.value),
       subsBg: subsBg.value,
-      subsBgOpacity: subsBgOpacity.value,
-      subsBottom: subsBottom.value
+      subsBgOpacity: parseFloat(subsBgOpacity.value),
+      subsBottom: parseFloat(subsBottom.value)
     };
     localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
     markStorageOk();
   } catch(e){ notifyStorageIssue(); }
 }
+
+
 
 function isDurationUsable(){
   return isFinite(video.duration) && video.duration > 0;
@@ -416,7 +418,7 @@ function renderBlurRanges(){
       stopEditingSession();
       renderBlurRanges();
       updateVideoFilter();
-      saveSettingsImmediate();
+      saveSettings();
     });
     
     item.appendChild(rangeText);
@@ -579,7 +581,7 @@ function startEditingRange(idx, item, rangeText) {
     stopEditingSession();
     renderBlurRanges();
     updateVideoFilter();
-    saveSettingsImmediate();
+    saveSettings();
   };
   
   // Функция отмены
@@ -693,7 +695,7 @@ timingAddBtn.addEventListener('click', () => {
   blurRanges.sort((a, b) => a.from - b.from);
   renderBlurRanges();
   updateVideoFilter();
-  saveSettingsImmediate();
+  saveSettings();
   timingFromInput.value = '';
   timingToInput.value = '';
   timingFromInput.focus();
@@ -1017,7 +1019,7 @@ function restoreProgress(){
 function startProgressTracking(){
   clearInterval(progressInterval);
   // Тут сохраняем только прогресс просмотра. Настройки сохраняются собственными
-  // input/change-обработчиками (см. saveSettings/saveSettingsImmediate) и досрочно
+  // input/change-обработчиками (см. saveSettings/saveSettings) и досрочно
   // дозаписываются в flushPendingSave() при уходе со страницы, так что дублировать
   // их сохранение в этом интервале не требуется.
   progressInterval = setInterval(() => {
@@ -1080,11 +1082,9 @@ renderResumeList();
 
 function flushPendingSave(){
   saveProgress();
-  // Если есть отложенное (дебаунсированное) сохранение настроек — досрочно
-  // фиксируем его, иначе при обновлении/закрытии страницы оно потеряется.
-  if (saveSettingsTimeout){
-    saveSettingsImmediate();
-  }
+  // Всегда сохраняем настройки при уходе со страницы, чтобы гарантированно
+  // сохранить последние изменения даже если они были сделаны менее 150 мс назад
+  saveSettingsImmediate();
 }
 window.addEventListener('beforeunload', flushPendingSave);
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushPendingSave(); });
