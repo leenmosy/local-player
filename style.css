@@ -131,6 +131,7 @@ input[type=color]{
 }
 .align-btn svg{ width: 15px; height: 15px; }
 .align-btn:hover svg{ stroke: var(--text); }
+.align-btn.active:hover svg{ stroke: var(--accent-orange); }
 .align-btn.active{ background:#2a2f37; color: var(--accent-orange); }
 
 .pos-layout{
