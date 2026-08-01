@@ -265,6 +265,7 @@ function saveSettings(){
         subsBottom: parseFloat(subsBottom.value)
       };
       localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
+      cleanupStorage(SETTINGS_PREFIX);
       markStorageOk();
     } catch(e){ notifyStorageIssue(); }
   }, SAVE_SETTINGS_DELAY);
@@ -306,6 +307,7 @@ function saveSettingsImmediate(){
       subsBottom: parseFloat(subsBottom.value)
     };
     localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
+    cleanupStorage(SETTINGS_PREFIX);
     markStorageOk();
   } catch(e){ notifyStorageIssue(); }
 }
@@ -383,6 +385,7 @@ function parseTimeToSeconds(str){
   } else {
     const [h, m, s] = vals;
     // Проверяем валидность часов, минут и секунд
+    if (h > 99) return null; // часы должны быть <= 99
     if (m >= 60) return null; // минуты должны быть < 60
     if (s >= 60) return null; // секунды должны быть < 60
     seconds = h * 3600 + m * 60 + s;
@@ -732,6 +735,7 @@ const PROGRESS_PREFIX = 'lp_progress:';
 const HANDLE_KEY_PREFIX = PROGRESS_PREFIX + 'h:';
 const SETTINGS_PREFIX = 'lp_settings:';
 const SUBS_PREFIX = 'lp_subs:';
+const MAX_STORAGE_ENTRIES = 20; // Максимальное количество записей каждого типа
 let currentFileKey = null;
 let currentFileName = null;
 let progressInterval = null;
@@ -749,6 +753,34 @@ function subsKey(key){
   return SUBS_PREFIX + key.replace(PROGRESS_PREFIX, '');
 }
 
+// Очистка старых записей localStorage для предотвращения переполнения
+function cleanupStorage(prefix){
+  const items = [];
+  for (let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i);
+    if (key && key.startsWith(prefix)){
+      try{
+        const data = JSON.parse(localStorage.getItem(key));
+        const ts = data && typeof data.ts === 'number' ? data.ts : 0;
+        items.push({ key, ts });
+      } catch(e){
+        // Если не парсится, считаем старым (ts = 0)
+        items.push({ key, ts: 0 });
+      }
+    }
+  }
+  // Сортируем по времени (новые первые)
+  items.sort((a, b) => b.ts - a.ts);
+  // Удаляем старые записи, если их больше MAX_STORAGE_ENTRIES
+  if (items.length > MAX_STORAGE_ENTRIES){
+    for (let i = MAX_STORAGE_ENTRIES; i < items.length; i++){
+      try{
+        localStorage.removeItem(items[i].key);
+      } catch(e){ /* игнорируем ошибки при удалении */ }
+    }
+  }
+}
+
 function saveProgress(){
   if (!currentFileKey || !video.duration || !isFinite(video.duration)) return;
   try{
@@ -763,6 +795,7 @@ function saveProgress(){
       ts: Date.now(),
       name: currentFileName
     }));
+    cleanupStorage(PROGRESS_PREFIX);
     markStorageOk();
   } catch(e){ notifyStorageIssue(); }
 }
@@ -1304,7 +1337,10 @@ function loadFile(file, handle){
     video.removeEventListener('loadedmetadata', loadedMetadataHandler);
   }
   loadedMetadataHandler = () => {
-    fixInfiniteDuration(restoreProgress);
+    fixInfiniteDuration(() => {
+      restoreProgress();
+      video.play().catch(()=>{});
+    });
   };
   video.addEventListener('loadedmetadata', loadedMetadataHandler, { once: true });
   // подстраховка: если браузер сам пришлёт durationchange позже (без нашего трюка) —
@@ -1321,7 +1357,6 @@ function loadFile(file, handle){
   playerView.classList.add('active');
   ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  video.play().catch(()=>{});
 }
 
 // --- перетаскивание файла ---
@@ -1592,25 +1627,51 @@ subsFile.addEventListener('change', (e) => {
   
   const reader = new FileReader();
   reader.onload = (event) => {
-    const content = event.target.result;
-    parseSubtitles(content, file.name.toLowerCase().endsWith('.srt') ? 'srt' : 'vtt');
-    // Сохраняем содержимое в отдельный ключ
-    const subsData = {
-      content: JSON.stringify(subtitlesData),
-      fileName: file.name
-    };
-    try{
-      localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
-    } catch(e){ /* хранилище недоступно — не мешаем применить субтитры для текущей сессии */ }
-    savedSubsContent = JSON.stringify(subtitlesData);
-    isSubtitlesLoaded = true;
-    // Применяем стили сразу после загрузки
-    applySubtitlesStyle();
-    // Показываем кнопку удаления
-    subsRemoveBtn.style.display = 'flex';
+    let content = event.target.result;
+    
+    // Проверяем на наличие символов замены (признак неправильной кодировки)
+    const replacementCharCount = (content.match(/\uFFFD/g) || []).length;
+    const contentLength = content.length;
+    
+    // Если символов замены много (> 5% от текста), пробуем Windows-1251
+    if (replacementCharCount > 0 && contentLength > 0 && (replacementCharCount / contentLength) > 0.05) {
+      const reader1251 = new FileReader();
+      reader1251.onload = (event1251) => {
+        content = event1251.result;
+        showStorageToast('Субтитры прочитаны в кодировке Windows-1251');
+        processSubtitlesContent(content, file);
+      };
+      reader1251.onerror = () => {
+        // Если не удалось прочитать как Windows-1251, используем UTF-8
+        showStorageToast('Возможно, неправильная кодировка субтитров');
+        processSubtitlesContent(content, file);
+      };
+      reader1251.readAsText(file, 'windows-1251');
+    } else {
+      processSubtitlesContent(content, file);
+    }
   };
   reader.readAsText(file);
 });
+
+function processSubtitlesContent(content, file){
+  parseSubtitles(content, file.name.toLowerCase().endsWith('.srt') ? 'srt' : 'vtt');
+  // Сохраняем содержимое в отдельный ключ
+  const subsData = {
+    content: JSON.stringify(subtitlesData),
+    fileName: file.name
+  };
+  try{
+    localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
+    cleanupStorage(SUBS_PREFIX);
+  } catch(e){ /* хранилище недоступно — не мешаем применить субтитры для текущей сессии */ }
+  savedSubsContent = JSON.stringify(subtitlesData);
+  isSubtitlesLoaded = true;
+  // Применяем стили сразу после загрузки
+  applySubtitlesStyle();
+  // Показываем кнопку удаления
+  subsRemoveBtn.style.display = 'flex';
+}
 
 // --- Удаление субтитров ---
 subsRemoveBtn.addEventListener('click', () => {
