@@ -64,6 +64,45 @@ input[type=file]{ display:none; }
   display:none;
 }
 
+/* ---------- ВВОД ССЫЛКИ (m3u8 / mp4) ---------- */
+.url-panel{
+  width: min(640px, 90vw);
+  margin-top: 18px;
+}
+.url-divider{
+  display:flex; align-items:center; gap:12px;
+  color: var(--muted); font-size: 12px; margin-bottom: 12px;
+}
+.url-divider::before, .url-divider::after{
+  content:''; flex:1; height:1px; background:#2a2f36;
+}
+.url-row{
+  display:flex; gap:8px;
+}
+.url-input{
+  flex:1;
+  background: var(--surface);
+  border: 1px solid #33383f;
+  border-radius: 8px;
+  color: var(--text);
+  padding: 11px 14px;
+  font-family:'JetBrains Mono', monospace;
+  font-size: 13px;
+  outline: none;
+}
+.url-input:focus{ border-color: var(--accent); }
+.url-panel #url-open-btn{
+  background: var(--accent-orange);
+  color: #0B0D10;
+  border: none;
+  border-radius: 8px;
+  padding: 0 18px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.url-panel #url-open-btn:hover{ opacity: .9; }
+
 /* ---------- ПАНЕЛЬ ПРОДОЛЖЕНИЯ ПРОСМОТРА ---------- */
 .resume-panel{
   width: min(640px, 90vw);
