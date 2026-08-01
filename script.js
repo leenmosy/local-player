@@ -195,6 +195,13 @@ function applyOverlaySettings(){
 }
 
 let currentObjectUrl = null;
+let hls = null;
+function destroyHls(){
+  if (hls){
+    try { hls.destroy(); } catch(e){}
+    hls = null;
+  }
+}
 let durationChangeHandler = null;
 let loadedMetadataHandler = null;
 let uiSyncInterval = null;
@@ -1220,22 +1227,28 @@ ccOpenBtn.addEventListener('click', async () => {
 
 checkSavedHandle();
 
-function loadFile(file, handle){
+function loadFile(file, handle, remoteUrl){
   if (!file){ return; }
-  
-  // Проверяем по MIME type или по расширению
-  const isVideoByType = file.type.startsWith('video/');
-  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
-  
-  if (!isVideoByType && !isVideoByExtension){
-    errMsg.textContent = 'Похоже, это не видеофайл. Попробуй другой файл.';
-    errMsg.style.display = 'block';
-    return;
+
+  if (!remoteUrl){
+    // Проверяем по MIME type или по расширению (только для локальных файлов)
+    const isVideoByType = file.type.startsWith('video/');
+    const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
+
+    if (!isVideoByType && !isVideoByExtension){
+      errMsg.textContent = 'Похоже, это не видеофайл. Попробуй другой файл.';
+      errMsg.style.display = 'block';
+      return;
+    }
   }
   errMsg.style.display = 'none';
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
-  if (handle){
+  destroyHls();
+  if (remoteUrl){
+    currentFileKey = PROGRESS_PREFIX + 'url:' + remoteUrl;
+    currentFileName = file.name;
+  } else if (handle){
     currentFileKey = handleFileKey(handle.name, file.size, file.lastModified);
     currentFileName = handle.name;
   } else {
@@ -1244,11 +1257,37 @@ function loadFile(file, handle){
   }
 
   try {
-    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = URL.createObjectURL(file);
-    video.src = currentObjectUrl;
+    if (currentObjectUrl){ URL.revokeObjectURL(currentObjectUrl); currentObjectUrl = null; }
+
+    if (remoteUrl){
+      const isM3u8 = /\.m3u8(\?|#|$)/i.test(remoteUrl);
+      if (isM3u8 && window.Hls && window.Hls.isSupported()){
+        hls = new Hls();
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(remoteUrl));
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data && data.fatal){
+            errMsg.textContent = 'Не удалось загрузить поток: ' + (data.details || data.type || 'неизвестная ошибка');
+            errMsg.style.display = 'block';
+            destroyHls();
+          }
+        });
+      } else if (isM3u8 && video.canPlayType('application/vnd.apple.mpegurl')){
+        // Safari умеет HLS нативно
+        video.src = remoteUrl;
+      } else if (isM3u8){
+        errMsg.textContent = 'Этот браузер не поддерживает HLS-потоки (.m3u8).';
+        errMsg.style.display = 'block';
+        return;
+      } else {
+        video.src = remoteUrl;
+      }
+    } else {
+      currentObjectUrl = URL.createObjectURL(file);
+      video.src = currentObjectUrl;
+    }
   } catch (e) {
-    errMsg.textContent = 'Ошибка при загрузке файла: ' + e.message;
+    errMsg.textContent = 'Ошибка при загрузке: ' + e.message;
     errMsg.style.display = 'block';
     if (currentObjectUrl) {
       URL.revokeObjectURL(currentObjectUrl);
@@ -1473,6 +1512,43 @@ dropzone.addEventListener('click', async () => {
   fileInput.click();
 });
 fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+
+// --- открытие по прямой ссылке / m3u8 ---
+const urlInput = document.getElementById('url-input');
+const urlOpenBtn = document.getElementById('url-open-btn');
+
+function openFromUrlInput(){
+  const raw = urlInput.value.trim();
+  if (!raw) return;
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (e) {
+    errMsg.textContent = 'Некорректная ссылка.';
+    errMsg.style.display = 'block';
+    return;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:'){
+    errMsg.textContent = 'Ссылка должна начинаться с http:// или https://';
+    errMsg.style.display = 'block';
+    return;
+  }
+
+  const lastSegment = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
+  const displayName = lastSegment || parsed.hostname;
+  const fakeFile = { name: displayName };
+
+  loadFile(fakeFile, null, parsed.href);
+}
+
+urlOpenBtn.addEventListener('click', openFromUrlInput);
+urlInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    openFromUrlInput();
+  }
+});
 
 // --- оверлей и синхронизация controls ---
 const stage = document.getElementById('stage');
@@ -2308,6 +2384,7 @@ video.addEventListener('loadeddata', () => {
 backBtn.addEventListener('click', () => {
   stopProgressTracking();
   video.pause();
+  destroyHls();
   if (currentObjectUrl){ URL.revokeObjectURL(currentObjectUrl); currentObjectUrl = null; }
   video.removeAttribute('src');
   video.load();
