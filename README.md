@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://leenmosy.github.io/local-player/"><strong>🎬 Открыть плеер →</strong></a>
+  <a href="https://leenmosy.github.io/local-player/"><strong>Открыть плеер</strong></a>
 </p>
 
 <p align="center">
