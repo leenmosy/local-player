@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
 
@@ -16,15 +17,6 @@
 
   <div class="resume-panel" id="resume-panel">
     <div class="os-title">Найден сохранённый прогресс</div>
-    <div class="hint-sub" id="resume-sub">Браузер не может открыть файл с диска сам — перетащи тот же файл ещё раз, и плеер продолжит с этого места.</div>
-
-    <div class="resume-row" id="continue-row" style="display:none;">
-      <div class="cc-info">
-        <div class="cc-name" id="cc-name">—</div>
-        <div class="cc-time" id="cc-time"></div>
-      </div>
-      <button type="button" id="cc-open-btn">Продолжить</button>
-    </div>
 
     <div id="resume-list"></div>
   </div>
@@ -36,6 +28,16 @@
     <div class="main-txt">Выберите файл</div>
     <div class="sub-txt"><code>.mp4 .webm .mov</code></div>
   </div>
+  
+  <div class="url-input-container">
+    <div class="url-divider">или</div>
+    <div class="url-input-row">
+      <input type="text" id="url-input" class="url-input" placeholder="Вставьте ссылку на видео m3u8 (hls)" autocomplete="off">
+      <button type="button" id="url-load-btn" class="url-load-btn">Открыть</button>
+      <span class="url-loading-spinner" id="url-loading-spinner" style="display:none"></span>
+    </div>
+  </div>
+  
   <input type="file" id="file-input" accept="video/*">
   <div class="err-msg" id="err-msg"></div>
 </div>
@@ -43,7 +45,7 @@
 <div id="player-view">
   <div class="toolbar">
     <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">Назад</button>
-    <h1 class="title-font player-title" id="fname"></h1>
+    <h1 class="title-font player-title" id="fname" title="Нажмите для редактирования"></h1>
   </div>
   <div class="stage" id="stage">
     <video id="video"></video>
@@ -90,6 +92,7 @@
         <svg id="icon-fs-close" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M9 3H3v6h2V5h4zm12 0h-6v2h4v4h2zM5 15H3v6h6v-2H5zm14 4h-4v2h6v-6h-2z"/></svg>
       </button>
     </div>
+    <div class="storage-toast" id="storage-toast"></div>
     <div class="dr-panel" id="dr-panel">
       <!-- Категория: Звук -->
       <div class="dr-category">
@@ -103,12 +106,12 @@
               <input type="checkbox" id="dr-toggle" checked aria-label="Выровнять звук">
               <span class="box"></span>
             </label>
-            <span class="dr-label">Нормализация звука</span>
+            <span class="dr-label">Стабилизация звука</span>
           </div>
           <div class="dr-row">
             <label for="dr-strength">Интенсивность</label>
-            <input type="range" id="dr-strength" min="0" max="100" step="5" value="55">
-            <span class="dr-val" id="dr-strength-val">55%</span>
+            <input type="range" id="dr-strength" min="0" max="100" step="5" value="60">
+            <span class="dr-val" id="dr-strength-val">60%</span>
           </div>
           <div class="dr-row" title="Усиление сверх стандартного максимума громкости">
             <label for="dr-boost">Громкость</label>
@@ -130,7 +133,7 @@
               <input type="checkbox" id="mirror-toggle" aria-label="Отзеркалить видео">
               <span class="box"></span>
             </label>
-            <span class="dr-label">Отзеркалить</span>
+            <span class="dr-label">Отзеркалить видео</span>
           </div>
           <div class="dr-row">
             <label for="dr-speed">Скорость</label>
@@ -220,11 +223,11 @@
       <!-- Категория: Блюр экрана -->
       <div class="dr-category">
         <button type="button" class="dr-category-header" data-category="timings" aria-expanded="false" aria-controls="timings-content">
-          <span class="dr-category-title">Блюр экрана</span>
+          <span class="dr-category-title">Блюр</span>
           <svg class="dr-category-arrow" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
         </button>
         <div class="dr-category-content" id="timings-content">
-          <div class="timing-hint">Экран будет размыт в указанные промежутки времени (формат мм:сс или ч:мм:сс)</div>
+          <div class="timing-hint">Видео будет размыто в указанные промежутки времени<br>(формат мм:сс или ч:мм:сс)</div>
           <div class="dr-row timing-input-row">
             <input type="text" id="timing-from" class="dr-text-input timing-time-input" placeholder="44:05" inputmode="numeric">
             <span class="timing-dash">–</span>
@@ -307,9 +310,15 @@
       <svg id="center-icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
     </div>
   </div>
+  <div class="keyboard-shortcuts" aria-label="Горячие клавиши">
+    <div class="shortcut-item" title="Пауза"><kbd>Space</kbd><span>Пауза</span></div>
+    <div class="shortcut-item" title="Перемотка на 5 секунд"><kbd>←</kbd><kbd>→</kbd><span>Перемотка 5с</span></div>
+    <div class="shortcut-item" title="Точная перемотка на 1 секунду"><kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd><span>Перемотка 1с</span></div>
+    <div class="shortcut-item" title="Громкость"><kbd>↑</kbd><kbd>↓</kbd><span>Громкость</span></div>
+    <div class="shortcut-item" title="Без звука"><kbd>M</kbd><span>Выкл. звук</span></div>
+    <div class="shortcut-item" title="Полный экран"><kbd>F</kbd><span>Полный экран</span></div>
+  </div>
 </div>
-
-<div class="storage-toast" id="storage-toast"></div>
 
 <script src="script.js"></script>
 </body>
