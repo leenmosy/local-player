@@ -3,6 +3,8 @@ const fileInput = document.getElementById('file-input');
 const dropView = document.getElementById('drop-view');
 const playerView = document.getElementById('player-view');
 const errMsg = document.getElementById('err-msg');
+const urlInput = document.getElementById('url-input');
+const urlLoadBtn = document.getElementById('url-load-btn');
 const video = document.getElementById('video');
 const ovTitle = document.getElementById('ov-title');
 const ovTime = document.getElementById('ov-time');
@@ -11,18 +13,14 @@ const titleInput = document.getElementById('title-input');
 const fnameEl = document.getElementById('fname');
 const backBtn = document.getElementById('back-btn');
 const resumePanel = document.getElementById('resume-panel');
-const resumeSub = document.getElementById('resume-sub');
 const resumeList = document.getElementById('resume-list');
-const continueRow = document.getElementById('continue-row');
-const ccName = document.getElementById('cc-name');
-const ccTime = document.getElementById('cc-time');
-const ccOpenBtn = document.getElementById('cc-open-btn');
 const videoErrorEl = document.getElementById('video-error');
 const centerPlayIcon = document.getElementById('center-play-icon');
 const centerIconPlay = document.getElementById('center-icon-play');
 const centerIconPause = document.getElementById('center-icon-pause');
 const subsFileName = document.getElementById('subs-file-name');
 const subsRemoveBtn = document.getElementById('subs-remove-btn');
+const urlLoadingSpinner = document.getElementById('url-loading-spinner');
 
 // --- заголовки сворачиваемых категорий ---
 const categoryHeaders = document.querySelectorAll('.dr-category-header');
@@ -262,7 +260,8 @@ function saveSettings(){
         subsOpacity: parseFloat(subsOpacity.value),
         subsBg: subsBg.value,
         subsBgOpacity: parseFloat(subsBgOpacity.value),
-        subsBottom: parseFloat(subsBottom.value)
+        subsBottom: parseFloat(subsBottom.value),
+        ts: Date.now()
       };
       localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
       cleanupStorage(SETTINGS_PREFIX);
@@ -304,7 +303,8 @@ function saveSettingsImmediate(){
       subsOpacity: parseFloat(subsOpacity.value),
       subsBg: subsBg.value,
       subsBgOpacity: parseFloat(subsBgOpacity.value),
-      subsBottom: parseFloat(subsBottom.value)
+      subsBottom: parseFloat(subsBottom.value),
+      ts: Date.now()
     };
     localStorage.setItem(settingsKey(currentFileKey), JSON.stringify(settings));
     cleanupStorage(SETTINGS_PREFIX);
@@ -319,11 +319,11 @@ function isDurationUsable(){
 }
 function fixInfiniteDuration(onReady){
   if (isDurationUsable()){
-    seek.disabled = false;
+    updateSeekControlsState();
     if (onReady) onReady();
     return;
   }
-  seek.disabled = true;
+  updateSeekControlsState();
   // Приостанавливаем воспроизведение на время "прощупывания" длины,
   // чтобы пользователь не увидел вспышку последнего кадра/щелчок звука
   // в момент служебного скачка в конец файла и обратно.
@@ -332,8 +332,14 @@ function fixInfiniteDuration(onReady){
   const onTimeUpdate = () => {
     video.removeEventListener('timeupdate', onTimeUpdate);
     video.currentTime = 0;
-    seek.disabled = !isDurationUsable();
-    if (wasPlaying) video.play().catch(()=>{});
+    updateSeekControlsState();
+    if (wasPlaying) video.play().catch(e => {
+      if (e.name === 'NotAllowedError') {
+        console.log('Autoplay prevented - user interaction required');
+      } else {
+        console.warn('Play error:', e);
+      }
+    });
     if (onReady) onReady();
   };
   video.addEventListener('timeupdate', onTimeUpdate);
@@ -479,9 +485,10 @@ function startEditingRange(idx, item, rangeText) {
     return;
   }
   
-  isEditing = true;
-  currentEditingItem = item;
-  const range = blurRanges[idx];
+  try {
+    isEditing = true;
+    currentEditingItem = item;
+    const range = blurRanges[idx];
   
   // Создаем редактируемые поля
   const editContainer = document.createElement('div');
@@ -660,6 +667,11 @@ function startEditingRange(idx, item, rangeText) {
   toInput.addEventListener('input', () => {
     toInput.classList.remove('has-error');
   });
+  } catch (e) {
+    console.error('Error in startEditingRange:', e);
+    stopEditingSession();
+    renderBlurRanges();
+  }
 }
 
 function showTimingError(msg){
@@ -732,7 +744,12 @@ function setSubsFileNameDisplay(name){
 
 // --- запоминание тайминга просмотра (localStorage) ---
 const PROGRESS_PREFIX = 'lp_progress:';
-const HANDLE_KEY_PREFIX = PROGRESS_PREFIX + 'h:';
+// Префикс для видео, открытых по ссылке (m3u8/mp4-URL). Раньше такие записи хранились
+// как 'url:' + url БЕЗ PROGRESS_PREFIX — то есть в отдельном пространстве ключей, которое
+// cleanupStorage()/removeDuplicateProgress()/renderResumeList() вообще не видели. Из-за
+// этого url-записи никогда не чистились и не попадали в общий список «Продолжить».
+// Теперь они тоже живут под PROGRESS_PREFIX и участвуют в общей логике.
+const URL_KEY_PREFIX = PROGRESS_PREFIX + 'url:';
 const SETTINGS_PREFIX = 'lp_settings:';
 const SUBS_PREFIX = 'lp_subs:';
 const MAX_STORAGE_ENTRIES = 20; // Максимальное количество записей каждого типа
@@ -743,8 +760,8 @@ let progressInterval = null;
 function fileKey(file){
   return PROGRESS_PREFIX + file.name + ':' + file.size + ':' + (file.lastModified || 0);
 }
-function handleFileKey(handleName, size, lastModified){
-  return HANDLE_KEY_PREFIX + handleName + ':' + (size || 0) + ':' + (lastModified || 0);
+function urlKey(url){
+  return URL_KEY_PREFIX + url;
 }
 function settingsKey(key){
   return SETTINGS_PREFIX + key.replace(PROGRESS_PREFIX, '');
@@ -785,18 +802,88 @@ function saveProgress(){
   if (!currentFileKey || !video.duration || !isFinite(video.duration)) return;
   try{
     // Тут храним только прогресс просмотра, не настройки (settingsKey не трогаем)
-    if (video.currentTime < 5 || video.currentTime > video.duration - 8){
-      localStorage.removeItem(currentFileKey);
-      return;
-    }
-    localStorage.setItem(currentFileKey, JSON.stringify({
+    // Убрано условие по времени - теперь прогресс сохраняется при любом просмотре
+    const progressData = {
       t: video.currentTime,
       duration: video.duration,
       ts: Date.now(),
-      name: currentFileName
-    }));
+      name: currentFileName,
+      source: currentFileKey.startsWith(URL_KEY_PREFIX) ? 'url' : 'file'
+    };
+    // Для URL-ссылок сохраняем также сам URL
+    if (currentFileKey.startsWith(URL_KEY_PREFIX)){
+      progressData.url = currentFileKey.slice(URL_KEY_PREFIX.length);
+    }
+    localStorage.setItem(currentFileKey, JSON.stringify(progressData));
+    
+    // Удаляем дубликаты для локальных файлов (у url-записей своего "размера/даты" нет,
+    // поэтому дедуп по этому принципу для них пропускается — см. removeDuplicateProgress)
+    removeDuplicateProgress(currentFileKey);
+    
+    // Очищаем старые записи (url-, file- и handle-записи теперь в одном пространстве
+    // PROGRESS_PREFIX, поэтому один вызов покрывает все типы)
     cleanupStorage(PROGRESS_PREFIX);
     markStorageOk();
+  } catch(e){ notifyStorageIssue(); }
+}
+
+// Удаляет дубликаты прогресса по размеру и дате изменения файла
+function removeDuplicateProgress(currentKey){
+  if (!currentKey) return;
+  // URL-ключи (PROGRESS_PREFIX + 'url:' + ссылка) не имеют размера/даты файла — сама
+  // ссылка тоже содержит двоеточия, так что дедуп по последним двум ':'-сегментам
+  // здесь бессмысленен и может дать случайные совпадения. Для url-записей дедуп не нужен:
+  // одна и та же ссылка и так перезапишет саму себя по одинаковому ключу.
+  if (currentKey.startsWith(URL_KEY_PREFIX)) return;
+  
+  // Получаем размер и дату из текущего ключа
+  const parts = currentKey.split(':');
+  if (parts.length < 3) return;
+  
+  const size = parts[parts.length - 2];
+  const lastModified = parts[parts.length - 1];
+  
+  // Сначала собираем все ключи для удаления, чтобы не итерировать во время изменения
+  const keysToDelete = [];
+  for (let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i);
+    if (!key || key === currentKey) continue;
+    if (!key.startsWith(PROGRESS_PREFIX)) continue;
+    // url-записи пропускаем — у них нет размера/даты, сравнивать их по этому принципу нельзя
+    if (key.startsWith(URL_KEY_PREFIX)) continue;
+    const keyParts = key.split(':');
+    if (keyParts.length >= 3 && keyParts[keyParts.length - 2] === size && keyParts[keyParts.length - 1] === lastModified){
+      keysToDelete.push(key);
+    }
+  }
+  
+  // Удаляем все найденные дубликаты
+  keysToDelete.forEach(key => {
+    localStorage.removeItem(key);
+  });
+}
+
+// Обновляет только название в записи прогресса (без условий по времени)
+function saveTitleToProgress(){
+  if (!currentFileKey) return;
+  try{
+    const raw = localStorage.getItem(currentFileKey);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data){
+      data.name = currentFileName;
+      data.ts = Date.now(); // Обновляем timestamp
+      localStorage.setItem(currentFileKey, JSON.stringify(data));
+      
+      // Удаляем дубликаты
+      removeDuplicateProgress(currentFileKey);
+      
+      // Очищаем старые записи (url-, file- и handle-записи в одном пространстве PROGRESS_PREFIX)
+      cleanupStorage(PROGRESS_PREFIX);
+      markStorageOk();
+      // Обновляем отображение списка "Продолжить"
+      renderResumeList();
+    }
   } catch(e){ notifyStorageIssue(); }
 }
 
@@ -841,7 +928,7 @@ function loadSettings(){
       return Math.max(min, Math.min(max, val));
     };
     
-    settings.drStrength = validateNumber(settings.drStrength, 0, 100, 55);
+    settings.drStrength = validateNumber(settings.drStrength, 0, 100, 60);
     settings.drBoost = validateNumber(settings.drBoost, 100, 500, 100);
     settings.drSpeed = validateNumber(settings.drSpeed, 0.25, 2, 1);
     settings.drBrightness = validateNumber(settings.drBrightness, 50, 200, 100);
@@ -1046,6 +1133,13 @@ function restoreProgress(){
       // Сразу применяем блюр после восстановления времени
       updateVideoFilter();
     }
+    // Восстанавливаем сохранённое название
+    if (data && data.name) {
+      currentFileName = data.name;
+      fnameEl.textContent = data.name;
+      ovTitle.textContent = data.name;
+      titleInput.value = data.name;
+    }
   } catch(e){ /* повреждённая запись — игнорируем */ }
 }
 
@@ -1070,20 +1164,26 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
+function escapeHtmlAttr(str){
+  // Экранируем символы для использования в HTML атрибутах
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function updatePanelVisibility(){
-  const hasContinue = continueRow.style.display !== 'none';
-  const hasList = resumeList.children.length > 0;
-  resumePanel.classList.toggle('show', hasContinue || hasList);
-  resumeSub.style.display = hasList ? 'block' : 'none';
-  continueRow.classList.toggle('has-more', hasContinue && hasList);
+  resumePanel.classList.toggle('show', resumeList.children.length > 0);
 }
 
 function renderResumeList(){
   const items = [];
   for (let i = 0; i < localStorage.length; i++){
     const key = localStorage.key(i);
+    // PROGRESS_PREFIX покрывает все записи: обычные файлы, handle-файлы и url-ссылки
     if (!key || !key.startsWith(PROGRESS_PREFIX)) continue;
-    if (key.startsWith(HANDLE_KEY_PREFIX)) continue; // эти показывает верхняя строка "Продолжить"
     try{
       const data = JSON.parse(localStorage.getItem(key));
       if (data && typeof data.t === 'number'){
@@ -1091,24 +1191,126 @@ function renderResumeList(){
       }
     } catch(e){ /* пропускаем битую запись */ }
   }
+  // Самая свежая запись (независимо от типа — url или файл) естественным образом
+  // оказывается первой, так что отдельный "верхний" блок больше не нужен —
+  // все записи отображаются одним и тем же способом.
   items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  const shown = items.slice(0, 4);
+  const shown = items.slice(0, 3);
 
   resumeList.innerHTML = shown.map(item => `
     <div class="resume-item">
-      <span class="ri-name">${escapeHtml(item.name || 'Файл')}</span>
-      <span class="ri-time">${formatTime(item.t)}${item.duration ? ' / ' + formatTime(item.duration) : ''}</span>
-      <button type="button" class="ri-clear" data-key="${escapeHtml(item.key)}" title="Забыть">✕</button>
+      <div class="ri-info">
+        <div class="ri-name">${escapeHtml(item.name || 'Файл')}</div>
+        <div class="ri-time">
+          ${formatTime(item.t)}${item.duration ? ' / ' + formatTime(item.duration) : ''}
+          <span class="ri-separator">·</span>
+          ${item.url ? '<span class="ri-type-badge ri-type-url">Ссылка</span>' : '<span class="ri-type-badge ri-type-file">Файл</span>'}
+        </div>
+      </div>
+      <div class="ri-actions">
+        ${item.url
+          ? `<button type="button" class="ri-continue" data-url="${escapeHtmlAttr(item.url)}" title="Продолжить">Продолжить</button>`
+          : `<button type="button" class="ri-continue" data-key="${escapeHtmlAttr(item.key)}" title="Продолжить">Продолжить</button>`}
+        <button type="button" class="ri-clear" data-key="${escapeHtmlAttr(item.key)}" title="Забыть">✕</button>
+      </div>
     </div>
   `).join('');
   updatePanelVisibility();
 }
 
-resumeList.addEventListener('click', (e) => {
+resumeList.addEventListener('click', async (e) => {
   const btn = e.target.closest('.ri-clear');
-  if (!btn) return;
-  try{ localStorage.removeItem(btn.dataset.key); } catch(err){}
-  renderResumeList();
+  if (btn) {
+    const key = btn.dataset.key;
+    try{
+      // Удаляем прогресс
+      localStorage.removeItem(key);
+      // Удаляем связанные настройки
+      localStorage.removeItem(settingsKey(key));
+      // Удаляем связанные субтитры
+      localStorage.removeItem(subsKey(key));
+    } catch(err){}
+    try{ await idbDelete(key); } catch(err){}
+    renderResumeList();
+    return;
+  }
+  
+  const continueBtn = e.target.closest('.ri-continue');
+  if (!continueBtn) return;
+
+  // Продолжить видео по ссылке (m3u8/mp4-URL)
+  if (continueBtn.dataset.url) {
+    const url = continueBtn.dataset.url;
+    urlInput.value = url;
+    loadUrl(url);
+    return;
+  }
+
+  if (continueBtn.dataset.key) {
+    if (!FS_ACCESS_SUPPORTED){
+      errMsg.textContent = 'Ваш браузер не поддерживает открытие файла по сохранённой ссылке. Выберите файл заново через «Выберите файл».';
+      errMsg.classList.add('show');
+      return;
+    }
+    // Кнопка "Продолжить" для обычных файлов - используем сохранённый handle
+    // именно ЭТОЙ записи (у каждого файла свой ключ в IndexedDB), а не
+    // общий "последний открытый" — иначе при нескольких файлах в списке
+    // "Продолжить" на не самом последнем открывало бы совсем другое видео.
+    const key = continueBtn.dataset.key;
+    try{
+      const handle = await idbGet(key);
+      if (!handle){
+        // Если handle не сохранён, показываем диалог выбора файла
+        const [newHandle] = await window.showOpenFilePicker({
+          types: [{ description: 'Видео', accept: { 'video/*': ['.mp4','.webm','.mov'] } }],
+          multiple: false
+        });
+        const file = await newHandle.getFile();
+        
+        // Сохраняем новый handle под ключом именно этой записи
+        try{ await idbSet(key, newHandle); } catch(err){}
+        
+        // Загружаем файл и восстанавливаем прогресс
+        loadFile(file, newHandle);
+        
+        // Восстанавливаем прогресс из сохранённого ключа
+        try{
+          const progressData = JSON.parse(localStorage.getItem(key));
+          if (progressData && typeof progressData.t === 'number' && isDurationUsable()){
+            video.currentTime = progressData.t;
+          }
+        } catch(e){ /* ошибка при восстановлении прогресса */ }
+        return;
+      }
+      
+      // Проверяем разрешение
+      let perm = await handle.queryPermission({ mode: 'read' });
+      if (perm !== 'granted'){
+        perm = await handle.requestPermission({ mode: 'read' });
+      }
+      if (perm !== 'granted'){
+        errMsg.textContent = 'Доступ к файлу не разрешён.';
+        errMsg.classList.add('show');
+        return;
+      }
+      
+      const file = await handle.getFile();
+      
+      // Загружаем файл и восстанавливаем прогресс
+      loadFile(file, handle);
+      
+      // Восстанавливаем прогресс из сохранённого ключа
+      try{
+        const progressData = JSON.parse(localStorage.getItem(key));
+        if (progressData && typeof progressData.t === 'number' && isDurationUsable()){
+          video.currentTime = progressData.t;
+        }
+      } catch(e){ /* ошибка при восстановлении прогресса */ }
+    } catch(err){
+      errMsg.textContent = 'Не удалось открыть сохранённый файл — возможно, он был перемещён, переименован или удалён.';
+      errMsg.classList.add('show');
+    }
+  }
 });
 
 renderResumeList();
@@ -1126,7 +1328,6 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) flush
 const FS_ACCESS_SUPPORTED = typeof window.showOpenFilePicker === 'function';
 const IDB_NAME = 'lp-player-db';
 const IDB_STORE = 'handles';
-const IDB_HANDLE_KEY = 'lastHandle';
 
 function idbOpen(){
   return new Promise((resolve, reject) => {
@@ -1141,8 +1342,18 @@ async function idbSet(key, value){
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite');
     tx.objectStore(IDB_STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(new Error('Transaction aborted'));
+    };
   });
 }
 async function idbGet(key){
@@ -1150,8 +1361,18 @@ async function idbGet(key){
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readonly');
     const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      db.close();
+      resolve(req.result);
+    };
+    req.onerror = () => {
+      db.close();
+      reject(req.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(new Error('Transaction aborted'));
+    };
   });
 }
 async function idbDelete(key){
@@ -1159,101 +1380,64 @@ async function idbDelete(key){
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite');
     tx.objectStore(IDB_STORE).delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(new Error('Transaction aborted'));
+    };
   });
 }
 
-let savedHandle = null;
-
-async function checkSavedHandle(){
-  if (!FS_ACCESS_SUPPORTED){ updatePanelVisibility(); return; }
-  try{
-    const handle = await idbGet(IDB_HANDLE_KEY);
-    if (!handle){ continueRow.style.display = 'none'; updatePanelVisibility(); return; }
-    savedHandle = handle;
-    let raw = null;
-    try{
-      // Ключ должен совпадать с тем, что использует loadFile (см. handleFileKey)
-      const previewFile = await handle.getFile();
-      raw = localStorage.getItem(handleFileKey(handle.name, previewFile.size, previewFile.lastModified));
-    } catch(e){
-      // Доступ ещё не разрешён — покажем кнопку без точного времени
-      raw = null;
-    }
-    const data = raw ? JSON.parse(raw) : null;
-    ccName.textContent = handle.name;
-    ccTime.textContent = data ? `${formatTime(data.t)}${data.duration ? ' / ' + formatTime(data.duration) : ''}` : 'с начала';
-    continueRow.style.display = 'flex';
-    updatePanelVisibility();
-  } catch(e){
-    continueRow.style.display = 'none';
-    updatePanelVisibility();
-  }
-}
-
-ccOpenBtn.addEventListener('click', async () => {
-  if (!savedHandle) return;
-  ccOpenBtn.disabled = true;
-  try{
-    let perm = await savedHandle.queryPermission({ mode: 'read' });
-    if (perm !== 'granted'){
-      perm = await savedHandle.requestPermission({ mode: 'read' });
-    }
-    if (perm !== 'granted'){
-      errMsg.textContent = 'Доступ к файлу не разрешён.';
-      errMsg.style.display = 'block';
-      return;
-    }
-    const file = await savedHandle.getFile();
-    loadFile(file, savedHandle);
-  } catch(e){
-    errMsg.textContent = 'Не удалось открыть сохранённый файл — возможно, он был перемещён, переименован или удалён.';
-    errMsg.style.display = 'block';
-    continueRow.style.display = 'none';
-    updatePanelVisibility();
-    try{ await idbDelete(IDB_HANDLE_KEY); } catch(err){}
-  } finally {
-    ccOpenBtn.disabled = false;
-  }
-});
-
-checkSavedHandle();
+// Раньше здесь был отдельный механизм (checkSavedUrl/checkSavedHandle/updateContinueButton),
+// который вычислял «самую свежую» запись отдельно от общего списка и рисовал её в отдельном
+// блоке (#continue-row). Он читал/писал в несогласованные пространства ключей, из-за чего
+// верхний блок и список ниже могли показывать разные и/или задвоенные данные. Теперь всё
+// хранится под одним префиксом (PROGRESS_PREFIX), и renderResumeList() сам решает, что
+// показать — эта логика больше не нужна.
 
 function loadFile(file, handle){
   if (!file){ return; }
   
   // Проверяем по MIME type или по расширению
-  const isVideoByType = file.type.startsWith('video/');
-  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
-  
-  if (!isVideoByType && !isVideoByExtension){
+  if (!isVideoFile(file)){
     errMsg.textContent = 'Похоже, это не видеофайл. Попробуй другой файл.';
-    errMsg.style.display = 'block';
+    errMsg.classList.add('show');
     return;
   }
-  errMsg.style.display = 'none';
+  errMsg.classList.remove('show');
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
-  if (handle){
-    currentFileKey = handleFileKey(handle.name, file.size, file.lastModified);
-    currentFileName = handle.name;
-  } else {
-    currentFileKey = fileKey(file);
-    currentFileName = file.name;
-  }
+  // Всегда используем PROGRESS_PREFIX для ключа файла (для прогресса)
+  currentFileKey = fileKey(file);
+  currentFileName = file.name;
+  
+  // Удаляем дубликаты прогресса для этого файла
+  removeDuplicateProgress(currentFileKey);
+
+  // Сбрасываем crossOrigin для локальных файлов (blob-URL не требует CORS)
+  video.removeAttribute('crossOrigin');
 
   try {
+    const newObjectUrl = URL.createObjectURL(file);
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = URL.createObjectURL(file);
+    currentObjectUrl = newObjectUrl;
     video.src = currentObjectUrl;
   } catch (e) {
     errMsg.textContent = 'Ошибка при загрузке файла: ' + e.message;
-    errMsg.style.display = 'block';
+    errMsg.classList.add('show');
     if (currentObjectUrl) {
       URL.revokeObjectURL(currentObjectUrl);
       currentObjectUrl = null;
     }
+    video.src = '';
+    video.load();
     return;
   }
 
@@ -1281,8 +1465,8 @@ function loadFile(file, handle){
     setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
     
     drToggle.checked = true;
-    drStrength.value = 55;
-    drStrengthVal.textContent = '55%';
+    drStrength.value = 60;
+    drStrengthVal.textContent = '60%';
     drBoost.value = 100;
     drBoostVal.textContent = '100%';
     drEnabled = true;
@@ -1291,6 +1475,9 @@ function loadFile(file, handle){
       updateCompressor();
       connectGraph();
     }
+    
+    // Сохраняем дефолтные настройки
+    saveSettings();
     
     // Субтитры (контент и стиль) всегда сбрасываются для файла без настроек
     subtitlesData = [];
@@ -1337,10 +1524,19 @@ function loadFile(file, handle){
     video.removeEventListener('loadedmetadata', loadedMetadataHandler);
   }
   loadedMetadataHandler = () => {
-    fixInfiniteDuration(() => {
+    // Обновляем время при загрузке метаданных
+    const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    ovTime.textContent = txt;
+    timeDisplay.textContent = txt;
+
+    // Не применяем fixInfiniteDuration для HLS потоков - hls.js сам управляет live-потоками
+    if (!hls) {
+      fixInfiniteDuration(() => {
+        restoreProgress();
+      });
+    } else {
       restoreProgress();
-      video.play().catch(()=>{});
-    });
+    }
   };
   video.addEventListener('loadedmetadata', loadedMetadataHandler, { once: true });
   // подстраховка: если браузер сам пришлёт durationchange позже (без нашего трюка) —
@@ -1349,14 +1545,33 @@ function loadFile(file, handle){
     video.removeEventListener('durationchange', durationChangeHandler);
   }
   durationChangeHandler = () => {
-    if (isDurationUsable()) seek.disabled = false;
+    updateSeekControlsState();
   };
-  video.addEventListener('durationchange', durationChangeHandler);
+  video.addEventListener('durationchange', durationChangeHandler, { once: true });
 
   dropView.style.display = 'none';
   playerView.classList.add('active');
+
+  // Очищаем старый аудио-граф перед созданием нового
+  destroyAudioGraph();
   ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Запускаем воспроизведение
+  video.play().catch(e => {
+    if (e.name === 'NotAllowedError') {
+      console.log('Autoplay prevented - user interaction required');
+    } else {
+      console.warn('Play error:', e);
+    }
+  });
+}
+
+// Проверяет, является ли файл видеофайлом
+function isVideoFile(file){
+  const isVideoByType = file.type.startsWith('video/');
+  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
+  return isVideoByType || isVideoByExtension;
 }
 
 // --- перетаскивание файла ---
@@ -1364,6 +1579,7 @@ function loadFile(file, handle){
   dropzone.addEventListener(evt, e => { 
     e.preventDefault(); 
     e.stopPropagation();
+    e.stopImmediatePropagation();
     dropzone.classList.add('dragover'); 
   })
 );
@@ -1371,12 +1587,14 @@ function loadFile(file, handle){
   dropzone.addEventListener(evt, e => { 
     e.preventDefault(); 
     e.stopPropagation();
+    e.stopImmediatePropagation();
     dropzone.classList.remove('dragover'); 
   })
 );
 dropzone.addEventListener('drop', async e => {
   e.preventDefault();
   e.stopPropagation();
+  e.stopImmediatePropagation();
   
   const files = e.dataTransfer.files;
   if (!files || files.length === 0) return;
@@ -1385,12 +1603,9 @@ dropzone.addEventListener('drop', async e => {
   if (!file) return;
   
   // Проверяем по MIME type или по расширению
-  const isVideoByType = file.type.startsWith('video/');
-  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
-  
-  if (!isVideoByType && !isVideoByExtension) {
+  if (!isVideoFile(file)) {
     errMsg.textContent = 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)';
-    errMsg.style.display = 'block';
+    errMsg.classList.add('show');
     return;
   }
   
@@ -1403,7 +1618,7 @@ dropzone.addEventListener('drop', async e => {
     } catch(err){ handle = null; }
   }
   if (handle){
-    try{ await idbSet(IDB_HANDLE_KEY, handle); } catch(err){}
+    try{ await idbSet(fileKey(file), handle); } catch(err){}
   }
   loadFile(file, handle);
 });
@@ -1413,20 +1628,29 @@ dropzone.addEventListener('drop', async e => {
   document.body.addEventListener(evt, e => {
     e.preventDefault();
     e.stopPropagation();
+    // Подсвечиваем dropzone при перетаскивании в любом месте пока drop-view активен
+    if (dropView.style.display !== 'none'){
+      dropzone.classList.add('dragover');
+    }
   })
 );
 ['dragleave','drop'].forEach(evt =>
   document.body.addEventListener(evt, e => {
     e.preventDefault();
     e.stopPropagation();
+    // Убираем подсветку при отпускании или уходе
+    dropzone.classList.remove('dragover');
   })
 );
 document.body.addEventListener('drop', async e => {
   e.preventDefault();
   e.stopPropagation();
   
-  // Если drop view не показан, игнорируем
-  if (dropView.style.display === 'none') return;
+  // Если drop view не показан, показываем уведомление
+  if (dropView.style.display === 'none'){
+    showStorageToast('Сначала нажмите «Назад», чтобы открыть другой файл');
+    return;
+  }
   
   const files = e.dataTransfer.files;
   if (!files || files.length === 0) return;
@@ -1435,12 +1659,9 @@ document.body.addEventListener('drop', async e => {
   if (!file) return;
   
   // Проверяем по MIME type или по расширению
-  const isVideoByType = file.type.startsWith('video/');
-  const isVideoByExtension = /\.(mp4|webm|mov)$/i.test(file.name);
-  
-  if (!isVideoByType && !isVideoByExtension) {
+  if (!isVideoFile(file)) {
     errMsg.textContent = 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)';
-    errMsg.style.display = 'block';
+    errMsg.classList.add('show');
     return;
   }
   
@@ -1453,26 +1674,22 @@ document.body.addEventListener('drop', async e => {
     } catch(err){ handle = null; }
   }
   if (handle){
-    try{ await idbSet(IDB_HANDLE_KEY, handle); } catch(err){}
+    try{ await idbSet(fileKey(file), handle); } catch(err){}
   }
   loadFile(file, handle);
 });
 dropzone.addEventListener('click', async () => {
-  if (FS_ACCESS_SUPPORTED){
-    try{
-      const [handle] = await window.showOpenFilePicker({
-        types: [{ description: 'Видео', accept: { 'video/*': ['.mp4','.webm','.mov','.avi'] } }],
-        multiple: false
-      });
-      const file = await handle.getFile();
-      try{ await idbSet(IDB_HANDLE_KEY, handle); } catch(err){}
-      loadFile(file, handle);
-    } catch(err){ /* пользователь закрыл диалог выбора файла */ }
-    return;
-  }
-  fileInput.click();
+  try{
+    const [handle] = await window.showOpenFilePicker({
+      types: [{ description: 'Видео', accept: { 'video/*': ['.mp4','.webm','.mov'] } }],
+      multiple: false
+    });
+    const file = await handle.getFile();
+    try{ await idbSet(fileKey(file), handle); } catch(err){}
+    loadFile(file, handle);
+  } catch(err){ /* пользователь закрыл диалог выбора файла */ }
 });
-fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+fileInput.remove(); // Удаляем обычный input, так как всегда используем File System Access API
 
 // --- оверлей и синхронизация controls ---
 const stage = document.getElementById('stage');
@@ -1530,6 +1747,7 @@ let sourceNode = null;
 let compressorNode = null;
 let boostGain = null;
 let drEnabled = true;
+let isSwitching = false;
 
 function updateCompressor(){
   if (!compressorNode) return;
@@ -1557,7 +1775,15 @@ function connectGraph(){
 }
 
 function ensureAudioGraph(){
-  if (audioCtx) return;
+  if (audioCtx) {
+    // AudioContext уже существует, просто переподключаем граф
+    try {
+      connectGraph();
+    } catch(e) {
+      console.warn('Ошибка при переподключении аудио-графа:', e);
+    }
+    return;
+  }
   try{
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     sourceNode = audioCtx.createMediaElementSource(video);
@@ -1569,6 +1795,34 @@ function ensureAudioGraph(){
   } catch(e){
     console.warn('Web Audio недоступен:', e);
   }
+}
+
+function destroyAudioGraph(){
+  // Отключаем узлы, но не уничтожаем audioContext и sourceNode
+  // Браузер не позволяет создать второй MediaElementSourceNode для того же видео элемента
+  if (sourceNode) {
+    try {
+      sourceNode.disconnect();
+    } catch(e) {
+      // Игнорируем ошибки при отключении
+    }
+  }
+  if (compressorNode) {
+    try {
+      compressorNode.disconnect();
+    } catch(e) {
+      // Игнорируем ошибки при отключении
+    }
+  }
+  if (boostGain) {
+    try {
+      boostGain.disconnect();
+    } catch(e) {
+      // Игнорируем ошибки при отключении
+    }
+  }
+  // Не закрываем audioContext и не обнуляем sourceNode
+  // Это позволяет переиспользовать их при следующей загрузке
 }
 
 function collapseCategoriesIn(panelEl){
@@ -1659,7 +1913,8 @@ function processSubtitlesContent(content, file){
   // Сохраняем содержимое в отдельный ключ
   const subsData = {
     content: JSON.stringify(subtitlesData),
-    fileName: file.name
+    fileName: file.name,
+    ts: Date.now()
   };
   try{
     localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
@@ -1886,6 +2141,14 @@ drToggle.addEventListener('change', () => {
   ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   drEnabled = drToggle.checked;
+  
+  // Ограничиваем буст до 200% без компрессора для защиты от клиппинга
+  if (!drEnabled && drBoost.value > 200){
+    drBoost.value = 200;
+    drBoostVal.textContent = '200%';
+    if (boostGain) boostGain.gain.setTargetAtTime(2, audioCtx.currentTime, 0.01);
+  }
+  
   connectGraph();
   saveSettings();
 });
@@ -1966,6 +2229,7 @@ function resetMirror(){
   mirrorEnabled = false;
   mirrorToggle.checked = false;
   applyVideoTransform();
+  saveSettings();
 }
 
 function togglePlay(){
@@ -1980,6 +2244,25 @@ function seekBy(deltaSeconds){
 }
 skipBackBtn.addEventListener('click', () => seekBy(-5));
 skipForwardBtn.addEventListener('click', () => seekBy(5));
+
+// Дизейблим кнопки перемотки и сик-бар при недоступной длительности
+function updateSeekControlsState(){
+  const canSeek = isDurationUsable();
+  skipBackBtn.disabled = !canSeek;
+  skipForwardBtn.disabled = !canSeek;
+  seek.disabled = !canSeek;
+  
+  // Добавляем/убираем поясняющий title
+  if (!canSeek){
+    skipBackBtn.title = 'Перемотка недоступна (нет длительности)';
+    skipForwardBtn.title = 'Перемотка недоступна (нет длительности)';
+    seek.title = 'Перемотка недоступна (нет длительности)';
+  } else {
+    skipBackBtn.title = 'Назад на 5 секунд';
+    skipForwardBtn.title = 'Вперёд на 5 секунд';
+    seek.title = 'Перемотка';
+  }
+}
 
 let centerIconTimeout = null;
 
@@ -2089,13 +2372,14 @@ video.addEventListener('pause', () => {
   syncPlayStateUI();
   stopProgressTracking();
   stopUiSync();
-  
-  // Отменяем все таймеры скрытия иконки
-  clearTimeout(centerIconTimeout);
-  
-  centerPlayIcon.classList.add('show');
-  centerIconPlay.style.display = '';
-  centerIconPause.style.display = 'none';
+});
+video.addEventListener('ratechange', () => {
+  // Синхронизируем ползунок скорости с реальным значением
+  const rate = video.playbackRate;
+  if (rate >= 0.25 && rate <= 4) {
+    drSpeed.value = rate;
+    drSpeedVal.textContent = rate.toFixed(2) + 'x';
+  }
 });
 video.addEventListener('ended', () => {
   if (currentFileKey){
@@ -2141,11 +2425,8 @@ function updateSubtitles() {
     subtitles.innerHTML = '';
   }
 }
-video.addEventListener('loadedmetadata', () => {
-  const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
-  ovTime.textContent = txt;
-  timeDisplay.textContent = txt;
-});
+
+// Удалён глобальный дубликат loadedmetadata - логика интегрирована в loadedMetadataHandler
 
 seek.addEventListener('mousedown', () => isSeeking = true);
 seek.addEventListener('touchstart', () => isSeeking = true);
@@ -2159,6 +2440,9 @@ seek.addEventListener('input', () => {
 seek.addEventListener('change', () => {
   isSeeking = false;
 });
+seek.addEventListener('mouseup', () => isSeeking = false);
+seek.addEventListener('touchend', () => isSeeking = false);
+seek.addEventListener('mouseleave', () => isSeeking = false);
 
 function updateVolumeIcon(){
   const isOff = video.muted || video.volume <= 0;
@@ -2177,7 +2461,7 @@ volumeRange.addEventListener('input', () => {
   updateVolumeIcon();
   saveSettings();
 });
-muteBtn.addEventListener('click', () => {
+function toggleMute(){
   video.muted = !video.muted;
   if (video.muted){
     if (video.volume > 0) lastVolume = video.volume;
@@ -2188,7 +2472,9 @@ muteBtn.addEventListener('click', () => {
   }
   updateVolumeIcon();
   saveSettings();
-});
+}
+
+muteBtn.addEventListener('click', toggleMute);
 updateVolumeIcon();
 
 // Обёртки для Fullscreen API — с поддержкой старого Safari/iOS
@@ -2248,15 +2534,30 @@ function adjustVolume(delta){
   saveSettings();
 }
 document.querySelectorAll('input[type="range"]').forEach(r => {
-  r.addEventListener('change', () => r.blur());
+  // Снимаем фокус только после mouseup (перетаскивания мышью), не при клавиатурном управлении
+  r.addEventListener('mouseup', () => r.blur());
+  r.addEventListener('touchend', () => r.blur());
 });
 document.addEventListener('keydown', (e) => {
   if (!playerView.classList.contains('active')) return;
-  if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  const activeEl = document.activeElement;
+  const isTextLike = activeEl && (
+    (activeEl.tagName === 'INPUT' && activeEl.type === 'text') ||
+    activeEl.tagName === 'TEXTAREA' ||
+    activeEl.isContentEditable
+  );
+  if (isTextLike) return;
+  if (isEditingTitle) return; // Блокируем хоткеи при редактировании названия
   if (e.code === 'Space'){ e.preventDefault(); togglePlay(); showControls(); }
   else if (e.code === 'KeyF'){ fullscreenBtn.click(); }
-  else if (e.code === 'ArrowRight'){ seekBy(5); showControls(); }
-  else if (e.code === 'ArrowLeft'){ seekBy(-5); showControls(); }
+  else if (e.code === 'KeyM'){ 
+    toggleMute();
+    showControls(); 
+  }
+  else if (e.code === 'ArrowRight' && e.shiftKey){ e.preventDefault(); seekBy(1); showControls(); }
+  else if (e.code === 'ArrowLeft' && e.shiftKey){ e.preventDefault(); seekBy(-1); showControls(); }
+  else if (e.code === 'ArrowRight'){ e.preventDefault(); seekBy(5); showControls(); }
+  else if (e.code === 'ArrowLeft'){ e.preventDefault(); seekBy(-5); showControls(); }
   else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.05); showControls(); }
   else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.05); showControls(); }
 });
@@ -2306,14 +2607,507 @@ video.addEventListener('loadeddata', () => {
 
 // --- возврат к выбору файла ---
 backBtn.addEventListener('click', () => {
+  if (isSwitching) return;
+  isSwitching = true;
+  
+  // Выходим из полноэкранного режима перед скрытием плеера
+  if (document.fullscreenElement) exitFs();
+  
   stopProgressTracking();
+  
+  // Очищаем аудио-граф при выходе из плеера
+  destroyAudioGraph();
+  
   video.pause();
-  if (currentObjectUrl){ URL.revokeObjectURL(currentObjectUrl); currentObjectUrl = null; }
+  if (currentObjectUrl && video.src === currentObjectUrl){
+    URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = null;
+  } else if (currentObjectUrl) {
+    currentObjectUrl = null;
+  }
+  if (hls){ hls.destroy(); hls = null; }
   video.removeAttribute('src');
   video.load();
   fileInput.value = '';
+  urlInput.value = '';
+  urlInput.classList.remove('error');
   playerView.classList.remove('active');
   dropView.style.display = 'flex';
+
   renderResumeList();
-  checkSavedHandle();
+  isSwitching = false;
 });
+
+// --- Загрузка видео по URL (m3u8 и обычные ссылки) ---
+let hls = null;
+
+function loadUrl(url){
+  if (!url || url.trim() === ''){
+    showUrlError('Введите ссылку');
+    return;
+  }
+
+  // Показываем индикатор загрузки
+  urlLoadingSpinner.style.display = 'inline-block';
+  urlLoadBtn.disabled = true;
+
+  // Очищаем предыдущие ошибки
+  urlInput.classList.remove('error');
+  errMsg.classList.remove('show');
+  videoErrorEl.style.display = 'none';
+  stopProgressTracking();
+
+  // Проверяем валидность URL
+  try {
+    new URL(url);
+  } catch (e){
+    showUrlError('Некорректная ссылка');
+    return;
+  }
+
+  // Определяем тип видео по расширению
+  const isM3U8 = /\.m3u8$/i.test(url);
+  const isDirectVideo = /\.(mp4|webm|mov)$/i.test(url);
+
+  // Останавливаем предыдущий HLS экземпляр
+  if (hls){
+    hls.destroy();
+    hls = null;
+  }
+
+  currentFileKey = urlKey(url);
+  currentFileName = getFileNameFromUrl(url);
+
+  // Устанавливаем crossOrigin для удалённых ресурсов (нужно для AudioContext)
+  video.crossOrigin = 'anonymous';
+
+  let videoInitialized = false;
+
+  if (isM3U8 && typeof Hls === 'undefined'){
+    // hls.js не загружен (CDN недоступен)
+    if (video.canPlayType('application/vnd.apple.mpegurl')){
+      // Попробуем native HLS
+      video.src = url;
+      videoInitialized = true;
+      video.addEventListener('loadedmetadata', function(){
+        urlLoadingSpinner.style.display = 'none';
+        urlLoadBtn.disabled = false;
+        restoreProgress();
+      }, { once: true });
+      video.addEventListener('error', function(){
+        urlLoadingSpinner.style.display = 'none';
+        urlLoadBtn.disabled = false;
+        showUrlError('Ошибка. Браузер не поддерживает m3u8 без hls.js библиотеки');
+      }, { once: true });
+    } else {
+      urlLoadingSpinner.style.display = 'none';
+      urlLoadBtn.disabled = false;
+      showUrlError('Ошибка. Браузер не поддерживает m3u8 и hls.js библиотека не загружена');
+    }
+    return;
+  }
+
+  if (isM3U8 && typeof Hls !== 'undefined' && Hls.isSupported()){
+    // HLS поддержка через hls.js
+    try {
+      hls = new Hls({
+        enableWorker: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60
+      });
+      // Локальная ссылка на именно этот экземпляр — нужна, чтобы отложенные
+      // ретраи ниже не трогали чужой/уже уничтоженный hls, если пользователь
+      // успел уйти со страницы плеера (нажал "Назад") до срабатывания таймера.
+      const hlsInstance = hls;
+
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      videoInitialized = true;
+
+      hls.on(Hls.Events.MANIFEST_PARSED, function(){
+        urlLoadingSpinner.style.display = 'none';
+        urlLoadBtn.disabled = false;
+        restoreProgress();
+      });
+
+      hls.on(Hls.Events.ERROR, function(event, data){
+        if (data.fatal){
+          urlLoadingSpinner.style.display = 'none';
+          urlLoadBtn.disabled = false;
+          switch (data.type){
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              showUrlError('Ошибка. Встраиваемая ссылка недоступна. Повторная попытка...');
+              setTimeout(() => {
+                if (hls !== hlsInstance) return; // плеер уже закрыт/переключён — ничего не делаем
+                try {
+                  hlsInstance.startLoad();
+                } catch (e) {
+                  hlsInstance.destroy();
+                  showUrlError('Не удалось восстановить соединение');
+                }
+              }, 1000);
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              showUrlError('Ошибка воспроизведения. Попытка восстановления...');
+              setTimeout(() => {
+                if (hls !== hlsInstance) return;
+                try {
+                  hlsInstance.recoverMediaError();
+                } catch (e) {
+                  hlsInstance.destroy();
+                  showUrlError('Не удалось восстановить воспроизведение');
+                }
+              }, 1000);
+              break;
+            default:
+              showUrlError('Ошибка. Ссылка может быть недоступной или неправильной');
+              hls.destroy();
+              break;
+          }
+        }
+      });
+    } catch (e){
+      urlLoadingSpinner.style.display = 'none';
+      urlLoadBtn.disabled = false;
+      showUrlError('Ошибка загрузки');
+    }
+  } else if (video.canPlayType('application/vnd.apple.mpegurl') && isM3U8){
+    // Native HLS (Safari)
+    video.src = url;
+    videoInitialized = true;
+    video.addEventListener('loadedmetadata', function(){
+      urlLoadingSpinner.style.display = 'none';
+      urlLoadBtn.disabled = false;
+      restoreProgress();
+    }, { once: true });
+
+    video.addEventListener('error', function(){
+      urlLoadingSpinner.style.display = 'none';
+      urlLoadBtn.disabled = false;
+      showUrlError('Ошибка. Не удалось загрузить видео');
+    }, { once: true });
+  } else if (isDirectVideo || isM3U8){
+    // Прямая ссылка на видео или m3u8 без поддержки HLS
+    video.src = url;
+    videoInitialized = true;
+    video.addEventListener('loadedmetadata', function(){
+      urlLoadingSpinner.style.display = 'none';
+      urlLoadBtn.disabled = false;
+      restoreProgress();
+    }, { once: true });
+
+    video.addEventListener('error', function(){
+      urlLoadingSpinner.style.display = 'none';
+      urlLoadBtn.disabled = false;
+      if (isM3U8){
+        showUrlError('Ошибка. Браузер не поддерживает m3u8');
+      } else {
+        showUrlError('Ошибка. Не удалось загрузить видео');
+      }
+    }, { once: true });
+  } else {
+    showUrlError('Ошибка. Неподдерживаемый формат');
+    return;
+  }
+
+  // Загружаем настройки для URL (если есть)
+  const hasSettings = loadSettings();
+  if (!hasSettings){
+    resetSpeed();
+    resetBrightness();
+    resetZoom();
+    resetMirror();
+    blurRanges = [];
+    renderBlurRanges();
+    clearTimingError();
+    
+    ovToggle.checked = true;
+    ovSize.value = OV_DEFAULT_SIZE;
+    ovSizeVal.textContent = OV_DEFAULT_SIZE + 'px';
+    ovColor.value = OV_DEFAULT_COLOR;
+    ovOpacity.value = OV_DEFAULT_OPACITY;
+    ovOpacityVal.textContent = OV_DEFAULT_OPACITY + '%';
+    setOverlayAlign(OV_DEFAULT_ALIGN);
+    setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
+    
+    drToggle.checked = true;
+    drStrength.value = 60;
+    drStrengthVal.textContent = '60%';
+    drBoost.value = 100;
+    drBoostVal.textContent = '100%';
+    drEnabled = true;
+    if (audioCtx){
+      if (boostGain) boostGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+      updateCompressor();
+      connectGraph();
+    }
+    
+    // Сохраняем дефолтные настройки
+    saveSettings();
+    
+    subtitlesData = [];
+    savedSubsContent = null;
+    isSubtitlesLoaded = false;
+    subtitles.innerHTML = '';
+    subsFileName.textContent = 'Файл не выбран';
+    subsFileName.title = '';
+    subsFile.value = '';
+    subsRemoveBtn.style.display = 'none';
+
+    subsToggle.checked = true;
+    subtitles.style.display = 'block';
+    subsSize.value = 30;
+    subsSizeVal.textContent = '30px';
+    subsColor.value = '#ffffff';
+    subsOpacity.value = 100;
+    subsOpacityVal.textContent = '100%';
+    subsBg.value = '#000000';
+    subsBgOpacity.value = 50;
+    subsBgOpacityVal.textContent = '50%';
+    subsBottom.value = 15;
+    subsBottomVal.textContent = '15%';
+    applySubtitlesStyle();
+
+    video.volume = DEFAULT_VOLUME;
+    volumeRange.value = video.volume;
+    video.muted = false;
+    updateVolumeIcon();
+  }
+
+  if (!hasSettings){
+    const niceTitle = niceTitleFromFilename(currentFileName);
+    titleInput.value = niceTitle;
+    ovTitle.textContent = niceTitle;
+  }
+  fnameEl.textContent = currentFileName.replace(/\.[^/.]+$/, '');
+  ovTime.textContent = '00:00 / 00:00';
+  applyOverlaySettings();
+
+  if (loadedMetadataHandler){
+    video.removeEventListener('loadedmetadata', loadedMetadataHandler);
+  }
+  loadedMetadataHandler = () => {
+    // Обновляем время при загрузке метаданных
+    const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    ovTime.textContent = txt;
+    timeDisplay.textContent = txt;
+
+    // Не применяем fixInfiniteDuration для HLS потоков - hls.js сам управляет live-потоками
+    if (!hls) {
+      fixInfiniteDuration(() => {
+        restoreProgress();
+      });
+    } else {
+      restoreProgress();
+    }
+  };
+  video.addEventListener('loadedmetadata', loadedMetadataHandler, { once: true });
+  if (durationChangeHandler){
+    video.removeEventListener('durationchange', durationChangeHandler);
+  }
+  durationChangeHandler = () => {
+    updateSeekControlsState();
+  };
+  video.addEventListener('durationchange', durationChangeHandler, { once: true });
+
+  // Очищаем старый аудио-граф перед созданием нового
+  destroyAudioGraph();
+  ensureAudioGraph();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Показываем плеер только если видео было успешно инициализировано
+  if (videoInitialized) {
+    urlLoadingSpinner.style.display = 'none';
+    urlLoadBtn.disabled = false;
+    showPlayer();
+    video.play().catch(e => {
+      if (e.name === 'NotAllowedError') {
+        console.log('Autoplay prevented - user interaction required');
+      } else {
+        console.warn('Play error:', e);
+      }
+    });
+  }
+}
+
+function showUrlError(message){
+  urlLoadingSpinner.style.display = 'none';
+  urlLoadBtn.disabled = false;
+  urlInput.classList.add('error');
+  errMsg.textContent = message;
+  errMsg.classList.add('show');
+}
+
+function getFileNameFromUrl(url){
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    let filename = pathname.split('/').pop();
+    // Удаляем query параметры если они есть
+    const queryIndex = filename.indexOf('?');
+    if (queryIndex !== -1) {
+      filename = filename.substring(0, queryIndex);
+    }
+    return filename || 'Видео из URL';
+  } catch (e){
+    return 'Видео из URL';
+  }
+}
+
+function showPlayer(){
+  // Заголовок (fnameEl/ovTitle) уже корректно выставлен выше по коду loadUrl()
+  // (восстановленное кастомное имя или "красивое" имя из URL) — здесь его
+  // больше не перезаписываем сырым currentFileName, иначе переименование
+  // и форматирование теряются сразу после загрузки видео по ссылке.
+  dropView.style.display = 'none';
+  playerView.classList.add('active');
+  startProgressTracking();
+  ensureAudioGraph();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// --- Редактирование названия файла по клику ---
+let isEditingTitle = false;
+let originalTitle = '';
+let checkEmpty = null;
+
+const saveTitle = () => {
+  if (!isEditingTitle) return;
+  const newTitle = fnameEl.textContent.trim() || originalTitle;
+  
+  if (checkEmpty) fnameEl.removeEventListener('input', checkEmpty);
+  fnameEl.contentEditable = 'false';
+  fnameEl.classList.remove('editing');
+  fnameEl.style.userSelect = 'none';
+  fnameEl.removeAttribute('data-placeholder');
+  fnameEl.textContent = newTitle;
+  
+  // Обновляем связанные элементы
+  ovTitle.textContent = newTitle;
+  titleInput.value = newTitle;
+  currentFileName = newTitle;
+  
+  // Сохраняем настройки и обновляем название в прогрессе
+  saveSettings();
+  saveTitleToProgress();
+  
+  isEditingTitle = false;
+};
+
+const cancelEdit = () => {
+  if (!isEditingTitle) return;
+  if (checkEmpty) fnameEl.removeEventListener('input', checkEmpty);
+  fnameEl.contentEditable = 'false';
+  fnameEl.classList.remove('editing');
+  fnameEl.style.userSelect = 'none';
+  fnameEl.removeAttribute('data-placeholder');
+  fnameEl.textContent = originalTitle;
+  isEditingTitle = false;
+};
+
+// Обработчики редактирования (навешиваются один раз при инициализации)
+fnameEl.addEventListener('keydown', (e) => {
+  if (!isEditingTitle) return;
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
+    saveTitle();
+    fnameEl.blur();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelEdit();
+  }
+});
+
+fnameEl.addEventListener('paste', (e) => {
+  if (!isEditingTitle) return;
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  
+  // Используем Selection API для корректной вставки с заменой выделения
+  const selection = window.getSelection();
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.setEndAfter(textNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  } else {
+    fnameEl.textContent += text;
+  }
+});
+
+fnameEl.addEventListener('click', () => {
+  if (isEditingTitle) return;
+  
+  isEditingTitle = true;
+  originalTitle = fnameEl.textContent;
+  
+  fnameEl.contentEditable = 'true';
+  fnameEl.classList.add('editing');
+  fnameEl.focus();
+  
+  // Не выделяем текст автоматически
+  fnameEl.style.userSelect = 'text';
+  
+  // Показываем placeholder если пустой
+  checkEmpty = () => {
+    if (!fnameEl.textContent.trim()) {
+      fnameEl.textContent = '';
+      fnameEl.setAttribute('data-placeholder', 'Название');
+    } else {
+      fnameEl.removeAttribute('data-placeholder');
+    }
+  };
+  
+  fnameEl.addEventListener('input', checkEmpty);
+  checkEmpty();
+  
+  fnameEl.addEventListener('blur', () => {
+    if (!isEditingTitle) return;
+    saveTitle();
+  }, { once: true });
+});
+
+// Обработчики для URL ввода
+urlLoadBtn.addEventListener('click', () => {
+  loadUrl(urlInput.value);
+});
+
+urlInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter'){
+    loadUrl(urlInput.value);
+  }
+});
+
+urlInput.addEventListener('input', () => {
+  urlInput.classList.remove('error');
+  errMsg.classList.remove('show');
+});
+
+// Очистка ресурсов при выгрузке страницы
+window.addEventListener('beforeunload', () => {
+  clearInterval(progressInterval);
+  clearInterval(uiSyncInterval);
+  clearTimeout(centerIconTimeout);
+  destroyAudioGraph();
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+});
+
+// Проверка поддержки File System Access API
+if (!FS_ACCESS_SUPPORTED){
+  errMsg.textContent = 'Ваш браузер не поддерживает File System Access API. Используйте Chrome, Edge или другой современный браузер.';
+  errMsg.classList.add('show');
+  dropzone.style.pointerEvents = 'none';
+  dropzone.style.opacity = '0.5';
+}
+
+// renderResumeList() уже вызывается сразу после своего определения и читает localStorage
+// напрямую — отдельный асинхронный запуск здесь больше не нужен.
