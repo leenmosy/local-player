@@ -12,6 +12,15 @@
 </head>
 <body>
 
+<div id="mobile-blocker" class="mobile-blocker">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-icon">
+    <rect x="2" y="4" width="20" height="13" rx="2"/>
+    <path d="M8 21h8"/><path d="M12 17v4"/>
+  </svg>
+  <div class="mb-title title-font">Только для десктопа</div>
+  <div class="mb-text">Плеер не поддерживает телефоны и планшеты. Откройте эту страницу на ноутбуке или ПК.</div>
+</div>
+
 <div id="drop-view">
   <h1 class="title-font">Локальный плеер</h1>
 
@@ -45,7 +54,7 @@
 <div id="player-view">
   <div class="toolbar">
     <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">Назад</button>
-    <h1 class="title-font player-title" id="fname" title="Нажмите для редактирования"></h1>
+    <h1 class="title-font player-title" id="fname"></h1>
   </div>
   <div class="stage" id="stage">
     <video id="video"></video>
@@ -113,7 +122,7 @@
             <input type="range" id="dr-strength" min="0" max="100" step="5" value="60">
             <span class="dr-val" id="dr-strength-val">60%</span>
           </div>
-          <div class="dr-row" title="Усиление сверх стандартного максимума громкости">
+          <div class="dr-row">
             <label for="dr-boost">Громкость</label>
             <input type="range" id="dr-boost" min="100" max="500" step="5" value="100">
             <span class="dr-val" id="dr-boost-val">100%</span>
@@ -185,13 +194,13 @@
           <div class="dr-row">
             <label id="align-label">Выравнивание</label>
             <div class="align-grid" role="group" aria-labelledby="align-label">
-              <button type="button" class="align-btn" data-align="left" title="Прибить слева" aria-label="Прибить слева" aria-pressed="false">
+              <button type="button" class="align-btn" data-align="left" aria-label="Прибить слева" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>
               </button>
-              <button type="button" class="align-btn" data-align="center" title="По центру" aria-label="По центру" aria-pressed="false">
+              <button type="button" class="align-btn" data-align="center" aria-label="По центру" aria-pressed="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M5.5 18h13"/></svg>
               </button>
-              <button type="button" class="align-btn active" data-align="right" title="Прибить справа" aria-label="Прибить справа" aria-pressed="true">
+              <button type="button" class="align-btn active" data-align="right" aria-label="Прибить справа" aria-pressed="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M10 12h10M7 18h13"/></svg>
               </button>
             </div>
@@ -203,16 +212,16 @@
               <div class="pos-pad-handle" id="pos-handle"></div>
             </div>
             <div class="preset-grid" role="group" aria-label="Быстрые позиции">
-              <button type="button" class="preset-btn" data-preset="top-left" title="Слева сверху" aria-label="Слева сверху">
+              <button type="button" class="preset-btn" data-preset="top-left" aria-label="Слева сверху">
                 <svg viewBox="0 0 20 12"><rect x="0.5" y="0.5" width="19" height="11" rx="1.5"/><circle cx="3" cy="3" r="1.6"/></svg>
               </button>
-              <button type="button" class="preset-btn" data-preset="top-right" title="Справа сверху" aria-label="Справа сверху">
+              <button type="button" class="preset-btn" data-preset="top-right" aria-label="Справа сверху">
                 <svg viewBox="0 0 20 12"><rect x="0.5" y="0.5" width="19" height="11" rx="1.5"/><circle cx="17" cy="3" r="1.6"/></svg>
               </button>
-              <button type="button" class="preset-btn" data-preset="bottom-left" title="Слева снизу" aria-label="Слева снизу">
+              <button type="button" class="preset-btn" data-preset="bottom-left" aria-label="Слева снизу">
                 <svg viewBox="0 0 20 12"><rect x="0.5" y="0.5" width="19" height="11" rx="1.5"/><circle cx="3" cy="9" r="1.6"/></svg>
               </button>
-              <button type="button" class="preset-btn active" data-preset="bottom-right" title="Справа снизу" aria-label="Справа снизу">
+              <button type="button" class="preset-btn active" data-preset="bottom-right" aria-label="Справа снизу">
                 <svg viewBox="0 0 20 12"><rect x="0.5" y="0.5" width="19" height="11" rx="1.5"/><circle cx="17" cy="9" r="1.6"/></svg>
               </button>
             </div>
@@ -227,12 +236,12 @@
           <svg class="dr-category-arrow" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
         </button>
         <div class="dr-category-content" id="timings-content">
-          <div class="timing-hint">Плеер будет размыт в указанные промежутки времени<br>(формат мм:сс или ч:мм:сс)</div>
+          <div class="timing-hint">Плеер будет размыт в указанные промежутки времени (формат мм:сс или ч:мм:сс)</div>
           <div class="dr-row timing-input-row">
             <input type="text" id="timing-from" class="dr-text-input timing-time-input" placeholder="44:05" inputmode="numeric">
             <span class="timing-dash">–</span>
             <input type="text" id="timing-to" class="dr-text-input timing-time-input" placeholder="44:25" inputmode="numeric">
-            <button type="button" id="timing-add-btn" class="timing-add-btn" title="Добавить тайминг" aria-label="Добавить тайминг">+</button>
+            <button type="button" id="timing-add-btn" class="timing-add-btn" aria-label="Добавить тайминг">+</button>
           </div>
           <div class="timing-err" id="timing-err"></div>
           <div class="timing-list" id="timing-list"></div>
@@ -315,7 +324,7 @@
     <div class="shortcut-item" title="Перемотка на 5 секунд"><kbd>←</kbd><kbd>→</kbd><span>Перемотка 5с</span></div>
     <div class="shortcut-item" title="Точная перемотка на 1 секунду"><kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd><span>Перемотка 1с</span></div>
     <div class="shortcut-item" title="Громкость"><kbd>↑</kbd><kbd>↓</kbd><span>Громкость</span></div>
-    <div class="shortcut-item" title="Без звука"><kbd>M</kbd><span>Выкл. звук</span></div>
+    <div class="shortcut-item" title="Без звука"><kbd>M</kbd><span>Выключить звук</span></div>
     <div class="shortcut-item" title="Полный экран"><kbd>F</kbd><span>Полный экран</span></div>
   </div>
 </div>
