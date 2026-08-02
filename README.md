@@ -9,7 +9,13 @@
   <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3 license">
 </p>
 
-![Главный экран](screenshots/main-screen.png)
+<p align="center">
+  <a href="https://leenmosy.github.io/local-player/"><strong>🎬 Открыть плеер →</strong></a>
+</p>
+
+<p align="center">
+  <img src="screenshots/main-screen.png" alt="Главный экран" width="800">
+</p>
 
 ## Что умеет
 
@@ -22,17 +28,23 @@
 - Зеркалит картинку и умеет стабилизировать громкость
 - Полноэкранный режим
 
-![Плеер во время просмотра](screenshots/player.png)
+<p align="center">
+  <img src="screenshots/player.png" alt="Плеер во время просмотра" width="800">
+</p>
 
 ## Тонкая настройка
 
-Панель с настройками звука, видео, оверлея и блюра — открывается прямо поверх плеера
+Панель с настройками звука, видео, оверлея и блюра — открывается прямо поверх плеера, не мешая просмотру.
 
-![Панель настроек и блюр по таймингу](screenshots/settings-blur.png)
+<p align="center">
+  <img src="screenshots/settings-blur.png" alt="Панель настроек и блюр по таймингу" width="800">
+</p>
 
 Если закрыли плеер на середине — при следующем открытии файла он сам предложит продолжить с того же места:
 
-![Сохранённый прогресс просмотра](screenshots/resume-progress.png)
+<p align="center">
+  <img src="screenshots/resume-progress.png" alt="Сохранённый прогресс просмотра" width="600">
+</p>
 
 ## Горячие клавиши
 
@@ -47,7 +59,7 @@
 
 ## Запуск
 
-Можно просто открыть — https://leenmosy.github.io/local-player. Ставить ничего не надо, файлы никуда не загружаются, всё работает локально в вашем браузере.
+Можно просто открыть **[живое демо](https://leenmosy.github.io/local-player/)** — ставить ничего не надо, файлы никуда не загружаются, всё работает локально в вашем браузере.
 
 Или запустить у себя:
 
