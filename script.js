@@ -1,8 +1,79 @@
+// Плеер рассчитан только на десктоп/ноутбук (мышь + клавиатура).
+// Определяем телефоны/планшеты и показываем заглушку вместо интерфейса.
+(function blockMobileDevices(){
+  const ua = navigator.userAgent;
+
+  // Явные мобильные/планшетные UA (Android, iPhone, iPad "как есть", и т.д.)
+  const uaIsMobile = /Android|iPhone|iPod|iPad|Windows Phone|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+
+  // iPadOS в Safari маскируется под Mac, но выдаёт себя множественными точками касания
+  const isIPadOS = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+
+  // Тачскрин без мыши/трекпада — считаем признаком мобильного/планшета,
+  // но только при небольшом разрешении: реальные телефоны/планшеты не бывают
+  // с viewport крупнее ~1024px по меньшей стороне (даже iPad Pro landscape —
+  // это 1366×1024). Так не блокируются десктопные тач-мониторы/панели.
+  const coarseOnly = window.matchMedia('(pointer: coarse)').matches
+    && !window.matchMedia('(pointer: fine)').matches
+    && Math.min(window.innerWidth, window.innerHeight) <= 1024;
+
+  if (uaIsMobile || isIPadOS || coarseOnly){
+    document.documentElement.classList.add('device-blocked');
+  }
+})();
+
+// Визуальный эффект "нажатия" кнопки (замена CSS :active) — срабатывает
+// только на левую кнопку мыши (e.button === 0), чтобы ПКМ/СКМ не создавали
+// впечатление, будто кнопка реагирует, хотя реальное действие не выполняется.
+document.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const btn = e.target.closest('button');
+  if (btn) btn.classList.add('pressed');
+});
+document.addEventListener('mouseup', () => {
+  document.querySelectorAll('button.pressed').forEach(b => b.classList.remove('pressed'));
+});
+document.addEventListener('mouseleave', () => {
+  document.querySelectorAll('button.pressed').forEach(b => b.classList.remove('pressed'));
+}, true);
+
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('file-input');
 const dropView = document.getElementById('drop-view');
 const playerView = document.getElementById('player-view');
 const errMsg = document.getElementById('err-msg');
+let errMsgTimeout = null;
+// Текст "постоянного" сообщения (например, предупреждение о неподдерживаемом
+// браузере) — в отличие от обычных ошибок оно не должно затухать само, но
+// должно вернуться на место после того, как временная ошибка отгорит.
+let persistentErrMsg = null;
+
+function showErrMsg(message, opts = {}){
+  clearTimeout(errMsgTimeout);
+  errMsg.textContent = message;
+  errMsg.classList.add('show');
+  if (opts.persistent){
+    persistentErrMsg = message;
+    return;
+  }
+  errMsgTimeout = setTimeout(() => {
+    if (persistentErrMsg){
+      errMsg.textContent = persistentErrMsg; // возвращаем постоянное предупреждение
+    } else {
+      errMsg.classList.remove('show');
+    }
+  }, opts.duration || 4500);
+}
+
+function hideErrMsg(){
+  clearTimeout(errMsgTimeout);
+  if (persistentErrMsg){
+    errMsg.textContent = persistentErrMsg;
+    errMsg.classList.add('show');
+  } else {
+    errMsg.classList.remove('show');
+  }
+}
 const urlInput = document.getElementById('url-input');
 const urlLoadBtn = document.getElementById('url-load-btn');
 const video = document.getElementById('video');
@@ -409,7 +480,6 @@ function renderBlurRanges(){
     rangeText.className = 'timing-range';
     rangeText.textContent = `${formatTime(range.from)} – ${formatTime(range.to)}`;
     rangeText.style.cursor = 'pointer';
-    rangeText.title = 'Нажмите для редактирования';
     
     rangeText.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -674,11 +744,15 @@ function startEditingRange(idx, item, rangeText) {
   }
 }
 
+let timingErrTimeout = null;
 function showTimingError(msg){
   timingErr.textContent = msg;
   timingErr.classList.add('show');
+  clearTimeout(timingErrTimeout);
+  timingErrTimeout = setTimeout(() => clearTimingError(), 4500);
 }
 function clearTimingError(){
+  clearTimeout(timingErrTimeout);
   timingErr.textContent = '';
   timingErr.classList.remove('show');
 }
@@ -1248,8 +1322,7 @@ resumeList.addEventListener('click', async (e) => {
 
   if (continueBtn.dataset.key) {
     if (!FS_ACCESS_SUPPORTED){
-      errMsg.textContent = 'Ваш браузер не поддерживает открытие файла по сохранённой ссылке. Выберите файл заново через «Выберите файл».';
-      errMsg.classList.add('show');
+      showErrMsg('Ваш браузер не поддерживает открытие файла по сохранённой ссылке. Выберите файл заново через «Выберите файл».');
       return;
     }
     // Кнопка "Продолжить" для обычных файлов - используем сохранённый handle
@@ -1289,8 +1362,7 @@ resumeList.addEventListener('click', async (e) => {
         perm = await handle.requestPermission({ mode: 'read' });
       }
       if (perm !== 'granted'){
-        errMsg.textContent = 'Доступ к файлу не разрешён.';
-        errMsg.classList.add('show');
+        showErrMsg('Доступ к файлу не разрешён.');
         return;
       }
       
@@ -1307,8 +1379,7 @@ resumeList.addEventListener('click', async (e) => {
         }
       } catch(e){ /* ошибка при восстановлении прогресса */ }
     } catch(err){
-      errMsg.textContent = 'Не удалось открыть сохранённый файл — возможно, он был перемещён, переименован или удалён.';
-      errMsg.classList.add('show');
+      showErrMsg('Не удалось открыть сохранённый файл — возможно, он был перемещён, переименован или удалён.');
     }
   }
 });
@@ -1407,11 +1478,10 @@ function loadFile(file, handle){
   
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)){
-    errMsg.textContent = 'Похоже, это не видеофайл. Попробуй другой файл.';
-    errMsg.classList.add('show');
+    showErrMsg('Похоже, это не видеофайл. Попробуй другой файл.');
     return;
   }
-  errMsg.classList.remove('show');
+  hideErrMsg();
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
   // Всегда используем PROGRESS_PREFIX для ключа файла (для прогресса)
@@ -1430,8 +1500,7 @@ function loadFile(file, handle){
     currentObjectUrl = newObjectUrl;
     video.src = currentObjectUrl;
   } catch (e) {
-    errMsg.textContent = 'Ошибка при загрузке файла: ' + e.message;
-    errMsg.classList.add('show');
+    showErrMsg('Ошибка при загрузке файла: ' + e.message);
     if (currentObjectUrl) {
       URL.revokeObjectURL(currentObjectUrl);
       currentObjectUrl = null;
@@ -1604,8 +1673,7 @@ dropzone.addEventListener('drop', async e => {
   
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)) {
-    errMsg.textContent = 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)';
-    errMsg.classList.add('show');
+    showErrMsg('Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
     return;
   }
   
@@ -1660,8 +1728,7 @@ document.body.addEventListener('drop', async e => {
   
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)) {
-    errMsg.textContent = 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)';
-    errMsg.classList.add('show');
+    showErrMsg('Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
     return;
   }
   
@@ -2233,7 +2300,13 @@ function resetMirror(){
 }
 
 function togglePlay(){
-  if (video.paused) video.play(); else video.pause();
+  if (video.paused) {
+    video.play().catch(e => {
+      if (e.name !== 'AbortError') console.warn('Play error:', e);
+    });
+  } else {
+    video.pause();
+  }
 }
 
 function seekBy(deltaSeconds){
@@ -2285,6 +2358,13 @@ function showCenterIcon(isPlaying){
   }
 }
 playBtn.addEventListener('click', togglePlay);
+// Блокируем нативное контекстное меню только на самом плеере и его
+// элементах управления (видео, панель управления, кнопки) — чтобы нельзя
+// было вызвать нативное "Show controls"/"Loop" браузера, конфликтующее с
+// кастомным UI. Тулбар (кнопка "Назад", название) и подсказка горячих
+// клавиш под плеером в эту область не входят — там меню остаётся стандартным.
+stage.addEventListener('contextmenu', (e) => e.preventDefault());
+
 clickCatcher.addEventListener('click', () => {
   if (drPanel.classList.contains('open')){
     setDrPanelOpen(false);
@@ -2631,6 +2711,7 @@ backBtn.addEventListener('click', () => {
   fileInput.value = '';
   urlInput.value = '';
   urlInput.classList.remove('error');
+  hideErrMsg();
   playerView.classList.remove('active');
   dropView.style.display = 'flex';
 
@@ -2640,8 +2721,19 @@ backBtn.addEventListener('click', () => {
 
 // --- Загрузка видео по URL (m3u8 и обычные ссылки) ---
 let hls = null;
+// Отслеживаем текущий обработчик ошибки видео для URL-загрузки, чтобы снимать
+// его перед каждой новой попыткой — иначе при успешных загрузках старые
+// {once:true}-слушатели никогда не снимаются (событие 'error' не наступает)
+// и копятся на <video> навсегда, а при реальной ошибке все они срабатывают
+// разом и перетирают друг друга сообщением от совершенно другой попытки.
+let urlErrorHandler = null;
 
 function loadUrl(url){
+  if (urlErrorHandler){
+    video.removeEventListener('error', urlErrorHandler);
+    urlErrorHandler = null;
+  }
+
   if (!url || url.trim() === ''){
     showUrlError('Введите ссылку');
     return;
@@ -2653,7 +2745,7 @@ function loadUrl(url){
 
   // Очищаем предыдущие ошибки
   urlInput.classList.remove('error');
-  errMsg.classList.remove('show');
+  hideErrMsg();
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
 
@@ -2694,7 +2786,7 @@ function loadUrl(url){
         urlLoadBtn.disabled = false;
         restoreProgress();
       }, { once: true });
-      video.addEventListener('error', function(){
+      video.addEventListener('error', urlErrorHandler = function(){
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
         showUrlError('Ошибка. Браузер не поддерживает m3u8 без hls.js библиотеки');
@@ -2781,7 +2873,7 @@ function loadUrl(url){
       restoreProgress();
     }, { once: true });
 
-    video.addEventListener('error', function(){
+    video.addEventListener('error', urlErrorHandler = function(){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       showUrlError('Ошибка. Не удалось загрузить видео');
@@ -2796,7 +2888,7 @@ function loadUrl(url){
       restoreProgress();
     }, { once: true });
 
-    video.addEventListener('error', function(){
+    video.addEventListener('error', urlErrorHandler = function(){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       if (isM3U8){
@@ -2930,12 +3022,14 @@ function loadUrl(url){
   }
 }
 
+let urlInputErrorTimeout = null;
 function showUrlError(message){
   urlLoadingSpinner.style.display = 'none';
   urlLoadBtn.disabled = false;
   urlInput.classList.add('error');
-  errMsg.textContent = message;
-  errMsg.classList.add('show');
+  clearTimeout(urlInputErrorTimeout);
+  urlInputErrorTimeout = setTimeout(() => urlInput.classList.remove('error'), 4500);
+  showErrMsg(message);
 }
 
 function getFileNameFromUrl(url){
@@ -3086,7 +3180,7 @@ urlInput.addEventListener('keypress', (e) => {
 
 urlInput.addEventListener('input', () => {
   urlInput.classList.remove('error');
-  errMsg.classList.remove('show');
+  hideErrMsg();
 });
 
 // Очистка ресурсов при выгрузке страницы
@@ -3103,8 +3197,7 @@ window.addEventListener('beforeunload', () => {
 
 // Проверка поддержки File System Access API
 if (!FS_ACCESS_SUPPORTED){
-  errMsg.textContent = 'Ваш браузер не поддерживает File System Access API. Используйте Chrome, Edge или другой современный браузер.';
-  errMsg.classList.add('show');
+  showErrMsg('Ваш браузер не поддерживает File System Access API. Используйте Chrome, Edge или другой современный браузер.', { persistent: true });
   dropzone.style.pointerEvents = 'none';
   dropzone.style.opacity = '0.5';
 }
