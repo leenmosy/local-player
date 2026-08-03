@@ -1,18 +1,13 @@
-// Плеер рассчитан только на десктоп/ноутбук (мышь + клавиатура).
 // Определяем телефоны/планшеты и показываем заглушку вместо интерфейса.
 (function blockMobileDevices(){
   const ua = navigator.userAgent;
 
-  // Явные мобильные/планшетные UA (Android, iPhone, iPad "как есть", и т.д.)
+  // Явные мобильные/планшетные UA
   const uaIsMobile = /Android|iPhone|iPod|iPad|Windows Phone|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 
   // iPadOS в Safari маскируется под Mac, но выдаёт себя множественными точками касания
   const isIPadOS = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
 
-  // Тачскрин без мыши/трекпада — считаем признаком мобильного/планшета,
-  // но только при небольшом разрешении: реальные телефоны/планшеты не бывают
-  // с viewport крупнее ~1024px по меньшей стороне (даже iPad Pro landscape —
-  // это 1366×1024). Так не блокируются десктопные тач-мониторы/панели.
   const coarseOnly = window.matchMedia('(pointer: coarse)').matches
     && !window.matchMedia('(pointer: fine)').matches
     && Math.min(window.innerWidth, window.innerHeight) <= 1024;
@@ -22,9 +17,6 @@
   }
 })();
 
-// Визуальный эффект "нажатия" кнопки (замена CSS :active) — срабатывает
-// только на левую кнопку мыши (e.button === 0), чтобы ПКМ/СКМ не создавали
-// впечатление, будто кнопка реагирует, хотя реальное действие не выполняется.
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const btn = e.target.closest('button');
@@ -43,9 +35,6 @@ const dropView = document.getElementById('drop-view');
 const playerView = document.getElementById('player-view');
 const errMsg = document.getElementById('err-msg');
 let errMsgTimeout = null;
-// Текст "постоянного" сообщения (например, предупреждение о неподдерживаемом
-// браузере) — в отличие от обычных ошибок оно не должно затухать само, но
-// должно вернуться на место после того, как временная ошибка отгорит.
 let persistentErrMsg = null;
 
 function showErrMsg(message, opts = {}){
@@ -3206,6 +3195,3 @@ if (!FS_ACCESS_SUPPORTED){
   dropzone.style.pointerEvents = 'none';
   dropzone.style.opacity = '0.5';
 }
-
-// renderResumeList() уже вызывается сразу после своего определения и читает localStorage
-// напрямую — отдельный асинхронный запуск здесь больше не нужен.
