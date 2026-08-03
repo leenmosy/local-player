@@ -111,9 +111,9 @@ const presetButtons = document.querySelectorAll('.preset-btn');
 const OV_POS_MIN = 1.5;
 const OV_POS_MAX = 98.5;
 
-const OV_DEFAULT_SIZE = 19;
+const OV_DEFAULT_SIZE = 17;
 const OV_DEFAULT_COLOR = '#ffffff';
-const OV_DEFAULT_OPACITY = 55;
+const OV_DEFAULT_OPACITY = 50;
 const OV_DEFAULT_POS_X = OV_POS_MAX;
 const OV_DEFAULT_POS_Y = OV_POS_MAX;
 const OV_DEFAULT_ALIGN = 'right';
