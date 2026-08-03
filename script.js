@@ -2841,6 +2841,13 @@ function loadUrl(url){
         urlLoadBtn.disabled = false;
         showPlayer();
         restoreProgress();
+        video.play().catch(e => {
+          if (e.name === 'NotAllowedError') {
+            console.log('Autoplay prevented - user interaction required');
+          } else {
+            console.warn('Play error:', e);
+          }
+        });
       });
 
       hls.on(Hls.Events.ERROR, function(event, data){
@@ -2892,6 +2899,13 @@ function loadUrl(url){
       urlLoadBtn.disabled = false;
       showPlayer();
       restoreProgress();
+      video.play().catch(e => {
+        if (e.name === 'NotAllowedError') {
+          console.log('Autoplay prevented - user interaction required');
+        } else {
+          console.warn('Play error:', e);
+        }
+      });
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
@@ -2907,6 +2921,13 @@ function loadUrl(url){
       urlLoadBtn.disabled = false;
       showPlayer();
       restoreProgress();
+      video.play().catch(e => {
+        if (e.name === 'NotAllowedError') {
+          console.log('Autoplay prevented - user interaction required');
+        } else {
+          console.warn('Play error:', e);
+        }
+      });
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
