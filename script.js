@@ -1630,12 +1630,12 @@ function isVideoFile(file){
     dropzone.classList.add('dragover'); 
   })
 );
-['dragleave','drop'].forEach(evt =>
-  dropzone.addEventListener(evt, e => { 
-    e.preventDefault(); 
+['dragleave'].forEach(evt =>
+  dropzone.addEventListener(evt, e => {
+    e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    dropzone.classList.remove('dragover'); 
+    dropzone.classList.remove('dragover');
   })
 );
 dropzone.addEventListener('drop', async e => {
@@ -1680,19 +1680,20 @@ dropzone.addEventListener('drop', async e => {
     }
   })
 );
-['dragleave','drop'].forEach(evt =>
+['dragleave'].forEach(evt =>
   document.body.addEventListener(evt, e => {
     e.preventDefault();
     e.stopPropagation();
-    // Убираем подсветку при отпускании или уходе
+    // Убираем подсветку при уходе
     dropzone.classList.remove('dragover');
   })
 );
+// Глобальный drop только для области вне dropzone
 document.body.addEventListener('drop', async e => {
   e.preventDefault();
   e.stopPropagation();
-
-  // Если drop произошёл на dropzone, не обрабатываем здесь — пусть dropzone сам разберётся
+  
+  // Если drop произошёл на dropzone или внутри него, не обрабатываем здесь
   if (e.target.closest('#dropzone')) {
     return;
   }
@@ -2861,7 +2862,7 @@ function loadUrl(url){
           urlLoadBtn.disabled = false;
           switch (data.type){
             case Hls.ErrorTypes.NETWORK_ERROR:
-              showUrlError('Ошибка. Встраиваемая ссылка недоступна');
+              showUrlError('Ошибка. Встраиваемая ссылка недоступна. Повторная попытка...');
               setTimeout(() => {
                 if (hls !== hlsInstance) return; // плеер уже закрыт/переключён — ничего не делаем
                 try {
