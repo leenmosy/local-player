@@ -1337,16 +1337,8 @@ resumeList.addEventListener('click', async (e) => {
         // Сохраняем новый handle под ключом именно этой записи
         try{ await idbSet(key, newHandle); } catch(err){}
         
-        // Загружаем файл и восстанавливаем прогресс
+        // Загружаем файл (прогресс восстанавливается в loadedmetadata через restoreProgress)
         loadFile(file, newHandle);
-        
-        // Восстанавливаем прогресс из сохранённого ключа
-        try{
-          const progressData = JSON.parse(localStorage.getItem(key));
-          if (progressData && typeof progressData.t === 'number' && isDurationUsable()){
-            video.currentTime = progressData.t;
-          }
-        } catch(e){ /* ошибка при восстановлении прогресса */ }
         return;
       }
       
@@ -1362,16 +1354,8 @@ resumeList.addEventListener('click', async (e) => {
       
       const file = await handle.getFile();
       
-      // Загружаем файл и восстанавливаем прогресс
+      // Загружаем файл (прогресс восстанавливается в loadedmetadata через restoreProgress)
       loadFile(file, handle);
-      
-      // Восстанавливаем прогресс из сохранённого ключа
-      try{
-        const progressData = JSON.parse(localStorage.getItem(key));
-        if (progressData && typeof progressData.t === 'number' && isDurationUsable()){
-          video.currentTime = progressData.t;
-        }
-      } catch(e){ /* ошибка при восстановлении прогресса */ }
     } catch(err){
       showErrMsg('Не удалось открыть сохранённый файл — возможно, он был перемещён, переименован или удалён.');
     }
@@ -1897,12 +1881,17 @@ function collapseCategoriesIn(panelEl){
 }
 
 function setDrPanelOpen(open){
+  const wasOpen = drPanel.classList.contains('open');
   drPanel.classList.toggle('open', open);
   drBtn.setAttribute('aria-expanded', String(open));
   
-  // Сворачиваем свои категории и закрываем панель субтитров (не должны перекрываться)
+  // Сворачиваем свои категории только при переключении с другой панели
+  // и закрываем панель субтитров (не должны перекрываться)
   if (open) {
-    collapseCategoriesIn(drPanel);
+    const subsWasOpen = subsPanel.classList.contains('open');
+    if (subsWasOpen) {
+      collapseCategoriesIn(drPanel);
+    }
     setSubsPanelOpen(false);
   }
 }
@@ -1912,12 +1901,17 @@ drBtn.addEventListener('click', () => {
 
 // --- Панель субтитров ---
 function setSubsPanelOpen(open){
+  const wasOpen = subsPanel.classList.contains('open');
   subsPanel.classList.toggle('open', open);
   subsBtn.setAttribute('aria-expanded', String(open));
   
-  // Аналогично: свои категории сворачиваем, панель настроек закрываем
+  // Сворачиваем свои категории только при переключении с другой панели
+  // и закрываем панель настроек (не должны перекрываться)
   if (open) {
-    collapseCategoriesIn(subsPanel);
+    const drWasOpen = drPanel.classList.contains('open');
+    if (drWasOpen) {
+      collapseCategoriesIn(subsPanel);
+    }
     setDrPanelOpen(false);
   }
 }
@@ -2060,9 +2054,9 @@ function parseSubtitles(content, format) {
       }
       i++;
     } else {
-      // WebVTT формат - поддерживаем форматы 00:00:00.000 и 00:00:00.000 --> 00:00:00.000
-      if (line.match(/\d{1,2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}\.\d{3}/)) {
-        const timeMatch = line.match(/(\d{1,2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}\.\d{3})/);
+      // WebVTT формат - поддерживаем форматы 00:00:00.000, 00:00.000 и их комбинации с -->
+      if (line.match(/(?:(?:\d{1,2}):)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:(?:\d{1,2}):)?\d{2}:\d{2}\.\d{3}/)) {
+        const timeMatch = line.match(/((?:(?:\d{1,2}):)?\d{2}:\d{2}\.\d{3})\s*-->\s*((?:(?:\d{1,2}):)?\d{2}:\d{2}\.\d{3})/);
         if (timeMatch) {
           const start = parseVTTTime(timeMatch[1]);
           const end = parseVTTTime(timeMatch[2]);
@@ -2092,6 +2086,11 @@ function parseSubtitles(content, format) {
     console.warn(`Субтитры: пропущено ${skippedCount} строк с некорректным таймингом`);
     showStorageToast(`Не удалось разобрать ${skippedCount} ${skippedCount === 1 ? 'реплику' : 'реплик'} субтитров — тайминг повреждён, они пропущены.`);
   }
+  
+  // Если после парсинга нет субтитров, но файл не пустой - предупреждаем пользователя
+  if (subtitlesData.length === 0 && content.trim().length > 0) {
+    showStorageToast('Не удалось распознать ни одной реплики субтитров. Проверьте формат файла.');
+  }
 }
 
 function parseSRTTime(timeStr) {
@@ -2106,11 +2105,24 @@ function parseSRTTime(timeStr) {
 
 function parseVTTTime(timeStr) {
   const parts = timeStr.split(':');
-  const hours = parseInt(parts[0]);
-  const minutes = parseInt(parts[1]);
-  const secondsParts = parts[2].split('.');
-  const seconds = parseInt(secondsParts[0]);
-  const milliseconds = parseInt(secondsParts[1]);
+  let hours, minutes, secondsParts, seconds, milliseconds;
+  
+  if (parts.length === 2) {
+    // Формат мм:сс.ммм (без часов)
+    hours = 0;
+    minutes = parseInt(parts[0]);
+    secondsParts = parts[1].split('.');
+    seconds = parseInt(secondsParts[0]);
+    milliseconds = parseInt(secondsParts[1]);
+  } else {
+    // Формат чч:мм:сс.ммм
+    hours = parseInt(parts[0]);
+    minutes = parseInt(parts[1]);
+    secondsParts = parts[2].split('.');
+    seconds = parseInt(secondsParts[0]);
+    milliseconds = parseInt(secondsParts[1]);
+  }
+  
   return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
 }
 
@@ -2564,15 +2576,30 @@ function exitFs(){
   if (fn) return fn.call(document);
 }
 
+// Дебаунс для предотвращения повторных быстрых нажатий
+let fullscreenPending = false;
+
 fullscreenBtn.addEventListener('click', () => {
+  if (fullscreenPending) return;
+  
   if (!getFullscreenElement()){
-    requestFs(stage);
+    fullscreenPending = true;
+    requestFs(stage).catch(err => {
+      console.warn('Fullscreen request failed:', err);
+      fullscreenPending = false;
+    });
   } else {
-    exitFs();
+    fullscreenPending = true;
+    exitFs().catch(err => {
+      console.warn('Fullscreen exit failed:', err);
+      fullscreenPending = false;
+    });
   }
 });
+
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
   document.addEventListener(evt, () => {
+    fullscreenPending = false;
     const isFs = !!getFullscreenElement();
     iconFsOpen.style.display = isFs ? 'none' : '';
     iconFsClose.style.display = isFs ? '' : 'none';
@@ -2808,11 +2835,11 @@ function loadUrl(url){
 
       hls.loadSource(url);
       hls.attachMedia(video);
-      videoInitialized = true;
 
       hls.on(Hls.Events.MANIFEST_PARSED, function(){
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
+        showPlayer();
         restoreProgress();
       });
 
@@ -2860,10 +2887,10 @@ function loadUrl(url){
   } else if (video.canPlayType('application/vnd.apple.mpegurl') && isM3U8){
     // Native HLS (Safari)
     video.src = url;
-    videoInitialized = true;
     video.addEventListener('loadedmetadata', function(){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
+      showPlayer();
       restoreProgress();
     }, { once: true });
 
@@ -2875,10 +2902,10 @@ function loadUrl(url){
   } else if (isDirectVideo || isM3U8){
     // Прямая ссылка на видео или m3u8 без поддержки HLS
     video.src = url;
-    videoInitialized = true;
     video.addEventListener('loadedmetadata', function(){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
+      showPlayer();
       restoreProgress();
     }, { once: true });
 
@@ -3000,20 +3027,6 @@ function loadUrl(url){
   destroyAudioGraph();
   ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-
-  // Показываем плеер только если видео было успешно инициализировано
-  if (videoInitialized) {
-    urlLoadingSpinner.style.display = 'none';
-    urlLoadBtn.disabled = false;
-    showPlayer();
-    video.play().catch(e => {
-      if (e.name === 'NotAllowedError') {
-        console.log('Autoplay prevented - user interaction required');
-      } else {
-        console.warn('Play error:', e);
-      }
-    });
-  }
 }
 
 let urlInputErrorTimeout = null;
