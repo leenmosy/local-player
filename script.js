@@ -30,7 +30,6 @@ document.addEventListener('mouseleave', () => {
 }, true);
 
 const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('file-input');
 const dropView = document.getElementById('drop-view');
 const playerView = document.getElementById('player-view');
 const errMsg = document.getElementById('err-msg');
@@ -1001,7 +1000,7 @@ function loadSettings(){
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
     
     // Валидация настроек субтитров
-    settings.subsSize = validateNumber(settings.subsSize, 20, 40, 22);
+    settings.subsSize = validateNumber(settings.subsSize, 20, 40, 24);
     settings.subsOpacity = validateNumber(settings.subsOpacity, 0, 100, 100);
     settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 75);
     settings.subsBottom = validateNumber(settings.subsBottom, 0, 25, 15);
@@ -1105,7 +1104,7 @@ function loadSettings(){
     subsToggle.checked = settings.subsToggle !== undefined ? settings.subsToggle : true;
     subtitles.style.display = subsToggle.checked ? 'block' : 'none';
     
-    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 22;
+    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 24;
     subsSizeVal.textContent = subsSize.value + 'px';
     
     subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#ffffff';
@@ -1538,8 +1537,8 @@ function loadFile(file, handle){
 
     subsToggle.checked = true;
     subtitles.style.display = 'block';
-    subsSize.value = 22;
-    subsSizeVal.textContent = '22px';
+    subsSize.value = 24;
+    subsSizeVal.textContent = '24px';
     subsColor.value = '#ffffff';
     subsOpacity.value = 100;
     subsOpacityVal.textContent = '100%';
@@ -1740,7 +1739,6 @@ dropzone.addEventListener('click', async () => {
     loadFile(file, handle);
   } catch(err){ /* пользователь закрыл диалог выбора файла */ }
 });
-fileInput.remove(); // Удаляем обычный input, так как всегда используем File System Access API
 
 // --- оверлей и синхронизация controls ---
 const stage = document.getElementById('stage');
@@ -1886,11 +1884,21 @@ function collapseCategoriesIn(panelEl){
   });
 }
 
+let panelTogglePending = false;
+const PANEL_ANIMATION_MS = 300;
+
+function safeTogglePanel(setOpenFn, isOpenNow){
+  if (panelTogglePending) return;
+  panelTogglePending = true;
+  setOpenFn(!isOpenNow);
+  setTimeout(() => { panelTogglePending = false; }, PANEL_ANIMATION_MS);
+}
+
 function setDrPanelOpen(open){
   const wasOpen = drPanel.classList.contains('open');
   drPanel.classList.toggle('open', open);
   drBtn.setAttribute('aria-expanded', String(open));
-  
+
   // Сворачиваем свои категории только при переключении с другой панели
   // и закрываем панель субтитров (не должны перекрываться)
   if (open) {
@@ -1902,7 +1910,7 @@ function setDrPanelOpen(open){
   }
 }
 drBtn.addEventListener('click', () => {
-  setDrPanelOpen(!drPanel.classList.contains('open'));
+  safeTogglePanel(setDrPanelOpen, drPanel.classList.contains('open'));
 });
 
 // --- Панель субтитров ---
@@ -1910,7 +1918,7 @@ function setSubsPanelOpen(open){
   const wasOpen = subsPanel.classList.contains('open');
   subsPanel.classList.toggle('open', open);
   subsBtn.setAttribute('aria-expanded', String(open));
-  
+
   // Сворачиваем свои категории только при переключении с другой панели
   // и закрываем панель настроек (не должны перекрываться)
   if (open) {
@@ -1922,7 +1930,7 @@ function setSubsPanelOpen(open){
   }
 }
 subsBtn.addEventListener('click', () => {
-  setSubsPanelOpen(!subsPanel.classList.contains('open'));
+  safeTogglePanel(setSubsPanelOpen, subsPanel.classList.contains('open'));
 });
 
 // --- Загрузка субтитров ---
@@ -2629,7 +2637,7 @@ video.addEventListener('pause', () => { clearTimeout(hideTimer); stage.classList
 
 // --- горячие клавиши ---
 function adjustVolume(delta){
-  const current = video.muted ? 0 : video.volume;
+  const current = video.muted ? (lastVolume > 0 ? lastVolume : 0) : video.volume;
   let v = Math.min(1, Math.max(0, current + delta));
   v = Math.round(v * 100) / 100;
   video.volume = v;
@@ -2648,7 +2656,7 @@ document.addEventListener('keydown', (e) => {
   if (!playerView.classList.contains('active')) return;
   const activeEl = document.activeElement;
   const isTextLike = activeEl && (
-    (activeEl.tagName === 'INPUT' && activeEl.type === 'text') ||
+    (activeEl.tagName === 'INPUT' && ['text','range','color'].includes(activeEl.type)) ||
     activeEl.tagName === 'TEXTAREA' ||
     activeEl.isContentEditable
   );
@@ -2734,7 +2742,6 @@ backBtn.addEventListener('click', () => {
   if (hls){ hls.destroy(); hls = null; }
   video.removeAttribute('src');
   video.load();
-  fileInput.value = '';
   urlInput.value = '';
   urlInput.classList.remove('error');
   hideErrMsg();
@@ -2995,8 +3002,8 @@ function loadUrl(url){
 
     subsToggle.checked = true;
     subtitles.style.display = 'block';
-    subsSize.value = 22;
-    subsSizeVal.textContent = '22px';
+    subsSize.value = 24;
+    subsSizeVal.textContent = '24px';
     subsColor.value = '#ffffff';
     subsOpacity.value = 100;
     subsOpacityVal.textContent = '100%';
