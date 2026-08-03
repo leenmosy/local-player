@@ -1001,9 +1001,9 @@ function loadSettings(){
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
     
     // Валидация настроек субтитров
-    settings.subsSize = validateNumber(settings.subsSize, 20, 40, 30);
+    settings.subsSize = validateNumber(settings.subsSize, 20, 40, 22);
     settings.subsOpacity = validateNumber(settings.subsOpacity, 0, 100, 100);
-    settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 50);
+    settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 75);
     settings.subsBottom = validateNumber(settings.subsBottom, 0, 25, 15);
     
     // Валидация позиций оверлея
@@ -1105,7 +1105,7 @@ function loadSettings(){
     subsToggle.checked = settings.subsToggle !== undefined ? settings.subsToggle : true;
     subtitles.style.display = subsToggle.checked ? 'block' : 'none';
     
-    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 30;
+    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 22;
     subsSizeVal.textContent = subsSize.value + 'px';
     
     subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#ffffff';
@@ -1113,7 +1113,7 @@ function loadSettings(){
     subsOpacityVal.textContent = subsOpacity.value + '%';
     
     subsBg.value = settings.subsBg !== undefined ? settings.subsBg : '#000000';
-    subsBgOpacity.value = settings.subsBgOpacity !== undefined ? settings.subsBgOpacity : 50;
+    subsBgOpacity.value = settings.subsBgOpacity !== undefined ? settings.subsBgOpacity : 75;
     subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
     
     subsBottom.value = settings.subsBottom !== undefined ? settings.subsBottom : 15;
@@ -1538,14 +1538,14 @@ function loadFile(file, handle){
 
     subsToggle.checked = true;
     subtitles.style.display = 'block';
-    subsSize.value = 30;
-    subsSizeVal.textContent = '30px';
+    subsSize.value = 22;
+    subsSizeVal.textContent = '22px';
     subsColor.value = '#ffffff';
     subsOpacity.value = 100;
     subsOpacityVal.textContent = '100%';
     subsBg.value = '#000000';
-    subsBgOpacity.value = 50;
-    subsBgOpacityVal.textContent = '50%';
+    subsBgOpacity.value = 75;
+    subsBgOpacityVal.textContent = '75%';
     subsBottom.value = 15;
     subsBottomVal.textContent = '15%';
     applySubtitlesStyle();
@@ -2345,7 +2345,6 @@ function updateSeekControlsState(){
   } else {
     skipBackBtn.title = 'Назад на 5 секунд';
     skipForwardBtn.title = 'Вперёд на 5 секунд';
-    seek.title = 'Перемотка';
   }
 }
 
@@ -2996,14 +2995,14 @@ function loadUrl(url){
 
     subsToggle.checked = true;
     subtitles.style.display = 'block';
-    subsSize.value = 30;
-    subsSizeVal.textContent = '30px';
+    subsSize.value = 22;
+    subsSizeVal.textContent = '22px';
     subsColor.value = '#ffffff';
     subsOpacity.value = 100;
     subsOpacityVal.textContent = '100%';
     subsBg.value = '#000000';
-    subsBgOpacity.value = 50;
-    subsBgOpacityVal.textContent = '50%';
+    subsBgOpacity.value = 75;
+    subsBgOpacityVal.textContent = '75%';
     subsBottom.value = 15;
     subsBottomVal.textContent = '15%';
     applySubtitlesStyle();
