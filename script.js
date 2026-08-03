@@ -1693,7 +1693,7 @@ document.body.addEventListener('drop', async e => {
   e.stopPropagation();
 
   // Если drop произошёл на dropzone, не обрабатываем здесь — пусть dropzone сам разберётся
-  if (dropzone.contains(e.target)) {
+  if (e.target.closest('#dropzone')) {
     return;
   }
   
