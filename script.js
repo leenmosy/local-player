@@ -812,7 +812,8 @@ function niceTitleFromFilename(name){
 
 // Имя файла обрезается многоточием — дублируем в title для наведения
 function setSubsFileNameDisplay(name){
-  subsFileName.textContent = name;
+  const nameWithoutExt = name === 'Файл не выбран' ? name : name.replace(/\.[^/.]+$/, '');
+  subsFileName.textContent = nameWithoutExt;
   subsFileName.title = name === 'Файл не выбран' ? '' : name;
 }
 
@@ -1210,9 +1211,10 @@ function restoreProgress(){
     // Восстанавливаем сохранённое название
     if (data && data.name) {
       currentFileName = data.name;
-      fnameEl.textContent = data.name;
-      ovTitle.textContent = data.name;
-      titleInput.value = data.name;
+      const nameWithoutExt = data.name.replace(/\.[^/.]+$/, '');
+      fnameEl.textContent = nameWithoutExt;
+      ovTitle.textContent = nameWithoutExt;
+      titleInput.value = nameWithoutExt;
     }
   } catch(e){ /* повреждённая запись — игнорируем */ }
 }
@@ -1271,10 +1273,12 @@ function renderResumeList(){
   items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
   const shown = items.slice(0, 3);
 
-  resumeList.innerHTML = shown.map(item => `
+  resumeList.innerHTML = shown.map(item => {
+    const displayName = item.name ? item.name.replace(/\.[^/.]+$/, '') : 'Файл';
+    return `
     <div class="resume-item">
       <div class="ri-info">
-        <div class="ri-name">${escapeHtml(item.name || 'Файл')}</div>
+        <div class="ri-name">${escapeHtml(displayName)}</div>
         <div class="ri-time">
           ${formatTime(item.t)}${item.duration ? ' / ' + formatTime(item.duration) : ''}
           <span class="ri-separator">·</span>
@@ -1288,7 +1292,8 @@ function renderResumeList(){
         <button type="button" class="ri-clear" data-key="${escapeHtmlAttr(item.key)}" title="Забыть">✕</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
   updatePanelVisibility();
 }
 
