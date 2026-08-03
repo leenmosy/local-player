@@ -1691,6 +1691,11 @@ dropzone.addEventListener('drop', async e => {
 document.body.addEventListener('drop', async e => {
   e.preventDefault();
   e.stopPropagation();
+
+  // Если drop произошёл на dropzone, не обрабатываем здесь — пусть dropzone сам разберётся
+  if (dropzone.contains(e.target)) {
+    return;
+  }
   
   // Если drop view не показан, показываем уведомление
   if (dropView.style.display === 'none'){
