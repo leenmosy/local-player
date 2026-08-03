@@ -179,7 +179,7 @@ input[type=file]{ display:none; }
 }
 
 .err-msg{
-  color: #E08B7D; font-size: 13px; margin-top: 16px; font-family:'JetBrains Mono', monospace;
+  color: var(--accent-red); font-size: 13px; margin-top: 16px; font-family:'JetBrains Mono', monospace;
   min-height: 20px;
   opacity: 0;
   visibility: hidden;
