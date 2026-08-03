@@ -997,7 +997,7 @@ function loadSettings(){
     settings.drSpeed = validateNumber(settings.drSpeed, 0.25, 2, 1);
     settings.drBrightness = validateNumber(settings.drBrightness, 50, 200, 100);
     settings.zoomLevel = validateNumber(settings.zoomLevel, 50, 200, 100);
-    settings.ovSize = validateNumber(settings.ovSize, 14, 24, OV_DEFAULT_SIZE);
+    settings.ovSize = validateNumber(settings.ovSize, 10, 20, OV_DEFAULT_SIZE);
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
     
     // Валидация настроек субтитров
