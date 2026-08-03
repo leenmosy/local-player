@@ -2856,7 +2856,7 @@ function loadUrl(url){
           urlLoadBtn.disabled = false;
           switch (data.type){
             case Hls.ErrorTypes.NETWORK_ERROR:
-              showUrlError('Ошибка. Встраиваемая ссылка недоступна. Повторная попытка...');
+              showUrlError('Ошибка. Встраиваемая ссылка недоступна');
               setTimeout(() => {
                 if (hls !== hlsInstance) return; // плеер уже закрыт/переключён — ничего не делаем
                 try {
