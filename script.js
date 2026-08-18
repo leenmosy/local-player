@@ -1343,7 +1343,7 @@ function loadSettings(){
       return Math.max(min, Math.min(max, val));
     };
     
-    settings.drStrength = validateNumber(settings.drStrength, 0, 100, 60);
+    settings.drStrength = validateNumber(settings.drStrength, 0, 100, 70);
     settings.drBoost = validateNumber(settings.drBoost, 100, 500, 100);
     settings.drSpeed = validateNumber(settings.drSpeed, 0.25, 2, 1);
     settings.drBrightness = validateNumber(settings.drBrightness, 50, 200, 100);
@@ -1967,8 +1967,8 @@ function loadFile(file, handle, meta){
     ovTitle.textContent = currentFileName;
     
     drToggle.checked = true;
-    drStrength.value = 60;
-    drStrengthVal.textContent = '60%';
+    drStrength.value = 70;
+    drStrengthVal.textContent = '70%';
     drBoost.value = 100;
     drBoostVal.textContent = '100%';
     drEnabled = true;
@@ -4289,8 +4289,8 @@ function loadUrlCommonInit(){
     ovTitle.textContent = currentFileName;
     
     drToggle.checked = true;
-    drStrength.value = 60;
-    drStrengthVal.textContent = '60%';
+    drStrength.value = 70;
+    drStrengthVal.textContent = '70%';
     drBoost.value = 100;
     drBoostVal.textContent = '100%';
     drEnabled = true;
