@@ -2185,20 +2185,20 @@ function classifySkippableChapter(rawTitle){
   const norm = title.toLowerCase();
 
   if (/(заставк|интро|опенинг|intro|opening)/i.test(norm)){
-    return { label: 'Заставка' };
+    return { label: 'Пропустить заставку' };
   }
   if (/(титр|концовк|аутро|end\s*credit|credits?|outro|end\s*card)/i.test(norm)){
-    return { label: 'Титры' };
+    return { label: 'Пропустить титры' };
   }
   if (/(ранее в сериал|превью серии|recap|previously)/i.test(norm)){
-    return { label: 'Обзор серии' };
+    return { label: 'Пропустить обзор серии' };
   }
   // Явная ручная метка вида "skip: реклама" / "skip - реклама" — на случай,
   // если заставка/титры не подходят и хочется пометить произвольный кусок.
   const skipMatch = /^skip[:\-]?\s*(.*)$/i.exec(title);
   if (skipMatch){
     const rest = skipMatch[1].trim();
-    return { label: rest || 'Пропустить' };
+    return { label: rest ? `Пропустить: ${rest}` : 'Пропустить' };
   }
   return null;
 }
@@ -2786,13 +2786,7 @@ const playlistPanel = document.getElementById('playlist-panel');
 const playlistList = document.getElementById('playlist-list');
 const playlistTitle = document.getElementById('playlist-title');
 const nextEpOverlay = document.getElementById('next-ep-overlay');
-const neoTitle = document.getElementById('neo-title');
-const neoPlayBtn = document.getElementById('neo-play-btn');
-const neoDismissBtn = document.getElementById('neo-dismiss-btn');
 const skipSegmentOverlay = document.getElementById('skip-segment-overlay');
-const skipSegmentLabel = document.getElementById('skip-segment-label');
-const skipSegmentPlayBtn = document.getElementById('skip-segment-play-btn');
-const skipSegmentDismissBtn = document.getElementById('skip-segment-dismiss-btn');
 const subtitles = document.getElementById('subtitles');
 const subsToggle = document.getElementById('subs-toggle');
 const subsFile = document.getElementById('subs-file');
@@ -3601,10 +3595,7 @@ video.addEventListener('timeupdate', () => {
     showNextEpisode = remaining <= nextEpisodeThreshold(video.duration) && remaining > 0.05;
   }
   if (showNextEpisode){
-    if (!nextEpOverlay.classList.contains('show')){
-      neoTitle.textContent = niceTitleFromFilename(playlistFiles[playlistIndex + 1].file.name);
-      nextEpOverlay.classList.add('show');
-    }
+    nextEpOverlay.classList.add('show');
   } else {
     hideNextEpisodeOverlay();
   }
@@ -3616,13 +3607,9 @@ video.addEventListener('timeupdate', () => {
   updateSkipSegmentOverlay(showNextEpisode);
 });
 
-neoPlayBtn.addEventListener('click', () => {
+nextEpOverlay.addEventListener('click', () => {
   hideNextEpisodeOverlay();
   advanceToNextPlaylistItem();
-});
-neoDismissBtn.addEventListener('click', () => {
-  nextEpisodePromptDismissed = true;
-  hideNextEpisodeOverlay();
 });
 
 // Показывает/обновляет/скрывает плашку "Пропустить" для текущего момента
@@ -3642,7 +3629,7 @@ function updateSkipSegmentOverlay(suppressed){
   }
   activeSkipSegment = seg;
   if (!skipSegmentOverlay.classList.contains('show')){
-    skipSegmentLabel.textContent = seg.label;
+    skipSegmentOverlay.textContent = seg.label;
     skipSegmentOverlay.classList.add('show');
   }
 }
@@ -3669,7 +3656,7 @@ video.addEventListener('seeked', () => {
   if (changed) updateSkipSegmentOverlay(false);
 });
 
-skipSegmentPlayBtn.addEventListener('click', () => {
+skipSegmentOverlay.addEventListener('click', () => {
   if (activeSkipSegment){
     dismissedChapterSegments.add(activeSkipSegment.id);
     const end = skipSegmentEffectiveEnd(activeSkipSegment);
@@ -3685,10 +3672,6 @@ skipSegmentPlayBtn.addEventListener('click', () => {
     }
     if (isFinite(target)) video.currentTime = Math.max(target, activeSkipSegment.start);
   }
-  hideSkipSegmentOverlay();
-});
-skipSegmentDismissBtn.addEventListener('click', () => {
-  if (activeSkipSegment) dismissedChapterSegments.add(activeSkipSegment.id);
   hideSkipSegmentOverlay();
 });
 

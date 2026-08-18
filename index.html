@@ -373,21 +373,8 @@
       <svg id="center-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
       <svg id="center-icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
     </div>
-    <div class="next-ep-overlay" id="next-ep-overlay">
-      <div class="neo-label">Следующая серия</div>
-      <div class="neo-title" id="neo-title"></div>
-      <div class="neo-actions">
-        <button type="button" class="neo-play" id="neo-play-btn">Смотреть</button>
-        <button type="button" class="neo-dismiss" id="neo-dismiss-btn" aria-label="Скрыть">✕</button>
-      </div>
-    </div>
-    <div class="next-ep-overlay skip-segment-overlay" id="skip-segment-overlay">
-      <div class="neo-label" id="skip-segment-label">Пропустить</div>
-      <div class="neo-actions">
-        <button type="button" class="neo-play" id="skip-segment-play-btn">Пропустить</button>
-        <button type="button" class="neo-dismiss" id="skip-segment-dismiss-btn" aria-label="Скрыть">✕</button>
-      </div>
-    </div>
+    <button type="button" class="quick-action-btn" id="next-ep-overlay">Следующая серия</button>
+    <button type="button" class="quick-action-btn" id="skip-segment-overlay">Пропустить</button>
   </div>
   <div class="keyboard-shortcuts" aria-label="Горячие клавиши">
     <div class="shortcut-item"><kbd>Space</kbd><span>Воспроизвести / Пауза</span></div>
