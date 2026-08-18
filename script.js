@@ -3635,16 +3635,6 @@ function updateSkipSegmentOverlay(suppressed){
     return;
   }
   const t = video.currentTime;
-  // Если пользователь перемотал НАЗАД до начала ранее закрытого отрезка
-  // (нажал "Пропустить"/"✕" и потом сам отмотал обратно) — снимаем пометку
-  // "закрыто". Иначе dismissedChapterSegments копится необратимо на весь файл,
-  // и плашка больше никогда не появится для этого отрезка, даже если
-  // пользователь специально вернулся его посмотреть/пропустить ещё раз.
-  for (const s of mediaChapters){
-    if (t < s.start && dismissedChapterSegments.has(s.id)){
-      dismissedChapterSegments.delete(s.id);
-    }
-  }
   const seg = mediaChapters.find(s => t >= s.start && t < skipSegmentEffectiveEnd(s));
   if (!seg || dismissedChapterSegments.has(seg.id)){
     hideSkipSegmentOverlay();
@@ -3656,6 +3646,28 @@ function updateSkipSegmentOverlay(suppressed){
     skipSegmentOverlay.classList.add('show');
   }
 }
+
+// Если пользователь вручную перемотал (а не просто идёт естественное
+// воспроизведение вперёд) и оказался внутри ранее закрытого отрезка —
+// снимаем с него пометку "закрыто", чтобы плашка "Пропустить" могла
+// появиться снова. Раньше сброс срабатывал только если отмотать СТРОГО
+// до начала отрезка — если приземлиться перемоткой чуть дальше начала,
+// но всё ещё внутри (например, сам отрезок отмотал не целиком), плашка
+// молчала до следующего полного прохода назад. 'seeked' не срабатывает
+// на обычном ходе времени при воспроизведении, поэтому не мешает
+// штатному скрытию плашки сразу после нажатия "Пропустить"/"✕".
+video.addEventListener('seeked', () => {
+  if (mediaChapters.length === 0) return;
+  const t = video.currentTime;
+  let changed = false;
+  for (const s of mediaChapters){
+    if (dismissedChapterSegments.has(s.id) && t < skipSegmentEffectiveEnd(s)){
+      dismissedChapterSegments.delete(s.id);
+      changed = true;
+    }
+  }
+  if (changed) updateSkipSegmentOverlay(false);
+});
 
 skipSegmentPlayBtn.addEventListener('click', () => {
   if (activeSkipSegment){
