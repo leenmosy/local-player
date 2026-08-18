@@ -951,6 +951,7 @@ input[type=range]::-moz-range-thumb{
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+  user-select: none; /* иначе на некоторых браузерах при наведении на текст кнопки вместо pointer показывается текстовый курсор */
   box-shadow: 0 8px 24px rgba(0,0,0,.4);
   opacity: 0;
   transform: translateY(8px);
