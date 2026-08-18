@@ -3628,10 +3628,10 @@ function updateSkipSegmentOverlay(suppressed){
     return;
   }
   activeSkipSegment = seg;
-  if (!skipSegmentOverlay.classList.contains('show')){
-    skipSegmentOverlay.textContent = seg.label;
-    skipSegmentOverlay.classList.add('show');
-  }
+  // Всегда обновляем текст, даже если плашка уже показана - нужно для случая
+  // когда пользователь перематывает с одного сегмента на другой (например, с заставки на титры)
+  skipSegmentOverlay.textContent = seg.label;
+  skipSegmentOverlay.classList.add('show');
 }
 
 // Если пользователь вручную перемотал (а не просто идёт естественное
@@ -3653,7 +3653,9 @@ video.addEventListener('seeked', () => {
       changed = true;
     }
   }
-  if (changed) updateSkipSegmentOverlay(false);
+  // Всегда обновляем плашку при перемотке, чтобы текст кнопки изменился
+  // при переходе с одного сегмента на другой (например, с заставки на титры)
+  updateSkipSegmentOverlay(false);
 });
 
 skipSegmentOverlay.addEventListener('click', () => {
