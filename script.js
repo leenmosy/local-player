@@ -1133,39 +1133,20 @@ function setSubsFileNameDisplay(name){
 
 // --- запоминание тайминга просмотра (localStorage) ---
 const PROGRESS_PREFIX = 'lp_progress:';
-// Префикс для видео, открытых по ссылке (m3u8/mp4-URL). Раньше такие записи хранились
-// как 'url:' + url БЕЗ PROGRESS_PREFIX — то есть в отдельном пространстве ключей, которое
-// cleanupStorage()/removeDuplicateProgress()/renderResumeList() вообще не видели. Из-за
-// этого url-записи никогда не чистились и не попадали в общий список «Продолжить».
-// Теперь они тоже живут под PROGRESS_PREFIX и участвуют в общей логике.
 const URL_KEY_PREFIX = PROGRESS_PREFIX + 'url:';
-// Отдельное пространство ключей для видео, загруженных из ПАПКИ (плейлист).
-// Важно: это самостоятельный префикс (а не просто "ещё один file:"), поэтому
-// прогресс одиночного файла и прогресс одноимённого/совпадающего по размеру и
-// дате файла из папки НИКОГДА не считаются одной и той же записью — даже если
-// name+size+lastModified случайно совпадут. Один и тот же физический файл,
-// открытый один раз как одиночный, а другой раз как часть папки, тоже получит
-// два независимых прогресса — так и задумано, источник загрузки имеет значение.
 const FOLDER_PROGRESS_PREFIX = PROGRESS_PREFIX + 'folder:';
-// Мини-"манифест" плейлиста папки: список файлов (имя/размер/дата), которые были
-// в ней на момент открытия. Позволяет при "Продолжить" восстановить не только
-// сам просмотренный эпизод, но и весь плейлист целиком (остальные серии),
-// подтягивая для каждой сохранённый хэндл из IndexedDB.
 const PLAYLIST_MANIFEST_PREFIX = 'lp_playlist:';
 const SETTINGS_PREFIX = 'lp_settings:';
 const SUBS_PREFIX = 'lp_subs:';
-const MAX_STORAGE_ENTRIES = 20; // Максимальное количество записей каждого типа
+const MAX_STORAGE_ENTRIES = 20; 
 let currentFileKey = null;
-let currentFileName = null; // Отображаемое имя (может быть изменено пользователем)
-let originalFileName = null; // Исходное имя файла с расширением (для идентификации)
-let currentFileIsFolder = false; // Текущее видео загружено из папки (плейлист)?
-let currentFolderName = null; // Имя папки-источника, если применимо (для подписи)
-let currentFolderId = null; // Id манифеста плейлиста-источника (для восстановления через "Продолжить")
+let currentFileName = null; 
+let originalFileName = null; 
+let currentFileIsFolder = false; 
+let currentFolderName = null; 
+let currentFolderId = null; 
 let progressInterval = null;
 
-// isFolder=true -> ключ уходит в отдельное пространство FOLDER_PROGRESS_PREFIX,
-// поэтому одноимённый одиночный файл никогда не перезапишет и не "унаследует"
-// прогресс файла из папки (и наоборот) — см. комментарий у FOLDER_PROGRESS_PREFIX.
 function fileKey(file, isFolder){
   const prefix = isFolder ? FOLDER_PROGRESS_PREFIX : PROGRESS_PREFIX;
   return prefix + file.name + ':' + file.size + ':' + (file.lastModified || 0);
@@ -1911,13 +1892,6 @@ async function idbDelete(key){
   });
 }
 
-// Раньше здесь был отдельный механизм (checkSavedUrl/checkSavedHandle/updateContinueButton),
-// который вычислял «самую свежую» запись отдельно от общего списка и рисовал её в отдельном
-// блоке (#continue-row). Он читал/писал в несогласованные пространства ключей, из-за чего
-// верхний блок и список ниже могли показывать разные и/или задвоенные данные. Теперь всё
-// хранится под одним префиксом (PROGRESS_PREFIX), и renderResumeList() сам решает, что
-// показать — эта логика больше не нужна.
-
 function loadFile(file, handle, meta){
   if (!file){ return; }
   
@@ -1930,8 +1904,7 @@ function loadFile(file, handle, meta){
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
   // meta.isFolder помечает, что файл открыт как часть папки (плейлиста) — тогда
-  // прогресс уходит в отдельное пространство ключей (FOLDER_PROGRESS_PREFIX),
-  // см. комментарий у fileKey()/FOLDER_PROGRESS_PREFIX.
+  // прогресс уходит в отдельное пространство ключей (FOLDER_PROGRESS_PREFIX)
   currentFileIsFolder = !!(meta && meta.isFolder);
   currentFolderName = (meta && meta.folderName) || null;
   currentFolderId = (meta && meta.folderId) || null;
@@ -2102,37 +2075,18 @@ function isVideoFile(file){
 }
 
 // --- Плейлист (загрузка папки) ---
-let playlistFiles = []; // [{ file, handle }]
+let playlistFiles = [];
 let playlistIndex = -1;
-let playlistFolderName = null; // Имя папки-источника плейлиста (если удалось определить)
-let playlistFolderId = null; // Id манифеста текущего плейлиста (см. PLAYLIST_MANIFEST_PREFIX)
-let nextEpisodePromptDismissed = false; // Пользователь закрыл подсказку "Следующая серия" для этого видео
+let playlistFolderName = null; 
+let playlistFolderId = null; 
+let nextEpisodePromptDismissed = false; 
 
-// --- Главы (chapters) из метаданных файла: заставка/титры и т.п. ---
-// Список сегментов, которые можно предложить пропустить, распознанных по
-// встроенным в файл главам (см. parseChaptersFromFile). Каждый элемент:
-// { id, start, end, label, title }. end === Infinity значит "до конца видео"
-// (актуально для последней главы файла, например титров).
+
 let mediaChapters = [];
-// id сегментов, которые пользователь уже закрыл/пропустил для текущего файла —
-// чтобы плашка не выскакивала повторно, если он перемотал обратно в этот момент.
 let dismissedChapterSegments = new Set();
-// Токен для отмены "устаревшего" асинхронного разбора глав, если пользователь
-// успел переключить файл, пока mediainfo.js ещё анализировал предыдущий.
 let chapterParseToken = 0;
-// Сегмент, который сейчас показан в плашке "Пропустить" (нужен обработчикам кнопок)
 let activeSkipSegment = null;
 
-// Универсальный (без анализа самого видео) расчёт момента показа подсказки
-// "Следующая серия" — по остатку времени до конца, а не по фиксированной
-// секунде. Титры на глаз обычно занимают от ~10-15с у коротких веб-серий
-// до 30-60с у типичного телеэпизода (у полнометражных фильмов — заметно
-// дольше, но плейлист папки — это, как правило, сериал, а не кино).
-// Поэтому берём процент от длительности серии (более длинные серии обычно
-// длиннее и по концовке), но всегда в разумных границах:
-//  - не короче 12с (даже у 3-минутного ролика подсказка успеет побыть на экране)
-//  - не длиннее 45с (чтобы не всплывало посреди ещё активного сюжета)
-//  - и никогда не больше половины самого видео (для очень коротких файлов)
 function nextEpisodeThreshold(duration){
   if (!duration || !isFinite(duration) || duration <= 0) return 12;
   const pct = duration * 0.06; // ~6% длительности серии
@@ -2140,26 +2094,6 @@ function nextEpisodeThreshold(duration){
   return Math.min(clamped, duration * 0.5);
 }
 
-// ============================================================================
-// Главы (chapters) из метаданных файла — заставка/титры и т.п.
-//
-// Идея: если в файл встроены главы (например, через `ffmpeg -map_chapters` —
-// они пишутся в mp4 как стандартный QuickTime chapter track, он же "Menu"
-// трек), мы читаем их через mediainfo.js (WASM-порт MediaInfo, который умеет
-// разбирать такие треки из mp4/mov/mkv и отдавать их в унифицированном виде),
-// распознаём по названию главы, что это заставка/интро или титры, и в нужный
-// момент показываем плашку "Пропустить" в стиле "Следующая серия".
-//
-// Если в файле никаких глав нет (или mediainfo.js не смог его открыть,
-// например для очень старых браузеров без WASM) — mediaChapters остаётся
-// пустым и плеер работает как обычно, без какого-либо намёка на эту фичу.
-// ============================================================================
-
-// Ключи глав в объекте Menu-трека от mediainfo.js выглядят как "_00_01_23_456"
-// (часы_минуты_секунды_миллисекунды, с ведущим подчёркиванием) — так
-// MediaInfoLib кодирует таймкод в текстовый ключ, пригодный для XML/JSON
-// (имя не может начинаться с цифры). Проверено вручную через mediainfo.js
-// на файле с главами, вшитыми через ffmpeg -map_metadata.
 const CHAPTER_TIME_KEY_RE = /^_?(\d{1,2})_(\d{2})_(\d{2})_(\d{3})$/;
 
 function chapterTimeKeyToSeconds(key){
@@ -2204,16 +2138,6 @@ function classifySkippableChapter(rawTitle){
 }
 
 let mediaInfoPromise = null;
-// mediainfo.js подключён локально из vendor/mediainfo/ (см. index.html) и по
-// умолчанию .wasm тоже грузится оттуда же — это работает на GitHub Pages и на
-// любом локальном http-сервере (fetch same-origin), без обращения в интернет.
-//
-// Но если человек открывает index.html напрямую двойным кликом (file://),
-// браузер целиком блокирует fetch() локальных файлов — это ограничение
-// самого браузера на протокол file:, обойти его нельзя. В этом случае
-// откатываемся на CDN: туда fetch с null-origin (file://) проходит нормально,
-// т.к. jsdelivr отдаёт Access-Control-Allow-Origin: * — ценой того, что для
-// разбора глав в этом сценарии нужен интернет хотя бы разово (как было раньше).
 const MEDIAINFO_LOCAL_BASE = 'vendor/mediainfo/';
 const MEDIAINFO_CDN_BASE = 'https://cdn.jsdelivr.net/npm/mediainfo.js@0.3.7/dist/';
 function getMediaInfoInstance(){
@@ -2236,12 +2160,7 @@ function getMediaInfoInstance(){
   return mediaInfoPromise;
 }
 
-// Читает файл через mediainfo.js кусками (без загрузки всего файла в память)
-// и превращает найденные главы Menu-трека в mediaChapters. Полностью
-// асинхронно и не блокирует запуск воспроизведения — если к моменту, когда
-// пользователь доедет до заставки/титров, разбор ещё не завершился (очень
-// маловероятно, обычно занимает доли секунды–пару секунд), плашка просто
-// появится чуть позже обычного.
+// Читает файл через mediainfo.js кусками и превращает найденные главы 
 async function parseChaptersFromFile(file, token){
   try {
     const mediainfo = await getMediaInfoInstance();
@@ -2895,11 +2814,7 @@ function ensureAudioGraph(){
   }
 }
 
-// Гарантированно применяет фактическое (не только визуальное) состояние
-// компрессора для текущей ссылки: пересоздаёт/переподключает аудио-граф и
-// прогоняет простой цикл "переключить -> переключить обратно", используя
-// уже существующую логику компрессора (connectGraph/ensureAudioGraph) и уже
-// восстановленное значение чекбокса drToggle.checked.
+// Гарантированно применяет фактическое (не только визуальное) состояние компрессора
 function reapplyCompressorState(){
   ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
@@ -3231,10 +3146,9 @@ function applySubtitlesStyle() {
     span.style.fontSize = size;
     span.style.color = color;
     
-    // Adjust position based on number of lines and font size
     const textLines = span.innerHTML.split('<br>').length;
     const fontSize = parseInt(subsSize.value);
-    const offset = Math.round(fontSize * 0.65); // Dynamic offset based on font size
+    const offset = Math.round(fontSize * 0.65);
     
     if (textLines > 1) {
       subtitles.style.bottom = `calc(5% - ${offset}px)`;
@@ -3448,11 +3362,6 @@ function showCenterIcon(isPlaying){
   }
 }
 playBtn.addEventListener('click', togglePlay);
-// Блокируем нативное контекстное меню только на самом плеере и его
-// элементах управления (видео, панель управления, кнопки) — чтобы нельзя
-// было вызвать нативное "Show controls"/"Loop" браузера, конфликтующее с
-// кастомным UI. Тулбар (кнопка "Назад", название) и подсказка горячих
-// клавиш под плеером в эту область не входят — там меню остаётся стандартным.
 stage.addEventListener('contextmenu', (e) => e.preventDefault());
 
 clickCatcher.addEventListener('click', () => {
@@ -3584,10 +3493,6 @@ video.addEventListener('timeupdate', () => {
   updateSubtitles();
 
   // Подсказка "Следующая серия" — показываем ближе к концу текущего эпизода
-  // (см. nextEpisodeThreshold), только если есть следующая серия в плейлисте,
-  // пользователь её не закрыл вручную для этого видео, и сейчас не открыта
-  // другая панель (настройки/субтитры/плейлист) — они занимают тот же угол
-  // экрана и иначе подсказка перекрывала бы клики по ним.
   const hasNextEpisode = playlistFiles.length > 1 && playlistIndex > -1 && playlistIndex < playlistFiles.length - 1;
   let showNextEpisode = false;
   if (hasNextEpisode && isDurationUsable() && !nextEpisodePromptDismissed && !anyPanelOpen()){
@@ -3600,10 +3505,6 @@ video.addEventListener('timeupdate', () => {
     hideNextEpisodeOverlay();
   }
 
-  // Плашка "Пропустить" (заставка/титры из метаданных главы) — тот же угол
-  // экрана, что и "Следующая серия", поэтому если она сейчас показана —
-  // однозначно отдаём приоритет ей (конец эпизода важнее внутреннего
-  // фрагмента) и скрываем плашку пропуска, пока не покажется снова сама.
   updateSkipSegmentOverlay(showNextEpisode);
 });
 
@@ -3613,9 +3514,6 @@ nextEpOverlay.addEventListener('click', () => {
 });
 
 // Показывает/обновляет/скрывает плашку "Пропустить" для текущего момента
-// воспроизведения. suppressed=true означает, что сейчас показана более
-// приоритетная подсказка "Следующая серия" — тогда плашку пропуска всегда
-// прячем, независимо от того, есть ли подходящий сегмент.
 function updateSkipSegmentOverlay(suppressed){
   if (suppressed || anyPanelOpen() || mediaChapters.length === 0){
     hideSkipSegmentOverlay();
@@ -3634,15 +3532,6 @@ function updateSkipSegmentOverlay(suppressed){
   skipSegmentOverlay.classList.add('show');
 }
 
-// Если пользователь вручную перемотал (а не просто идёт естественное
-// воспроизведение вперёд) и оказался внутри ранее закрытого отрезка —
-// снимаем с него пометку "закрыто", чтобы плашка "Пропустить" могла
-// появиться снова. Раньше сброс срабатывал только если отмотать СТРОГО
-// до начала отрезка — если приземлиться перемоткой чуть дальше начала,
-// но всё ещё внутри (например, сам отрезок отмотал не целиком), плашка
-// молчала до следующего полного прохода назад. 'seeked' не срабатывает
-// на обычном ходе времени при воспроизведении, поэтому не мешает
-// штатному скрытию плашки сразу после нажатия "Пропустить"/"✕".
 video.addEventListener('seeked', () => {
   if (mediaChapters.length === 0) return;
   const t = video.currentTime;
@@ -3662,12 +3551,7 @@ skipSegmentOverlay.addEventListener('click', () => {
   if (activeSkipSegment){
     dismissedChapterSegments.add(activeSkipSegment.id);
     const end = skipSegmentEffectiveEnd(activeSkipSegment);
-    // Перематываем к концу главы, но с небольшим запасом ВПЕРЁД (0.05с),
-    // чтобы гарантированно оказаться внутри следующего фрагмента, а не ровно
-    // на границе — иначе из-за округления currentTime можно на пару мс
-    // остаться внутри пропускаемого куска (раньше здесь никакого запаса
-    // фактически не добавлялось, несмотря на комментарий — из-за этого могло
-    // казаться, что перемотка "не долетает" до нужного места).
+    // Перематываем к концу главы, но с небольшим запасом ВПЕРЁД (0.05с)
     let target = isFinite(end) ? end + 0.05 : end;
     if (isDurationUsable()){
       target = isFinite(target) ? Math.min(target, video.duration - 0.05) : video.duration - 0.05;
@@ -3934,21 +3818,9 @@ backBtn.addEventListener('click', () => {
 
 // --- Загрузка видео по URL (m3u8 и обычные ссылки) ---
 let hls = null;
-// Отслеживаем текущий обработчик ошибки видео для URL-загрузки, чтобы снимать
-// его перед каждой новой попыткой — иначе при успешных загрузках старые
-// {once:true}-слушатели никогда не снимаются (событие 'error' не наступает)
-// и копятся на <video> навсегда, а при реальной ошибке все они срабатывают
-// разом и перетирают друг друга сообщением от совершенно другой попытки.
 let urlErrorHandler = null;
-// Токен текущей попытки загрузки — чтобы асинхронная HEAD-диагностика (см. ниже),
-// пришедшая позже, не перетёрла сообщением об ошибке уже другую, новую попытку.
 let urlLoadToken = 0;
 
-// Нативный <video>.error не сообщает HTTP-статус (404 и т.п.), поэтому для
-// прямых видео и native HLS (Safari) дополнительно пробуем HEAD-запрос,
-// чтобы показать точную причину (например "ссылка устарела, 404"), а не
-// общее "не удалось загрузить видео". Если запрос сам не удался (например,
-// сервер блокирует HEAD или это CORS) — просто оставляем исходное сообщение.
 async function diagnoseVideoLoadError(url, fallbackMessage){
   try {
     const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
@@ -3965,10 +3837,6 @@ async function diagnoseVideoLoadError(url, fallbackMessage){
 }
 
 // Для реальной работы компрессора на ссылку сразу ставится crossOrigin='anonymous'
-// (см. ensureAudioGraph). Если из-за этого сервер отказал в загрузке видео (событие
-// 'error'), пробуем перезагрузить ту же ссылку ещё раз БЕЗ crossOrigin — видео должно
-// проиграться, просто без аудио-эффектов для этой ссылки. Возвращает true, если
-// повторную попытку запустили (вызывающий обработчик ошибки должен ничего больше не делать).
 function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
   if (video.crossOrigin !== 'anonymous') return false; // ошибка не из-за crossOrigin
   if (thisLoadToken !== urlLoadToken) return false; // запущена уже другая попытка загрузки
@@ -4477,10 +4345,7 @@ function loadUrlCommonInit(){
 
   // Очищаем старый аудио-граф перед созданием нового
   destroyAudioGraph();
-  // Реально применяем состояние компрессора для этой ссылки (а не только
-  // чекбокс): создаём/переподключаем аудио-граф и прогоняем цикл
-  // выключить -> включить обратно, чтобы после загрузки/обновления
-  // компрессор фактически работал так, как сохранено для этой ссылки.
+  // Реально применяем состояние компрессора для этой ссылки, а не только чекбокс
   reapplyCompressorState();
 }
 

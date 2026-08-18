@@ -54,7 +54,7 @@
   --radius: 12px;
 }
 
-/* ---------- ЗАГЛУШКА ДЛЯ МОБИЛЬНЫХ/ПЛАНШЕТОВ ---------- */
+/* ---------- Заглушка для телефонов/планшетов ---------- */
 .mobile-blocker{
   display:none;
   position: fixed; inset:0; z-index: 9999;
@@ -106,7 +106,7 @@ html, body{
 }
 .title-font{ font-family:'Helvetica', sans-serif; letter-spacing: .02em; font-weight: 400; }
 
-/* ---------- ЭКРАН ВЫБОРА ФАЙЛА ---------- */
+/* ---------- Экран выбора файла ---------- */
 #drop-view{
   flex: 1; display:flex; flex-direction:column; align-items:center; justify-content:center;
   padding: 28px 20px;
@@ -347,7 +347,7 @@ input[type=file]{ display:none; }
   visibility: visible;
 }
 
-/* ---------- ПАНЕЛЬ ПРОДОЛЖЕНИЯ ПРОСМОТРА ---------- */
+/* ---------- Панель продолжения просмотра ---------- */
 .resume-panel{
   width: min(640px, 90vw);
   margin-bottom: 16px;
@@ -488,7 +488,7 @@ input[type=color]{
 }
 .pos-pad:active .pos-pad-handle{ cursor: grabbing; }
 
-/* ---------- ЭКРАН ПЛЕЕРА ---------- */
+/* ---------- Экран плеера ---------- */
 #player-view{ display:none; flex:1; flex-direction:column; }
 #player-view.active{ display:flex; }
 
@@ -901,7 +901,7 @@ input[type=range]::-moz-range-thumb{
 
 .volume-group{ display:flex; align-items:center; gap: 2px; }
 
-/* ---------- ИКОНКА ПЛЕЙ/ПАУЗА ПО ЦЕНТРУ ---------- */
+/* ---------- Иконка плей/пауза по центру ---------- */
 .center-play-icon{
   position: absolute;
   top: 50%;
@@ -932,11 +932,7 @@ input[type=range]::-moz-range-thumb{
   opacity: 0 !important;
 }
 
-/* ---------- ПОДСКАЗКИ "СЛЕДУЮЩАЯ СЕРИЯ" / "ПРОПУСТИТЬ" ---------- */
-/* Компактная кнопка-плашка без карточки, лейбла и крестика — сама кнопка
-   и есть подсказка. Скрывается сама, когда её условие показа перестаёт
-   действовать (конец отрезка/эпизода, следующая серия и т.п.), явного
-   закрытия не требуется. */
+/* ---------- Подсказки "Следующая серия" / "Пропустить" ---------- */
 .quick-action-btn{
   position: absolute;
   right: 12px;
@@ -968,7 +964,7 @@ input[type=range]::-moz-range-thumb{
 }
 .quick-action-btn:hover{ opacity: .9; }
 
-/* ---------- ПАНЕЛЬ ЗВУКА (НОРМАЛИЗАЦИЯ/БУСТ) ---------- */
+/* ---------- Панель звука (Компрессор/буст) ---------- */
 .dr-panel{
   position:absolute; right: 12px; left: 12px; bottom: 62px; z-index: 6;
   width: auto; max-width: 300px; margin-left: auto;
@@ -1242,10 +1238,6 @@ input[type=range]::-moz-range-thumb{
   display: flex;
   width: 100%;
 }
-/* Строка инпутов редактирования — точная копия строки добавления (timing-input-row):
-   те же поля времени без переопределений размера + кнопка-галочка в том же месте,
-   что и жёлтая "+" сверху, и крестик отмены сразу за ней. Кнопка удаления во время
-   редактирования скрыта (см. script.js). */
 .timing-edit-inputs{
   display: flex;
   align-items: center;
@@ -1282,7 +1274,7 @@ input[type=range]::-moz-range-thumb{
   flex-shrink: 0;
 }
 
-/* ---------- HLS КАЧЕСТВО ---------- */
+/* ---------- HLS качество ---------- */
 .hls-quality-list{
   display: flex;
   flex-direction: column;
@@ -1315,7 +1307,7 @@ input[type=range]::-moz-range-thumb{
   color: var(--muted);
 }
 
-/* ---------- ПАНЕЛЬ ПЛЕЙЛИСТА ---------- */
+/* ---------- Панель плейлиста ---------- */
 #playlist-panel{
   position:absolute; right: 12px; left: 12px; bottom: 62px; z-index: 6;
   width: auto; max-width: 300px; margin-left: auto;
@@ -1399,7 +1391,7 @@ input[type=range]::-moz-range-thumb{
   color: var(--accent-orange);
 }
 
-/* ---------- ПОДСКАЗКА ГОРЯЧИХ КЛАВИШ ---------- */
+/* ---------- Подсказка горячих клавиш ---------- */
 .keyboard-shortcuts{
   display: flex;
   flex-wrap: wrap;
@@ -1442,7 +1434,7 @@ input[type=range]::-moz-range-thumb{
   font-weight: 300;
 }
 
-/* ---------- АДАПТИВНОСТЬ / МОБИЛЬНЫЕ ---------- */
+/* ---------- Адаптивность/Мобильные ---------- */
 @media (max-width: 720px){
   .dropzone-group{ flex-direction: column; }
   .stage{ margin: 0 10px 10px; }
