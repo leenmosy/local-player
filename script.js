@@ -2869,26 +2869,8 @@ function ensureAudioGraph(){
     return;
   }
   try{
-    // Устанавливаем crossOrigin только при создании аудио-графа
-    // Это ленивая инициализация - только когда пользователь реально включает аудио-фичи
-    // Только для URL-источников, для локальных файлов это не нужно
-    if (!video.crossOrigin && currentFileKey && currentFileKey.startsWith(URL_KEY_PREFIX)) {
-      video.crossOrigin = 'anonymous';
-      // Если видео уже загружено, нужно перезагрузить его для применения crossOrigin
-      if (video.src && !video.paused) {
-        const currentTime = video.currentTime;
-        const wasPlaying = !video.paused;
-        video.load();
-        video.currentTime = currentTime;
-        if (wasPlaying) {
-          video.play().catch(e => {
-            if (e.name === 'NotAllowedError') {
-              console.log('Autoplay prevented after crossOrigin reload');
-            }
-          });
-        }
-      }
-    }
+    // crossOrigin уже установлен заранее в loadUrl для CDN видео
+    // Здесь просто создаем аудио-граф
     
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     sourceNode = audioCtx.createMediaElementSource(video);
@@ -4000,6 +3982,7 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
   drToggle.checked = false;
   showStorageToast('Аудио-эффекты (в т.ч. компрессор) недоступны для этой ссылки — сервер не поддерживает CORS. Видео проигрывается без них');
 
+  video.crossOrigin = null;
   video.src = url;
   video.addEventListener('loadedmetadata', function(){
     urlLoadingSpinner.style.display = 'none';
@@ -4059,12 +4042,21 @@ function loadUrl(url){
   // Если да - запрашиваем metadata через API, иначе сбрасываем главы
   const isCdnUrl = parsedUrl.hostname === 'cdn.mosych.top' && parsedUrl.port === '8020';
   
-  if (isCdnUrl && isDirectVideo) {
-    // CDN MP4 - запрашиваем metadata через API
-    fetchCdnMetadata(url);
+  if (isCdnUrl) {
+    // CDN видео - устанавливаем crossOrigin ДО установки src
+    video.crossOrigin = 'anonymous';
+    
+    if (isDirectVideo) {
+      // CDN MP4 - запрашиваем metadata через API
+      fetchCdnMetadata(url);
+    } else {
+      // CDN HLS или другие форматы - сбрасываем главы
+      resetMediaChapters();
+    }
   } else {
-    // Другие URL источники - сбрасываем главы
+    // Другие URL источники - сбрасываем главы и crossOrigin
     resetMediaChapters();
+    video.removeAttribute('crossOrigin');
   }
   
   // Если расширения нет, но URL выглядит как прямая ссылка на файл (без параметров или с параметрами файла)
@@ -4087,8 +4079,7 @@ function loadUrl(url){
   originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя
   currentFileName = niceTitleFromFilename(getFileNameFromUrl(url)); // Отображаемое имя без расширения
 
-  // Не устанавливаем crossOrigin заранее - это блокирует загрузку при отсутствии CORS
-  // crossOrigin='anonymous' будет установлен лениво при включении аудио-фич
+  // crossOrigin уже установлен выше для CDN видео, для остальных источников сброшен
 
   let videoInitialized = false;
 
