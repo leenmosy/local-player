@@ -199,7 +199,7 @@ html, body{
 
 .url-input{
   flex:1;
-  padding: 12px 16px;
+  padding: 9px 16px;
   background: var(--surface);
   border: 1px solid #23272e;
   border-radius: var(--radius);
@@ -222,7 +222,7 @@ html, body{
 
 .url-load-btn{
   background: var(--accent-orange); color: #0B0D10;
-  padding: 10px 20px;
+  padding: 9px 15px;
   white-space: nowrap;
   transition: opacity .3s ease;
 }
