@@ -3493,6 +3493,15 @@ video.addEventListener('ended', () => {
 });
 
 let lastBlurActive = false;
+
+function syncBlurFilter(){
+  const blurActive = isInBlurRange(video.currentTime);
+  if (blurActive !== lastBlurActive) {
+    updateVideoFilter();
+    lastBlurActive = blurActive;
+  }
+}
+
 video.addEventListener('timeupdate', () => {
   const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
   ovTime.textContent = txt;
@@ -3502,11 +3511,7 @@ video.addEventListener('timeupdate', () => {
   }
   
   // Обновление блюра
-  const blurActive = isInBlurRange(video.currentTime);
-  if (blurActive !== lastBlurActive) {
-    updateVideoFilter();
-    lastBlurActive = blurActive;
-  }
+  syncBlurFilter();
   
   // Обновление субтитров
   updateSubtitles();
@@ -3552,6 +3557,10 @@ function updateSkipSegmentOverlay(suppressed){
 }
 
 video.addEventListener('seeked', () => {
+  // Пересчитываем blur-фильтр сразу по завершении перемотки — не ждём timeupdate,
+  // который может не сработать при быстрой перемотке на паузе.
+  syncBlurFilter();
+
   if (mediaChapters.length === 0) return;
   const t = video.currentTime;
   let changed = false;
@@ -3608,6 +3617,10 @@ seek.addEventListener('input', () => {
     const t = (seek.value / 1000) * video.duration;
     video.currentTime = t;
     timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
+
+    // Форсируем пересчёт blur-фильтра сразу, не дожидаясь timeupdate/seeked —
+    // иначе при быстром драге фильтр может "залипнуть" на старом состоянии.
+    syncBlurFilter();
   }
 });
 seek.addEventListener('change', () => {
