@@ -937,7 +937,7 @@ input[type=range]::-moz-range-thumb{
 /* ---------- Подсказки "Следующая серия" / "Пропустить" ---------- */
 .quick-action-btn{
   position: absolute;
-  right: 12px;
+  right: 27px;
   bottom: 76px;
   z-index: 6;
   max-width: calc(100% - 24px);
