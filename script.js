@@ -2117,10 +2117,10 @@ const CANONICAL_SKIP_CHAPTERS = {
   'credits': { kind: 'credits', label: 'Пропустить титры' },
   'outro': { kind: 'credits', label: 'Пропустить титры' },
   'титры': { kind: 'credits', label: 'Пропустить титры' },
-  'recap': { kind: 'recap', label: 'Пропустить обзор серии' },
-  'preview': { kind: 'recap', label: 'Пропустить обзор серии' },
-  'рекап': { kind: 'recap', label: 'Пропустить обзор серии' },
-  'повтор': { kind: 'recap', label: 'Пропустить обзор серии' }
+  'recap': { kind: 'recap', label: 'Пропустить повтор' },
+  'preview': { kind: 'recap', label: 'Пропустить повтор' },
+  'рекап': { kind: 'recap', label: 'Пропустить повтор' },
+  'повтор': { kind: 'recap', label: 'Пропустить повтор' }
 };
 
 function classifySkippableChapter(rawTitle){
