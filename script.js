@@ -2321,21 +2321,17 @@ async function fetchCdnMetadata(videoUrl){
     // Формируем metadata URL: https://cdn.mosych.top:8020/api/metadata/:filename
     const metadataUrl = new URL(urlObj.origin + '/api/metadata/' + encodeURIComponent(filename));
     
-    console.log('Запрашиваем metadata с CDN:', metadataUrl.toString());
-    
     const response = await fetch(metadataUrl.toString());
     if (!response.ok) {
-      console.log('Не удалось получить metadata:', response.status);
       return;
     }
     
     const data = await response.json();
-    console.log('Получены metadata:', data);
     
     // Применяем главы через существующую систему
     applyChaptersFromCdnMetadata(data, chapterParseToken);
   } catch (e) {
-    console.log('Ошибка при запросе metadata:', e);
+    // Ошибка при запросе metadata - игнорируем, видео продолжит грузиться без глав
   }
 }
 
