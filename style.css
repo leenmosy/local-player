@@ -276,7 +276,7 @@ input[type=file]{ display:none; }
 .hls-info-header{
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   justify-content: center;
 }
 .hls-info-icon{
