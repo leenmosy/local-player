@@ -1047,11 +1047,16 @@ function isInBlurRange(t){
 }
 
 // --- единая точка применения фильтров видео (яркость + размытие тайминга) ---
-function updateVideoFilter(){
+// forceBlur (опционально): явно задать состояние блюра вместо пересчёта по
+// video.currentTime. Используется во время перемотки, когда currentTime уже
+// указывает на новую позицию, а реально отрисованный кадр может ещё
+// отставать (см. syncBlurFilter).
+function updateVideoFilter(forceBlur){
   const parts = [];
   const brightness = drBrightness.value / 100;
   if (brightness !== 1) parts.push(`brightness(${brightness})`);
-  if (isInBlurRange(video.currentTime)) parts.push(`blur(${BLUR_AMOUNT_PX}px)`);
+  const blurOn = (typeof forceBlur === 'boolean') ? forceBlur : isInBlurRange(video.currentTime);
+  if (blurOn) parts.push(`blur(${BLUR_AMOUNT_PX}px)`);
   video.style.filter = parts.join(' ');
 }
 
@@ -3493,11 +3498,48 @@ video.addEventListener('ended', () => {
 });
 
 let lastBlurActive = false;
+// Время последнего кадра, который браузер ГАРАНТИРОВАННО отрисовал
+// (обновляется только на реальном плейбеке и после подтверждённого seeked,
+// а не в момент, когда мы просто присвоили video.currentTime).
+let lastConfirmedTime = 0;
+
+// Сбрасываем состояние блюра при загрузке любого нового файла — иначе
+// lastConfirmedTime от предыдущего видео мог бы ошибочно "утянуть" за собой
+// диапазон блюра при первой же перемотке в новом видео.
+video.addEventListener('loadedmetadata', () => {
+  lastConfirmedTime = 0;
+  lastBlurActive = false;
+});
+
+// Проверяет, задевает ли отрезок [from, to] хотя бы один диапазон блюра.
+// Нужно, чтобы поймать случай, когда перемотка "проезжает" через диапазон
+// блюра целиком, а не только начинается или заканчивается в нём.
+function rangeTouchesBlur(from, to){
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  return blurRanges.some(r => hi >= r.from && lo <= r.to + 1);
+}
 
 function syncBlurFilter(){
-  const blurActive = isInBlurRange(video.currentTime);
+  const target = video.currentTime;
+  let blurActive;
+
+  if (video.seeking) {
+    // Пока идёт перемотка, video.currentTime уже может указывать на новую
+    // позицию, а реально нарисованный на экране кадр — ещё нет (браузер
+    // декодирует от ближайшего ключевого кадра). Поэтому на время перемотки
+    // подстраховываемся: держим блюр включённым, если в диапазон блюра
+    // попадает последняя подтверждённая позиция, целевая позиция, или
+    // перемотка проходит через диапазон между ними.
+    blurActive = isInBlurRange(target) ||
+                 isInBlurRange(lastConfirmedTime) ||
+                 rangeTouchesBlur(lastConfirmedTime, target);
+  } else {
+    blurActive = isInBlurRange(target);
+    lastConfirmedTime = target;
+  }
+
   if (blurActive !== lastBlurActive) {
-    updateVideoFilter();
+    updateVideoFilter(blurActive);
     lastBlurActive = blurActive;
   }
 }
@@ -3556,9 +3598,17 @@ function updateSkipSegmentOverlay(suppressed){
   skipSegmentOverlay.classList.add('show');
 }
 
+video.addEventListener('seeking', () => {
+  // Как только браузер зафиксировал начало перемотки — сразу подстраховываемся
+  // блюром, если перемотка задевает диапазон блюра (см. syncBlurFilter).
+  syncBlurFilter();
+});
+
 video.addEventListener('seeked', () => {
   // Пересчитываем blur-фильтр сразу по завершении перемотки — не ждём timeupdate,
   // который может не сработать при быстрой перемотке на паузе.
+  // На этом этапе video.seeking уже false, поэтому syncBlurFilter пересчитает
+  // точное состояние блюра и обновит lastConfirmedTime.
   syncBlurFilter();
 
   if (mediaChapters.length === 0) return;
