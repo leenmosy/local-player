@@ -2264,6 +2264,81 @@ function applyChaptersFromMediaInfoResult(result, token){
   mediaChapters = segments;
 }
 
+// Применение глав из CDN metadata API
+function applyChaptersFromCdnMetadata(data, token){
+  if (token !== chapterParseToken) return;
+  mediaChapters = [];
+  if (!data || !data.chapters || !Array.isArray(data.chapters)) return;
+
+  const raw = [];
+  for (const chapter of data.chapters){
+    if (typeof chapter.start === 'number' && typeof chapter.title === 'string'){
+      raw.push({ time: chapter.start, title: chapter.title });
+    }
+  }
+  if (raw.length === 0) return;
+
+  raw.sort((a, b) => a.time - b.time);
+  // Убираем возможные дубликаты по времени
+  const dedup = [];
+  for (const item of raw){
+    if (dedup.length && Math.abs(dedup[dedup.length - 1].time - item.time) < 0.01) continue;
+    dedup.push(item);
+  }
+
+  const SKIP_KIND_MAX_DURATION = {
+    intro: 15 * 60,
+    recap: 15 * 60,
+    custom: 20 * 60
+    // credits — без ограничения
+  };
+
+  const segments = [];
+  for (let i = 0; i < dedup.length; i++){
+    const info = classifySkippableChapter(dedup[i].title);
+    if (!info) continue; // обычная (не заставка/титры) глава — пропускаем
+    const start = dedup[i].time;
+    let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity — "до конца видео"
+    const cap = SKIP_KIND_MAX_DURATION[info.kind];
+    if (cap !== undefined) end = Math.min(end, start + cap);
+    if (end <= start) continue;
+    segments.push({
+      id: 'cdn_ch' + i + '_' + Math.round(start * 1000),
+      start,
+      end,
+      label: info.label
+    });
+  }
+  mediaChapters = segments;
+}
+
+// Запрос metadata с CDN API
+async function fetchCdnMetadata(videoUrl){
+  try {
+    const urlObj = new URL(videoUrl);
+    const filename = getFileNameFromUrl(videoUrl);
+    
+    // Формируем metadata URL: https://cdn.mosych.top:8020/api/metadata/:filename
+    const metadataUrl = new URL(urlObj.origin + '/api/metadata/' + encodeURIComponent(filename));
+    
+    console.log('Запрашиваем metadata с CDN:', metadataUrl.toString());
+    
+    const response = await fetch(metadataUrl.toString());
+    if (!response.ok) {
+      console.log('Не удалось получить metadata:', response.status);
+      return;
+    }
+    
+    const data = await response.json();
+    console.log('Получены metadata:', data);
+    
+    // Применяем главы через существующую систему
+    applyChaptersFromCdnMetadata(data, chapterParseToken);
+  } catch (e) {
+    console.log('Ошибка при запросе metadata:', e);
+  }
+}
+
 // Реальный конец сегмента с учётом Infinity (последняя глава файла) —
 // как только известна длительность видео, подставляем её.
 function skipSegmentEffectiveEnd(seg){
@@ -3971,11 +4046,6 @@ function loadUrl(url){
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
 
-  // Для потоковых/URL-источников (HLS и т.п.) главы из метаданных не читаем —
-  // нет локального файла для анализа mediainfo.js, поэтому просто сбрасываем
-  // то, что могло остаться от ранее открытого локального файла.
-  resetMediaChapters();
-
   // Проверяем валидность URL и сохраняем результат для дальнейшего использования
   let parsedUrl;
   try {
@@ -3988,6 +4058,18 @@ function loadUrl(url){
   // Определяем тип видео по расширения (используем pathname, чтобы query-параметры не мешали)
   const isM3U8 = /\.m3u8$/i.test(parsedUrl.pathname);
   const isDirectVideo = /\.(mp4|webm|mov)$/i.test(parsedUrl.pathname);
+  
+  // Для потоковых/URL-источников проверяем, является ли это CDN URL
+  // Если да - запрашиваем metadata через API, иначе сбрасываем главы
+  const isCdnUrl = parsedUrl.hostname === 'cdn.mosych.top' && parsedUrl.port === '8020';
+  
+  if (isCdnUrl && isDirectVideo) {
+    // CDN MP4 - запрашиваем metadata через API
+    fetchCdnMetadata(url);
+  } else {
+    // Другие URL источники - сбрасываем главы
+    resetMediaChapters();
+  }
   
   // Если расширения нет, но URL выглядит как прямая ссылка на файл (без параметров или с параметрами файла)
   // пробуем загрузить как прямую ссылку на видео
@@ -4451,6 +4533,12 @@ function getFileNameFromUrl(url){
     const queryIndex = filename.indexOf('?');
     if (queryIndex !== -1) {
       filename = filename.substring(0, queryIndex);
+    }
+    // Декодируем URL-encoded символы (для русских названий)
+    try {
+      filename = decodeURIComponent(filename);
+    } catch (e) {
+      // Если декодирование не удалось, оставляем как есть
     }
     return filename || 'Видео из URL';
   } catch (e){
