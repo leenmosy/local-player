@@ -2195,9 +2195,20 @@ async function parseChaptersFromUrl(url, token){
       throw new Error('Не удалось определить размер файла');
     }
 
-    const getSize = () => size;
+    // Ограничиваем чтение только началом файла (первые 10 МБ), где обычно находятся метаданные chapters
+    // Это ускоряет анализ в 10-100 раз для больших файлов
+    const MAX_ANALYZE_SIZE = 10 * 1024 * 1024; // 10 МБ
+    const analyzeSize = Math.min(size, MAX_ANALYZE_SIZE);
+    
+    console.log('Размер файла:', size, 'будем анализировать первые:', analyzeSize, 'байт');
+
+    const getSize = () => analyzeSize; // возвращаем ограниченный размер для анализа
     const readChunk = async (chunkSize, offset) => {
-      const end = Math.min(offset + chunkSize, size) - 1;
+      // Не читаем за пределами ограниченного размера
+      if (offset >= analyzeSize) {
+        return new Uint8Array(0); // возвращаем пустой буфер если вышли за пределы
+      }
+      const end = Math.min(offset + chunkSize, analyzeSize) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
       if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
       const buf = await res.arrayBuffer();
