@@ -3992,6 +3992,7 @@ function loadUrl(url){
       // Обновляем отображение имени в UI
       fnameEl.textContent = currentFileName;
       ovTitle.textContent = currentFileName;
+      titleInput.value = currentFileName;
     }
   }).catch(() => {
     // Если не удалось получить оригинальное имя, используем имя из URL
