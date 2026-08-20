@@ -2195,9 +2195,9 @@ async function parseChaptersFromUrl(url, token){
       throw new Error('Не удалось определить размер файла');
     }
 
-    // Ограничиваем чтение только началом файла (первые 10 МБ), где обычно находятся метаданные chapters
-    // Это ускоряет анализ в 10-100 раз для больших файлов
-    const MAX_ANALYZE_SIZE = 10 * 1024 * 1024; // 10 МБ
+    // Ограничиваем чтение только началом файла (первые 50 МБ), где обычно находятся метаданные chapters
+    // Это ускоряет анализ в 2-50 раз для больших файлов, но при этом достаточно для большинства файлов
+    const MAX_ANALYZE_SIZE = 50 * 1024 * 1024; // 50 МБ
     const analyzeSize = Math.min(size, MAX_ANALYZE_SIZE);
     
     console.log('Размер файла:', size, 'будем анализировать первые:', analyzeSize, 'байт');
@@ -2237,6 +2237,10 @@ function applyChaptersFromMediaInfoResult(result, token){
     console.log('applyChaptersFromMediaInfoResult: некорректный результат или нет треков');
     return;
   }
+
+  // Логируем все типы треков для отладки
+  const trackTypes = result.media.track.map(t => t ? t['@type'] : 'null').filter(Boolean);
+  console.log('applyChaptersFromMediaInfoResult: все типы треков:', trackTypes);
 
   const menuTracks = result.media.track.filter(t => t && t['@type'] === 'Menu');
   console.log('applyChaptersFromMediaInfoResult: найдено Menu треков:', menuTracks.length);
