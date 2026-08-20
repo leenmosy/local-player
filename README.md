@@ -12,7 +12,7 @@
 <br>
 
 <p align="center">
-  <a href="https://leenmosy.github.io/local-player/" target="_blank">
+  <a href="https://leenmosy.github.io/local-player/">
     <img src="screenshots/open-player-badge.svg" alt="Открыть плеер">
   </a>
 </p>
