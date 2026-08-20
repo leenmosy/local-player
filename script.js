@@ -2189,11 +2189,13 @@ async function parseChaptersFromUrl(url, token){
       size = 10 * 1024 * 1024; // fallback: 10 МБ
     }
 
-    // Ограничиваем чтение разумным размером для поиска metadata
-    // Для большинства MP4 файлов chapters находятся в первых 1-2 МБ (faststart)
-    // или в последних 1-2 МБ (обычные файлы)
-    const MAX_ANALYZE_SIZE = 2 * 1024 * 1024; // 2 МБ
+    // Для обычных MP4 файлов chapters часто находятся в конце (atom moov)
+    // Увеличиваем лимит чтобы покрыть и конец файла для больших файлов
+    // Для файла 11 ГБ это намного быстрее чтения всего файла
+    const MAX_ANALYZE_SIZE = 200 * 1024 * 1024; // 200 МБ
     const analyzeSize = Math.min(size, MAX_ANALYZE_SIZE);
+    
+    console.log('[Chapters] Будем анализировать первые', analyzeSize, 'байт из', size);
     
     console.log('[Chapters] Будем анализировать первые', analyzeSize, 'байт из', size);
 
