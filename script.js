@@ -2228,12 +2228,22 @@ async function parseChaptersFromUrl(url, token){
 
 function applyChaptersFromMediaInfoResult(result, token){
   console.log('applyChaptersFromMediaInfoResult вызван, token:', token, 'chapterParseToken:', chapterParseToken);
-  if (token !== chapterParseToken) return;
+  if (token !== chapterParseToken) {
+    console.log('applyChaptersFromMediaInfoResult: токены не совпадают, выход');
+    return;
+  }
   mediaChapters = [];
-  if (!result || !result.media || !Array.isArray(result.media.track)) return;
+  if (!result || !result.media || !Array.isArray(result.media.track)) {
+    console.log('applyChaptersFromMediaInfoResult: некорректный результат или нет треков');
+    return;
+  }
 
   const menuTracks = result.media.track.filter(t => t && t['@type'] === 'Menu');
-  if (menuTracks.length === 0) return;
+  console.log('applyChaptersFromMediaInfoResult: найдено Menu треков:', menuTracks.length);
+  if (menuTracks.length === 0) {
+    console.log('applyChaptersFromMediaInfoResult: нет Menu треков, выход');
+    return;
+  }
 
   // Собираем тайм-коды глав. Останавливаемся на первом Menu-треке, где
   // нашлись непустые метки (обычно он один; если их несколько — это, как
@@ -2252,7 +2262,11 @@ function applyChaptersFromMediaInfoResult(result, token){
     }
     if (raw.length) break;
   }
-  if (raw.length === 0) return;
+  console.log('applyChaptersFromMediaInfoResult: собрано raw глав:', raw.length);
+  if (raw.length === 0) {
+    console.log('applyChaptersFromMediaInfoResult: нет raw глав, выход');
+    return;
+  }
 
   raw.sort((a, b) => a.time - b.time);
   // Убираем возможные дубликаты по времени (например, если совпало между источниками)
@@ -2270,8 +2284,10 @@ function applyChaptersFromMediaInfoResult(result, token){
   };
 
   const segments = [];
+  console.log('applyChaptersFromMediaInfoResult: начинаем классификацию глав, всего:', dedup.length);
   for (let i = 0; i < dedup.length; i++){
     const info = classifySkippableChapter(dedup[i].title);
+    console.log('applyChaptersFromMediaInfoResult: глава', i, 'название:', dedup[i].title, 'классификация:', info);
     if (!info) continue; // обычная (не заставка/титры) глава — пропускаем
     const start = dedup[i].time;
     let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity — "до конца видео"
