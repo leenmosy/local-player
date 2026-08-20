@@ -2264,13 +2264,43 @@ function applyChaptersFromMediaInfoResult(result, token){
     return;
   }
 
+  // Логируем все типы треков для отладки
+  const trackTypes = result.media.track.map(t => t ? t['@type'] : 'null').filter(Boolean);
+  console.log('[Chapters] Все типы треков:', trackTypes);
+  
+  // Подробно логируем каждый трек
+  result.media.track.forEach((t, i) => {
+    if (t) {
+      console.log('[Chapters] Трек', i, 'тип:', t['@type'], 'codec_type:', t.codec_type, 'handler_name:', t.handler_name);
+    }
+  });
+
   const menuTracks = result.media.track.filter(t => t && t['@type'] === 'Menu');
   console.log('[Chapters] Найдено Menu треков:', menuTracks.length);
-  if (menuTracks.length === 0) {
-    console.log('[Chapters] Нет Menu треков, выход');
+  
+  // Ищем chapters в Menu треках
+  if (menuTracks.length > 0) {
+    console.log('[Chapters] Ищем chapters в Menu треках');
+    processMenuTracks(menuTracks);
     return;
   }
+  
+  // Если Menu треков нет, ищем chapters в других форматах
+  console.log('[Chapters] Menu треков нет, ищем chapters в других форматах');
+  
+  // Ищем chapters в других типах треков (например, chapter track)
+  const otherTracks = result.media.track.filter(t => t && t['@type'] !== 'General');
+  console.log('[Chapters] Другие треки (не General):', otherTracks.length);
+  
+  if (otherTracks.length > 0) {
+    processOtherTracksForChapters(otherTracks);
+    return;
+  }
+  
+  console.log('[Chapters] Chapters не найдены ни в одном формате');
+}
 
+function processMenuTracks(menuTracks) {
   // Собираем тайм-коды глав. Останавливаемся на первом Menu-треке, где
   // нашлись непустые метки (обычно он один; если их несколько — это, как
   // правило, разноязычные дубликаты одних и тех же глав).
@@ -2288,12 +2318,43 @@ function applyChaptersFromMediaInfoResult(result, token){
     }
     if (raw.length) break;
   }
-  console.log('[Chapters] Собрано raw глав:', raw.length);
+  console.log('[Chapters] Собрано raw глав из Menu треков:', raw.length);
   if (raw.length === 0) {
-    console.log('[Chapters] Нет raw глав, выход');
+    console.log('[Chapters] Нет raw глав в Menu треках');
     return;
   }
+  
+  processRawChapters(raw);
+}
 
+function processOtherTracksForChapters(tracks) {
+  // Ищем поля, похожие на chapter/time коды в других треках
+  const raw = [];
+  for (const track of tracks){
+    const sources = [track, track.extra].filter(Boolean);
+    for (const src of sources){
+      for (const key of Object.keys(src)){
+        const t = chapterTimeKeyToSeconds(key);
+        if (t === null) continue;
+        const value = src[key];
+        if (typeof value !== 'string' || !value.trim()) continue;
+        raw.push({ time: t, title: value });
+      }
+    }
+  }
+  
+  console.log('[Chapters] Собрано raw глав из других треков:', raw.length);
+  if (raw.length === 0) {
+    console.log('[Chapters] Нет raw глав в других треках');
+    return;
+  }
+  
+  processRawChapters(raw);
+}
+
+function processRawChapters(raw) {
+  console.log('[Chapters] processRawChapters: начинаем обработку', raw.length, 'глав');
+  
   raw.sort((a, b) => a.time - b.time);
   // Убираем возможные дубликаты по времени (например, если совпало между источниками)
   const dedup = [];
@@ -2310,8 +2371,10 @@ function applyChaptersFromMediaInfoResult(result, token){
   };
 
   const segments = [];
+  console.log('[Chapters] Начинаем классификацию глав, всего:', dedup.length);
   for (let i = 0; i < dedup.length; i++){
     const info = classifySkippableChapter(dedup[i].title);
+    console.log('[Chapters] Глава', i, 'название:', dedup[i].title, 'классификация:', info);
     if (!info) continue; // обычная (не заставка/титры) глава — пропускаем
     const start = dedup[i].time;
     let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity — "до конца видео"
