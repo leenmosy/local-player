@@ -2147,14 +2147,51 @@ async function parseChaptersFromUrl(url, token){
     const mediainfo = await getMediaInfoInstance();
     if (token !== chapterParseToken) return;
 
-    // HEAD-запрос узнаёт размер файла и заодно проверяет, что Range вообще поддерживается
-    const head = await fetch(url, { method: 'HEAD' });
-    if (!head.ok) throw new Error('HEAD ' + head.status);
-    const size = Number(head.headers.get('Content-Length'));
-    if (!size) throw new Error('Сервер не вернул размер файла');
-    if (head.headers.get('Accept-Ranges') !== 'bytes') {
-      // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
-      // не блокируем, просто пробуем читать куски ниже.
+    let size = null;
+    let headOk = false;
+
+    // Пробуем HEAD-запрос для получения размера файла
+    try {
+      const head = await fetch(url, { method: 'HEAD' });
+      if (head.ok) {
+        headOk = true;
+        size = Number(head.headers.get('Content-Length'));
+        if (head.headers.get('Accept-Ranges') !== 'bytes') {
+          // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
+          // не блокируем, просто пробуем читать куски ниже.
+        }
+      }
+    } catch (headErr) {
+      // HEAD не сработал (CORS, сеть и т.п.) — пробуем читать без предварительного размера
+      console.log('HEAD-запрос не удался, пробуем читать без размера:', headErr.message);
+    }
+
+    // Если HEAD не сработал или не вернул размер, определяем размер через частичное чтение
+    if (!size) {
+      try {
+        // Пробуем прочитать небольшой кусок для определения размера через Content-Length в ответе
+        const testRes = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
+        if (testRes.ok || testRes.status === 206) {
+          const contentRange = testRes.headers.get('Content-Range');
+          if (contentRange) {
+            const match = /bytes \d+-(\d+)\/(\d+)/.exec(contentRange);
+            if (match) {
+              size = Number(match[2]); // общий размер из Content-Range
+            }
+          }
+          // Если размер всё ещё не известен, используем Content-Length из ответа
+          if (!size) {
+            size = Number(testRes.headers.get('Content-Length'));
+          }
+        }
+      } catch (rangeErr) {
+        // Range-запрос тоже не сработал — пробуем без размера
+        console.log('Range-запрос не удался, пробуем без размера:', rangeErr.message);
+      }
+    }
+
+    if (!size) {
+      throw new Error('Не удалось определить размер файла');
     }
 
     const getSize = () => size;
@@ -2234,6 +2271,12 @@ function applyChaptersFromMediaInfoResult(result, token){
     });
   }
   mediaChapters = segments;
+  
+  // Сразу показываем кнопку "Пропустить заставку", если chapters загружены и видео уже воспроизводится
+  // Не ждём следующего timeupdate, чтобы избежать задержки 9-10 секунд
+  if (mediaChapters.length > 0 && !video.paused) {
+    updateSkipSegmentOverlay(false);
+  }
 }
 
 // Реальный конец сегмента с учётом Infinity (последняя глава файла) —
@@ -2770,26 +2813,8 @@ function ensureAudioGraph(){
     return;
   }
   try{
-    // Устанавливаем crossOrigin только при создании аудио-графа
-    // Это ленивая инициализация - только когда пользователь реально включает аудио-фичи
-    // Только для URL-источников, для локальных файлов это не нужно
-    if (!video.crossOrigin && currentFileKey && currentFileKey.startsWith(URL_KEY_PREFIX)) {
-      video.crossOrigin = 'anonymous';
-      // Если видео уже загружено, нужно перезагрузить его для применения crossOrigin
-      if (video.src && !video.paused) {
-        const currentTime = video.currentTime;
-        const wasPlaying = !video.paused;
-        video.load();
-        video.currentTime = currentTime;
-        if (wasPlaying) {
-          video.play().catch(e => {
-            if (e.name === 'NotAllowedError') {
-              console.log('Autoplay prevented after crossOrigin reload');
-            }
-          });
-        }
-      }
-    }
+    // crossOrigin теперь устанавливается заранее при загрузке URL в loadUrl()
+    // поэтому здесь просто создаём аудио-граф без дополнительной настройки CORS
     
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     sourceNode = audioCtx.createMediaElementSource(video);
@@ -3444,6 +3469,12 @@ video.addEventListener('play', () => {
   startProgressTracking();
   startUiSync();
   showCenterIcon(true);
+  
+  // Сразу показываем кнопку "Пропустить заставку", если chapters уже загружены
+  // Это гарантирует появление кнопки даже если chapters загрузились до начала воспроизведения
+  if (mediaChapters.length > 0) {
+    updateSkipSegmentOverlay(false);
+  }
 });
 video.addEventListener('pause', () => {
   syncPlayStateUI();
@@ -3998,8 +4029,11 @@ function loadUrl(url){
     // Если не удалось получить оригинальное имя, используем имя из URL
   });
 
-  // Не устанавливаем crossOrigin заранее - это блокирует загрузку при отсутствии CORS
-  // crossOrigin='anonymous' будет установлен лениво при включении аудио-фич
+  // Устанавливаем crossOrigin ДО установки src для HTTPS-ссылок
+  // Это нужно для корректной работы Web Audio API и избежания гонки условий
+  if (!isM3U8) {
+    video.crossOrigin = 'anonymous';
+  }
 
   let videoInitialized = false;
 
