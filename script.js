@@ -3981,8 +3981,21 @@ function loadUrl(url){
   }
 
   currentFileKey = urlKey(url);
-  originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя
+  originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя из URL
   currentFileName = niceTitleFromFilename(getFileNameFromUrl(url)); // Отображаемое имя без расширения
+  
+  // Пытаемся получить оригинальное имя файла из Content-Disposition заголовка
+  getOriginalFileNameFromUrl(url).then(originalName => {
+    if (originalName && originalName !== originalFileName) {
+      originalFileName = originalName;
+      currentFileName = niceTitleFromFilename(originalName);
+      // Обновляем отображение имени в UI
+      fnameEl.textContent = currentFileName;
+      ovTitle.textContent = currentFileName;
+    }
+  }).catch(() => {
+    // Если не удалось получить оригинальное имя, используем имя из URL
+  });
 
   // Не устанавливаем crossOrigin заранее - это блокирует загрузку при отсутствии CORS
   // crossOrigin='anonymous' будет установлен лениво при включении аудио-фич
@@ -4430,6 +4443,37 @@ function getFileNameFromUrl(url){
     return filename || 'Видео из URL';
   } catch (e){
     return 'Видео из URL';
+  }
+}
+
+// Извлекает оригинальное имя файла из заголовка Content-Disposition
+async function getOriginalFileNameFromUrl(url){
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    if (!response.ok) return null;
+    
+    const contentDisposition = response.headers.get('Content-Disposition');
+    if (!contentDisposition) return null;
+    
+    // Парсим Content-Disposition: inline; filename*=UTF-8''encoded_name
+    const match = /filename\*=UTF-8''(.+)/i.exec(contentDisposition);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    // Fallback для обычного filename
+    const simpleMatch = /filename="?([^"]+)"?/i.exec(contentDisposition);
+    if (simpleMatch) {
+      return simpleMatch[1];
+    }
+    
+    return null;
+  } catch (e) {
+    return null;
   }
 }
 
