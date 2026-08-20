@@ -2143,6 +2143,7 @@ async function parseChaptersFromFile(file, token){
 // и открывал CORS (Access-Control-Allow-Origin) — если нет, просто ловим
 // ошибку ниже и работаем без глав, видео при этом не ломается.
 async function parseChaptersFromUrl(url, token){
+  console.log('parseChaptersFromUrl начал работу для:', url, 'token:', token);
   try {
     const mediainfo = await getMediaInfoInstance();
     if (token !== chapterParseToken) return;
@@ -2203,7 +2204,9 @@ async function parseChaptersFromUrl(url, token){
       return new Uint8Array(buf);
     };
 
+    console.log('Начинаем analyzeData для:', url);
     const result = await mediainfo.analyzeData(getSize, readChunk);
+    console.log('analyzeData завершён для:', url, 'результат:', result);
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
   } catch (err){
@@ -2213,6 +2216,7 @@ async function parseChaptersFromUrl(url, token){
 }
 
 function applyChaptersFromMediaInfoResult(result, token){
+  console.log('applyChaptersFromMediaInfoResult вызван, token:', token, 'chapterParseToken:', chapterParseToken);
   if (token !== chapterParseToken) return;
   mediaChapters = [];
   if (!result || !result.media || !Array.isArray(result.media.track)) return;
@@ -2271,10 +2275,12 @@ function applyChaptersFromMediaInfoResult(result, token){
     });
   }
   mediaChapters = segments;
+  console.log('Chapters загружены, количество:', mediaChapters.length, 'currentTime:', video.currentTime);
   
   // Сразу показываем кнопку "Пропустить заставку", если chapters загружены
   // Не ждём следующего timeupdate или начала воспроизведения, чтобы избежать задержки 9-10 секунд
   if (mediaChapters.length > 0) {
+    console.log('Вызываем updateSkipSegmentOverlay сразу после загрузки chapters');
     updateSkipSegmentOverlay(false);
   }
 }
@@ -3995,6 +4001,7 @@ function loadUrl(url){
   // Главы читаем только для прямых видеофайлов — у HLS-потоков нет единого
   // файла с чаптерами внутри, там анализировать нечего.
   if (!isM3U8) {
+    console.log('Начинаем загрузку chapters для URL:', url);
     parseChaptersFromUrl(url, chapterParseToken);
   }
   
