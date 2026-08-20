@@ -2190,19 +2190,17 @@ async function parseChaptersFromUrl(url, token){
     }
 
     // Для обычных MP4 файлов chapters часто находятся в конце (atom moov)
-    // Увеличиваем лимит чтобы покрыть и конец файла для больших файлов
-    // Для файла 11 ГБ это намного быстрее чтения всего файла
-    const MAX_ANALYZE_SIZE = 200 * 1024 * 1024; // 200 МБ
-    const analyzeSize = Math.min(size, MAX_ANALYZE_SIZE);
+    // Используем двухэтапный подход: сначала пробуем найти в начале,
+    // если не найдено - читаем конец файла
+    const METADATA_SEARCH_SIZE = 2 * 1024 * 1024; // 2 МБ для поиска metadata
+    const analyzeSize = Math.min(size, METADATA_SEARCH_SIZE);
     
-    console.log('[Chapters] Будем анализировать первые', analyzeSize, 'байт из', size);
-    
-    console.log('[Chapters] Будем анализировать первые', analyzeSize, 'байт из', size);
+    console.log('[Chapters] Этап 1: анализируем первые', analyzeSize, 'байт из', size);
 
-    const getSize = () => analyzeSize;
-    const readChunk = async (chunkSize, offset) => {
+    const getSize1 = () => analyzeSize;
+    const readChunk1 = async (chunkSize, offset) => {
       const end = Math.min(offset + chunkSize, analyzeSize) - 1;
-      console.log('[Chapters] Range запрос:', `bytes=${offset}-${end}`);
+      console.log('[Chapters] Range запрос (этап 1):', `bytes=${offset}-${end}`);
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
       if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
       const buf = await res.arrayBuffer();
@@ -2210,9 +2208,41 @@ async function parseChaptersFromUrl(url, token){
       return new Uint8Array(buf);
     };
 
-    console.log('[Chapters] Начинаем analyzeData');
-    const result = await mediainfo.analyzeData(getSize, readChunk);
-    console.log('[Chapters] analyzeData завершён, найдено треков:', result?.media?.track?.length);
+    console.log('[Chapters] Начинаем analyzeData (этап 1)');
+    let result = await mediainfo.analyzeData(getSize1, readChunk1);
+    console.log('[Chapters] analyzeData завершён (этап 1), найдено треков:', result?.media?.track?.length);
+    
+    // Проверяем, есть ли Menu треки или data/text треки с chapters
+    const hasMenuTracks = result?.media?.track?.some(t => t && t['@type'] === 'Menu');
+    const hasDataTracks = result?.media?.track?.some(t => t && t['@type'] === 'Data' && t.codec_type === 'data');
+    
+    console.log('[Chapters] Menu треки:', hasMenuTracks, 'Data треки:', hasDataTracks);
+    
+    // Если chapters не найдены и файл большой, пробуем читать конец
+    if (!hasMenuTracks && !hasDataTracks && size > METADATA_SEARCH_SIZE) {
+      console.log('[Chapters] Chapters не найдены в начале, пробуем читать конец файла');
+      
+      const endOffset = Math.max(0, size - METADATA_SEARCH_SIZE);
+      const endSize = size - endOffset;
+      
+      console.log('[Chapters] Этап 2: анализируем последние', endSize, 'байт (смещение:', endOffset, ')');
+      
+      const getSize2 = () => endSize;
+      const readChunk2 = async (chunkSize, offset) => {
+        const absoluteOffset = endOffset + offset;
+        const end = Math.min(absoluteOffset + chunkSize, size) - 1;
+        console.log('[Chapters] Range запрос (этап 2):', `bytes=${absoluteOffset}-${end}`);
+        const res = await fetch(url, { headers: { Range: `bytes=${absoluteOffset}-${end}` } });
+        if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
+        const buf = await res.arrayBuffer();
+        console.log('[Chapters] Получено', buf.byteLength, 'байт');
+        return new Uint8Array(buf);
+      };
+      
+      console.log('[Chapters] Начинаем analyzeData (этап 2)');
+      result = await mediainfo.analyzeData(getSize2, readChunk2);
+      console.log('[Chapters] analyzeData завершён (этап 2), найдено треков:', result?.media?.track?.length);
+    }
     
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
