@@ -2143,164 +2143,83 @@ async function parseChaptersFromFile(file, token){
 // и открывал CORS (Access-Control-Allow-Origin) — если нет, просто ловим
 // ошибку ниже и работаем без глав, видео при этом не ломается.
 async function parseChaptersFromUrl(url, token){
-  console.log('[Chapters] Начинаем загрузку chapters для:', url);
   try {
     const mediainfo = await getMediaInfoInstance();
     if (token !== chapterParseToken) return;
 
     let size = null;
+    let headOk = false;
 
-    // Определяем размер файла через HEAD или Range-запрос
+    // Пробуем HEAD-запрос для получения размера файла
     try {
       const head = await fetch(url, { method: 'HEAD' });
       if (head.ok) {
+        headOk = true;
         size = Number(head.headers.get('Content-Length'));
-        console.log('[Chapters] Размер файла из HEAD:', size);
+        if (head.headers.get('Accept-Ranges') !== 'bytes') {
+          // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
+          // не блокируем, просто пробуем читать куски ниже.
+        }
       }
     } catch (headErr) {
-      console.log('[Chapters] HEAD не сработал:', headErr.message);
+      // HEAD не сработал (CORS, сеть и т.п.) — пробуем читать без предварительного размера
+      console.log('HEAD-запрос не удался, пробуем читать без размера:', headErr.message);
     }
 
-    // Если HEAD не сработал, пробуем Range-запрос
+    // Если HEAD не сработал или не вернул размер, определяем размер через частичное чтение
     if (!size) {
       try {
+        // Пробуем прочитать небольшой кусок для определения размера через Content-Length в ответе
         const testRes = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
         if (testRes.ok || testRes.status === 206) {
           const contentRange = testRes.headers.get('Content-Range');
           if (contentRange) {
             const match = /bytes \d+-(\d+)\/(\d+)/.exec(contentRange);
             if (match) {
-              size = Number(match[2]);
-              console.log('[Chapters] Размер файла из Content-Range:', size);
+              size = Number(match[2]); // общий размер из Content-Range
             }
           }
+          // Если размер всё ещё не известен, используем Content-Length из ответа
           if (!size) {
             size = Number(testRes.headers.get('Content-Length'));
-            console.log('[Chapters] Размер файла из Content-Length:', size);
           }
         }
       } catch (rangeErr) {
-        console.log('[Chapters] Range-запрос не сработал:', rangeErr.message);
+        // Range-запрос тоже не сработал — пробуем без размера
+        console.log('Range-запрос не удался, пробуем без размера:', rangeErr.message);
       }
     }
 
     if (!size) {
-      console.log('[Chapters] Не удалось определить размер файла, пробуем без размера');
-      size = 10 * 1024 * 1024; // fallback: 10 МБ
+      throw new Error('Не удалось определить размер файла');
     }
 
-    // Для обычных MP4 файлов chapters часто находятся в конце (atom moov)
-    // Используем двухэтапный подход: сначала пробуем найти в начале,
-    // если не найдено - читаем конец файла
-    const METADATA_SEARCH_SIZE = 2 * 1024 * 1024; // 2 МБ для поиска metadata
-    const analyzeSize = Math.min(size, METADATA_SEARCH_SIZE);
-    
-    console.log('[Chapters] Этап 1: анализируем первые', analyzeSize, 'байт из', size);
-
-    const getSize1 = () => analyzeSize;
-    const readChunk1 = async (chunkSize, offset) => {
-      const end = Math.min(offset + chunkSize, analyzeSize) - 1;
-      console.log('[Chapters] Range запрос (этап 1):', `bytes=${offset}-${end}`);
+    const getSize = () => size;
+    const readChunk = async (chunkSize, offset) => {
+      const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
       if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
       const buf = await res.arrayBuffer();
-      console.log('[Chapters] Получено', buf.byteLength, 'байт');
       return new Uint8Array(buf);
     };
 
-    console.log('[Chapters] Начинаем analyzeData (этап 1)');
-    let result = await mediainfo.analyzeData(getSize1, readChunk1);
-    console.log('[Chapters] analyzeData завершён (этап 1), найдено треков:', result?.media?.track?.length);
-    
-    // Проверяем, есть ли Menu треки или data/text треки с chapters
-    const hasMenuTracks = result?.media?.track?.some(t => t && t['@type'] === 'Menu');
-    const hasDataTracks = result?.media?.track?.some(t => t && t['@type'] === 'Data' && t.codec_type === 'data');
-    
-    console.log('[Chapters] Menu треки:', hasMenuTracks, 'Data треки:', hasDataTracks);
-    
-    // Если chapters не найдены и файл большой, пробуем читать конец
-    if (!hasMenuTracks && !hasDataTracks && size > METADATA_SEARCH_SIZE) {
-      console.log('[Chapters] Chapters не найдены в начале, пробуем читать конец файла');
-      
-      const endOffset = Math.max(0, size - METADATA_SEARCH_SIZE);
-      const endSize = size - endOffset;
-      
-      console.log('[Chapters] Этап 2: анализируем последние', endSize, 'байт (смещение:', endOffset, ')');
-      
-      const getSize2 = () => endSize;
-      const readChunk2 = async (chunkSize, offset) => {
-        const absoluteOffset = endOffset + offset;
-        const end = Math.min(absoluteOffset + chunkSize, size) - 1;
-        console.log('[Chapters] Range запрос (этап 2):', `bytes=${absoluteOffset}-${end}`);
-        const res = await fetch(url, { headers: { Range: `bytes=${absoluteOffset}-${end}` } });
-        if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
-        const buf = await res.arrayBuffer();
-        console.log('[Chapters] Получено', buf.byteLength, 'байт');
-        return new Uint8Array(buf);
-      };
-      
-      console.log('[Chapters] Начинаем analyzeData (этап 2)');
-      result = await mediainfo.analyzeData(getSize2, readChunk2);
-      console.log('[Chapters] analyzeData завершён (этап 2), найдено треков:', result?.media?.track?.length);
-    }
-    
+    const result = await mediainfo.analyzeData(getSize, readChunk);
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
   } catch (err){
     // Нет CORS, нет Range, файл без глав и т.п. — штатно продолжаем без них.
-    console.warn('[Chapters] Ошибка при чтении chapters:', err && err.message ? err.message : err);
+    console.warn('Главы (chapters) по ссылке не прочитаны:', err && err.message ? err.message : err);
   }
 }
 
 function applyChaptersFromMediaInfoResult(result, token){
-  console.log('[Chapters] applyChaptersFromMediaInfoResult вызван');
-  if (token !== chapterParseToken) {
-    console.log('[Chapters] Токены не совпадают, выход');
-    return;
-  }
+  if (token !== chapterParseToken) return;
   mediaChapters = [];
-  if (!result || !result.media || !Array.isArray(result.media.track)) {
-    console.log('[Chapters] Некорректный результат или нет треков');
-    return;
-  }
-
-  // Логируем все типы треков для отладки
-  const trackTypes = result.media.track.map(t => t ? t['@type'] : 'null').filter(Boolean);
-  console.log('[Chapters] Все типы треков:', trackTypes);
-  
-  // Подробно логируем каждый трек
-  result.media.track.forEach((t, i) => {
-    if (t) {
-      console.log('[Chapters] Трек', i, 'тип:', t['@type'], 'codec_type:', t.codec_type, 'handler_name:', t.handler_name);
-    }
-  });
+  if (!result || !result.media || !Array.isArray(result.media.track)) return;
 
   const menuTracks = result.media.track.filter(t => t && t['@type'] === 'Menu');
-  console.log('[Chapters] Найдено Menu треков:', menuTracks.length);
-  
-  // Ищем chapters в Menu треках
-  if (menuTracks.length > 0) {
-    console.log('[Chapters] Ищем chapters в Menu треках');
-    processMenuTracks(menuTracks);
-    return;
-  }
-  
-  // Если Menu треков нет, ищем chapters в других форматах
-  console.log('[Chapters] Menu треков нет, ищем chapters в других форматах');
-  
-  // Ищем chapters в других типах треков (например, chapter track)
-  const otherTracks = result.media.track.filter(t => t && t['@type'] !== 'General');
-  console.log('[Chapters] Другие треки (не General):', otherTracks.length);
-  
-  if (otherTracks.length > 0) {
-    processOtherTracksForChapters(otherTracks);
-    return;
-  }
-  
-  console.log('[Chapters] Chapters не найдены ни в одном формате');
-}
+  if (menuTracks.length === 0) return;
 
-function processMenuTracks(menuTracks) {
   // Собираем тайм-коды глав. Останавливаемся на первом Menu-треке, где
   // нашлись непустые метки (обычно он один; если их несколько — это, как
   // правило, разноязычные дубликаты одних и тех же глав).
@@ -2318,43 +2237,8 @@ function processMenuTracks(menuTracks) {
     }
     if (raw.length) break;
   }
-  console.log('[Chapters] Собрано raw глав из Menu треков:', raw.length);
-  if (raw.length === 0) {
-    console.log('[Chapters] Нет raw глав в Menu треках');
-    return;
-  }
-  
-  processRawChapters(raw);
-}
+  if (raw.length === 0) return;
 
-function processOtherTracksForChapters(tracks) {
-  // Ищем поля, похожие на chapter/time коды в других треках
-  const raw = [];
-  for (const track of tracks){
-    const sources = [track, track.extra].filter(Boolean);
-    for (const src of sources){
-      for (const key of Object.keys(src)){
-        const t = chapterTimeKeyToSeconds(key);
-        if (t === null) continue;
-        const value = src[key];
-        if (typeof value !== 'string' || !value.trim()) continue;
-        raw.push({ time: t, title: value });
-      }
-    }
-  }
-  
-  console.log('[Chapters] Собрано raw глав из других треков:', raw.length);
-  if (raw.length === 0) {
-    console.log('[Chapters] Нет raw глав в других треках');
-    return;
-  }
-  
-  processRawChapters(raw);
-}
-
-function processRawChapters(raw) {
-  console.log('[Chapters] processRawChapters: начинаем обработку', raw.length, 'глав');
-  
   raw.sort((a, b) => a.time - b.time);
   // Убираем возможные дубликаты по времени (например, если совпало между источниками)
   const dedup = [];
@@ -2371,10 +2255,8 @@ function processRawChapters(raw) {
   };
 
   const segments = [];
-  console.log('[Chapters] Начинаем классификацию глав, всего:', dedup.length);
   for (let i = 0; i < dedup.length; i++){
     const info = classifySkippableChapter(dedup[i].title);
-    console.log('[Chapters] Глава', i, 'название:', dedup[i].title, 'классификация:', info);
     if (!info) continue; // обычная (не заставка/титры) глава — пропускаем
     const start = dedup[i].time;
     let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity — "до конца видео"
@@ -2389,12 +2271,10 @@ function processRawChapters(raw) {
     });
   }
   mediaChapters = segments;
-  console.log('[Chapters] Chapters загружены, количество:', mediaChapters.length, 'currentTime:', video.currentTime);
   
-  // Сразу показываем кнопку "Пропустить заставку", если chapters загружены
-  // Не ждём следующего timeupdate или начала воспроизведения, чтобы избежать задержки 9-10 секунд
-  if (mediaChapters.length > 0) {
-    console.log('[Chapters] Вызываем updateSkipSegmentOverlay сразу после загрузки chapters');
+  // Сразу показываем кнопку "Пропустить заставку", если chapters загружены и видео уже воспроизводится
+  // Не ждём следующего timeupdate, чтобы избежать задержки 9-10 секунд
+  if (mediaChapters.length > 0 && !video.paused) {
     updateSkipSegmentOverlay(false);
   }
 }
