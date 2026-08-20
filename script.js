@@ -2272,9 +2272,9 @@ function applyChaptersFromMediaInfoResult(result, token){
   }
   mediaChapters = segments;
   
-  // Сразу показываем кнопку "Пропустить заставку", если chapters загружены и видео уже воспроизводится
-  // Не ждём следующего timeupdate, чтобы избежать задержки 9-10 секунд
-  if (mediaChapters.length > 0 && !video.paused) {
+  // Сразу показываем кнопку "Пропустить заставку", если chapters загружены
+  // Не ждём следующего timeupdate или начала воспроизведения, чтобы избежать задержки 9-10 секунд
+  if (mediaChapters.length > 0) {
     updateSkipSegmentOverlay(false);
   }
 }
@@ -3469,12 +3469,6 @@ video.addEventListener('play', () => {
   startProgressTracking();
   startUiSync();
   showCenterIcon(true);
-  
-  // Сразу показываем кнопку "Пропустить заставку", если chapters уже загружены
-  // Это гарантирует появление кнопки даже если chapters загрузились до начала воспроизведения
-  if (mediaChapters.length > 0) {
-    updateSkipSegmentOverlay(false);
-  }
 });
 video.addEventListener('pause', () => {
   syncPlayStateUI();
