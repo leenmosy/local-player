@@ -101,8 +101,6 @@ const centerIconPause = document.getElementById('center-icon-pause');
 const subsFileName = document.getElementById('subs-file-name');
 const subsRemoveBtn = document.getElementById('subs-remove-btn');
 const urlLoadingSpinner = document.getElementById('url-loading-spinner');
-const hlsQualityCategory = document.getElementById('hls-quality-category');
-const hlsQualityList = document.getElementById('hls-quality-list');
 const audioHint = document.getElementById('audio-hint');
 const audioHintClose = document.getElementById('audio-hint-close');
 const audioHintProgressFill = document.getElementById('audio-hint-progress-fill');
@@ -1065,69 +1063,6 @@ function niceTitleFromFilename(name){
   return withoutExt.replace(/[._]/g, ' ').trim();
 }
 
-// --- HLS качество ---
-function renderHlsQualityLevels(hlsInstance){
-  if (!hlsInstance || !hlsInstance.levels || hlsInstance.levels.length <= 1) {
-    hlsQualityCategory.style.display = 'none';
-    return;
-  }
-  
-  hlsQualityCategory.style.display = 'block';
-  hlsQualityList.innerHTML = '';
-  
-  // Добавляем пункт "Авто"
-  const autoItem = document.createElement('div');
-  autoItem.className = 'hls-quality-item' + (hlsInstance.currentLevel === -1 ? ' active' : '');
-  autoItem.innerHTML = `
-    <span class="hls-quality-label">Авто</span>
-    <span class="hls-quality-bitrate">ABR</span>
-  `;
-  autoItem.addEventListener('click', () => {
-    hlsInstance.currentLevel = -1; // Автоматический выбор
-    updateHlsQualityUI(hlsInstance);
-  });
-  hlsQualityList.appendChild(autoItem);
-  
-  // Добавляем доступные уровни качества
-  hlsInstance.levels.forEach((level, index) => {
-    if (!level.height) return; // Пропускаем уровни без информации о высоте
-    
-    const item = document.createElement('div');
-    item.className = 'hls-quality-item' + (hlsInstance.currentLevel === index ? ' active' : '');
-    
-    const label = `${level.height}p`;
-    const bitrate = level.bitrate ? Math.round(level.bitrate / 1000) + ' kbps' : '';
-    
-    item.innerHTML = `
-      <span class="hls-quality-label">${label}</span>
-      <span class="hls-quality-bitrate">${bitrate}</span>
-    `;
-    
-    item.addEventListener('click', () => {
-      hlsInstance.currentLevel = index; // Фиксированный уровень
-      updateHlsQualityUI(hlsInstance);
-    });
-    
-    hlsQualityList.appendChild(item);
-  });
-  
-  // Переинициализируем обработчики категорий, чтобы новая категория "Качество" работала
-  setupCategoryClickHandlers();
-}
-
-function updateHlsQualityUI(hlsInstance){
-  const items = hlsQualityList.querySelectorAll('.hls-quality-item');
-  items.forEach((item, index) => {
-    if (index === 0) {
-      // Пункт "Авто"
-      item.classList.toggle('active', hlsInstance.currentLevel === -1);
-    } else {
-      // Уровни качества (index - 1 из-за пункта "Авто")
-      const levelIndex = index - 1;
-      item.classList.toggle('active', hlsInstance.currentLevel === levelIndex);
-    }
-  });
-}
 
 // Имя файла обрезается многоточием — дублируем в title для наведения
 function setSubsFileNameDisplay(name){
@@ -2264,77 +2199,6 @@ function applyChaptersFromMediaInfoResult(result, token){
   mediaChapters = segments;
 }
 
-// Применение глав из CDN metadata API
-function applyChaptersFromCdnMetadata(data, token){
-  if (token !== chapterParseToken) return;
-  mediaChapters = [];
-  if (!data || !data.chapters || !Array.isArray(data.chapters)) return;
-
-  const raw = [];
-  for (const chapter of data.chapters){
-    if (typeof chapter.start === 'number' && typeof chapter.title === 'string'){
-      raw.push({ time: chapter.start, title: chapter.title });
-    }
-  }
-  if (raw.length === 0) return;
-
-  raw.sort((a, b) => a.time - b.time);
-  // Убираем возможные дубликаты по времени
-  const dedup = [];
-  for (const item of raw){
-    if (dedup.length && Math.abs(dedup[dedup.length - 1].time - item.time) < 0.01) continue;
-    dedup.push(item);
-  }
-
-  const SKIP_KIND_MAX_DURATION = {
-    intro: 15 * 60,
-    recap: 15 * 60,
-    custom: 20 * 60
-    // credits — без ограничения
-  };
-
-  const segments = [];
-  for (let i = 0; i < dedup.length; i++){
-    const info = classifySkippableChapter(dedup[i].title);
-    if (!info) continue; // обычная (не заставка/титры) глава — пропускаем
-    const start = dedup[i].time;
-    let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity — "до конца видео"
-    const cap = SKIP_KIND_MAX_DURATION[info.kind];
-    if (cap !== undefined) end = Math.min(end, start + cap);
-    if (end <= start) continue;
-    segments.push({
-      id: 'cdn_ch' + i + '_' + Math.round(start * 1000),
-      start,
-      end,
-      label: info.label
-    });
-  }
-  mediaChapters = segments;
-}
-
-// Запрос metadata с CDN API
-async function fetchCdnMetadata(videoUrl){
-  try {
-    const urlObj = new URL(videoUrl);
-    const filename = getFileNameFromUrl(videoUrl);
-    
-    // Формируем metadata URL: https://cdn.mosych.top:8020/api/metadata/:filename
-    const metadataUrl = new URL(urlObj.origin + '/api/metadata/' + encodeURIComponent(filename));
-    
-    const response = await fetch(metadataUrl.toString());
-    if (!response.ok) {
-      return;
-    }
-    
-    const data = await response.json();
-    
-    // Применяем главы через существующую систему
-    applyChaptersFromCdnMetadata(data, chapterParseToken);
-  } catch (e) {
-    // Ошибка при запросе metadata - игнорируем, видео продолжит грузиться без глав
-  }
-}
-
 // Реальный конец сегмента с учётом Infinity (последняя глава файла) —
 // как только известна длительность видео, подставляем её.
 function skipSegmentEffectiveEnd(seg){
@@ -2869,8 +2733,26 @@ function ensureAudioGraph(){
     return;
   }
   try{
-    // crossOrigin уже установлен заранее в loadUrl для CDN видео
-    // Здесь просто создаем аудио-граф
+    // Устанавливаем crossOrigin только при создании аудио-графа
+    // Это ленивая инициализация - только когда пользователь реально включает аудио-фичи
+    // Только для URL-источников, для локальных файлов это не нужно
+    if (!video.crossOrigin && currentFileKey && currentFileKey.startsWith(URL_KEY_PREFIX)) {
+      video.crossOrigin = 'anonymous';
+      // Если видео уже загружено, нужно перезагрузить его для применения crossOrigin
+      if (video.src && !video.paused) {
+        const currentTime = video.currentTime;
+        const wasPlaying = !video.paused;
+        video.load();
+        video.currentTime = currentTime;
+        if (wasPlaying) {
+          video.play().catch(e => {
+            if (e.name === 'NotAllowedError') {
+              console.log('Autoplay prevented after crossOrigin reload');
+            }
+          });
+        }
+      }
+    }
     
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     sourceNode = audioCtx.createMediaElementSource(video);
@@ -3940,8 +3822,6 @@ backBtn.addEventListener('click', () => {
   playerView.classList.remove('active');
   dropView.style.display = 'flex';
   
-  // Скрываем категорию качества HLS
-  hlsQualityCategory.style.display = 'none';
   // Подсказку аудио не скрываем - она должна оставаться видимой
 
   // Сбрасываем плейлист папки - следующая загрузка должна начинаться с чистого состояния
@@ -3982,7 +3862,6 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
   drToggle.checked = false;
   showStorageToast('Аудио-эффекты (в т.ч. компрессор) недоступны для этой ссылки — сервер не поддерживает CORS. Видео проигрывается без них');
 
-  video.crossOrigin = null;
   video.src = url;
   video.addEventListener('loadedmetadata', function(){
     urlLoadingSpinner.style.display = 'none';
@@ -4025,6 +3904,11 @@ function loadUrl(url){
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
 
+  // Для потоковых/URL-источников (HLS и т.п.) главы из метаданных не читаем —
+  // нет локального файла для анализа mediainfo.js, поэтому просто сбрасываем
+  // то, что могло остаться от ранее открытого локального файла.
+  resetMediaChapters();
+
   // Проверяем валидность URL и сохраняем результат для дальнейшего использования
   let parsedUrl;
   try {
@@ -4037,27 +3921,6 @@ function loadUrl(url){
   // Определяем тип видео по расширения (используем pathname, чтобы query-параметры не мешали)
   const isM3U8 = /\.m3u8$/i.test(parsedUrl.pathname);
   const isDirectVideo = /\.(mp4|webm|mov)$/i.test(parsedUrl.pathname);
-  
-  // Для потоковых/URL-источников проверяем, является ли это CDN URL
-  // Если да - запрашиваем metadata через API, иначе сбрасываем главы
-  const isCdnUrl = parsedUrl.hostname === 'cdn.mosych.top' && parsedUrl.port === '8020';
-  
-  if (isCdnUrl) {
-    // CDN видео - устанавливаем crossOrigin ДО установки src
-    video.crossOrigin = 'anonymous';
-    
-    if (isDirectVideo) {
-      // CDN MP4 - запрашиваем metadata через API
-      fetchCdnMetadata(url);
-    } else {
-      // CDN HLS или другие форматы - сбрасываем главы
-      resetMediaChapters();
-    }
-  } else {
-    // Другие URL источники - сбрасываем главы и crossOrigin
-    resetMediaChapters();
-    video.removeAttribute('crossOrigin');
-  }
   
   // Если расширения нет, но URL выглядит как прямая ссылка на файл (без параметров или с параметрами файла)
   // пробуем загрузить как прямую ссылку на видео
@@ -4079,7 +3942,8 @@ function loadUrl(url){
   originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя
   currentFileName = niceTitleFromFilename(getFileNameFromUrl(url)); // Отображаемое имя без расширения
 
-  // crossOrigin уже установлен выше для CDN видео, для остальных источников сброшен
+  // Не устанавливаем crossOrigin заранее - это блокирует загрузку при отсутствии CORS
+  // crossOrigin='anonymous' будет установлен лениво при включении аудио-фич
 
   let videoInitialized = false;
 
@@ -4148,12 +4012,6 @@ function loadUrl(url){
         
         // Показываем подсказку о стабилизации звука для HLS
         showAudioHint();
-        
-        // Если есть несколько уровней качества, показываем UI выбора качества
-        if (hls.levels && hls.levels.length > 1) {
-          renderHlsQualityLevels(hls);
-        }
-        
         video.play().catch(e => {
           if (e.name === 'NotAllowedError') {
             console.log('Autoplay prevented - user interaction required');
@@ -4521,7 +4379,7 @@ function getFileNameFromUrl(url){
     if (queryIndex !== -1) {
       filename = filename.substring(0, queryIndex);
     }
-    // Декодируем URL-encoded символы (для русских названий)
+    // Декодируем URL-encoded символы (для русских названий в ссылках)
     try {
       filename = decodeURIComponent(filename);
     } catch (e) {
