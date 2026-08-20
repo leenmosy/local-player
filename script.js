@@ -2138,6 +2138,43 @@ async function parseChaptersFromFile(file, token){
   }
 }
 
+// То же самое, но для URL: вместо FileReader качаем нужные куски через
+// fetch с заголовком Range. Требует, чтобы сервер поддерживал Range-запросы
+// и открывал CORS (Access-Control-Allow-Origin) — если нет, просто ловим
+// ошибку ниже и работаем без глав, видео при этом не ломается.
+async function parseChaptersFromUrl(url, token){
+  try {
+    const mediainfo = await getMediaInfoInstance();
+    if (token !== chapterParseToken) return;
+
+    // HEAD-запрос узнаёт размер файла и заодно проверяет, что Range вообще поддерживается
+    const head = await fetch(url, { method: 'HEAD' });
+    if (!head.ok) throw new Error('HEAD ' + head.status);
+    const size = Number(head.headers.get('Content-Length'));
+    if (!size) throw new Error('Сервер не вернул размер файла');
+    if (head.headers.get('Accept-Ranges') !== 'bytes') {
+      // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
+      // не блокируем, просто пробуем читать куски ниже.
+    }
+
+    const getSize = () => size;
+    const readChunk = async (chunkSize, offset) => {
+      const end = Math.min(offset + chunkSize, size) - 1;
+      const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
+      if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
+      const buf = await res.arrayBuffer();
+      return new Uint8Array(buf);
+    };
+
+    const result = await mediainfo.analyzeData(getSize, readChunk);
+    if (token !== chapterParseToken) return;
+    applyChaptersFromMediaInfoResult(result, token);
+  } catch (err){
+    // Нет CORS, нет Range, файл без глав и т.п. — штатно продолжаем без них.
+    console.warn('Главы (chapters) по ссылке не прочитаны:', err && err.message ? err.message : err);
+  }
+}
+
 function applyChaptersFromMediaInfoResult(result, token){
   if (token !== chapterParseToken) return;
   mediaChapters = [];
@@ -3904,9 +3941,8 @@ function loadUrl(url){
   videoErrorEl.style.display = 'none';
   stopProgressTracking();
 
-  // Для потоковых/URL-источников (HLS и т.п.) главы из метаданных не читаем —
-  // нет локального файла для анализа mediainfo.js, поэтому просто сбрасываем
-  // то, что могло остаться от ранее открытого локального файла.
+  // Сбрасываем главы от предыдущего видео (сами новые читаем чуть ниже,
+  // как только понятно, что это не m3u8-поток).
   resetMediaChapters();
 
   // Проверяем валидность URL и сохраняем результат для дальнейшего использования
@@ -3921,6 +3957,12 @@ function loadUrl(url){
   // Определяем тип видео по расширения (используем pathname, чтобы query-параметры не мешали)
   const isM3U8 = /\.m3u8$/i.test(parsedUrl.pathname);
   const isDirectVideo = /\.(mp4|webm|mov)$/i.test(parsedUrl.pathname);
+
+  // Главы читаем только для прямых видеофайлов — у HLS-потоков нет единого
+  // файла с чаптерами внутри, там анализировать нечего.
+  if (!isM3U8) {
+    parseChaptersFromUrl(url, chapterParseToken);
+  }
   
   // Если расширения нет, но URL выглядит как прямая ссылка на файл (без параметров или с параметрами файла)
   // пробуем загрузить как прямую ссылку на видео
