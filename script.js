@@ -3469,6 +3469,12 @@ video.addEventListener('play', () => {
   startProgressTracking();
   startUiSync();
   showCenterIcon(true);
+  
+  // Обновляем кнопку "Пропустить заставку" при начале воспроизведения
+  // Это гарантирует, что кнопка появится сразу при play, если chapters уже загружены
+  if (mediaChapters.length > 0) {
+    updateSkipSegmentOverlay(false);
+  }
 });
 video.addEventListener('pause', () => {
   syncPlayStateUI();
@@ -3583,7 +3589,10 @@ function updateSkipSegmentOverlay(suppressed){
     return;
   }
   const t = video.currentTime;
+  
+  // Ищем главу, в которой мы сейчас находимся
   const seg = mediaChapters.find(s => t >= s.start && t < skipSegmentEffectiveEnd(s));
+  
   if (!seg || dismissedChapterSegments.has(seg.id)){
     hideSkipSegmentOverlay();
     return;
