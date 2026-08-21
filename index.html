@@ -45,6 +45,7 @@
       <div class="sub-txt"><code>.mp4 .webm .mov</code></div>
     </div>
     <input type="file" id="folder-input" webkitdirectory directory multiple>
+    <input type="file" id="file-input" accept=".mp4,.webm,.mov,video/*" style="display:none">
   </div>
   
   <div class="url-input-container">
@@ -100,6 +101,9 @@
     <div class="video-error" id="video-error" style="display:none;">
       <div class="ve-title">Ошибка воспроизведения</div>
       <div class="ve-text">Не удалось загрузить видеофайл. Попробуйте другой файл.</div>
+    </div>
+    <div class="buffering-overlay" id="buffering-overlay" aria-hidden="true">
+      <div class="buffering-spinner"></div>
     </div>
     <div class="audio-hint" id="audio-hint" style="display:none;">
       <button class="audio-hint-close" id="audio-hint-close" aria-label="Закрыть">×</button>

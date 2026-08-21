@@ -95,6 +95,7 @@ const prevEpisodeBtn = document.getElementById('prev-episode-btn');
 const nextEpisodeBtn = document.getElementById('next-episode-btn');
 const resumeList = document.getElementById('resume-list');
 const videoErrorEl = document.getElementById('video-error');
+const bufferingOverlayEl = document.getElementById('buffering-overlay');
 const centerPlayIcon = document.getElementById('center-play-icon');
 const centerIconPlay = document.getElementById('center-icon-play');
 const centerIconPause = document.getElementById('center-icon-pause');
@@ -450,6 +451,10 @@ function fixInfiniteDuration(onReady){
 
 function formatTime(sec){
   if (!isFinite(sec)) return '00:00';
+  // Отрицательные значения (например, из повреждённой записи прогресса
+  // в localStorage) не должны отображаться как есть — тихо приводим к нулю,
+  // а не показываем пользователю сломанную строку вроде "-1:-5".
+  if (sec < 0) sec = 0;
   const h = Math.floor(sec/3600);
   const m = Math.floor((sec%3600)/60);
   const s = Math.floor(sec%60);
@@ -1842,6 +1847,7 @@ function loadFile(file, handle, meta){
   }
   hideErrMsg();
   videoErrorEl.style.display = 'none';
+  hideBufferingIndicator();
   stopProgressTracking();
   // meta.isFolder помечает, что файл открыт как часть папки (плейлиста) — тогда
   // прогресс уходит в отдельное пространство ключей (FOLDER_PROGRESS_PREFIX)
@@ -1989,8 +1995,10 @@ function loadFile(file, handle, meta){
 
   // Очищаем старый аудио-граф перед созданием нового
   destroyAudioGraph();
-  // Для локальных файлов создаём аудио-граф автоматически (нет проблем с CORS)
-  // Для URL-источников - только при включении аудио-фич пользователем
+  // Для локальных файлов создаём аудио-граф автоматически (нет проблем с CORS).
+  // Для URL-источников граф на этом этапе НЕ создаём — для них это делает
+  // loadUrlCommonInit() -> reapplyCompressorState() чуть позже, при загрузке
+  // по ссылке (не здесь, в loadFile()).
   if (!currentFileKey || !currentFileKey.startsWith(URL_KEY_PREFIX)) {
     ensureAudioGraph();
     audioHint.classList.add('hidden'); // Скрываем подсказку для локальных файлов
@@ -2167,11 +2175,12 @@ async function parseChaptersFromUrl(url, token){
     }
 
     // Если HEAD не сработал или не вернул размер, определяем размер через частичное чтение
+    let rangeSupported = true;
     if (!size) {
       try {
         // Пробуем прочитать небольшой кусок для определения размера через Content-Length в ответе
         const testRes = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
-        if (testRes.ok || testRes.status === 206) {
+        if (testRes.status === 206) {
           const contentRange = testRes.headers.get('Content-Range');
           if (contentRange) {
             const match = /bytes \d+-(\d+)\/(\d+)/.exec(contentRange);
@@ -2182,6 +2191,18 @@ async function parseChaptersFromUrl(url, token){
           // Если размер всё ещё не известен, используем Content-Length из ответа
           if (!size) {
             size = Number(testRes.headers.get('Content-Length'));
+          }
+        } else if (testRes.ok) {
+          // Сервер ответил 200 на Range-запрос — значит Range не поддерживается
+          // и он тихо отдал файл целиком. Не скачиваем его молча: запоминаем
+          // размер (Content-Length тут — размер всего файла, это ещё полезно),
+          // сразу отменяем недочитанное тело и дальше не пытаемся читать
+          // кусками — это разово докачает весь файл, а не сэкономит трафик.
+          rangeSupported = false;
+          const len = Number(testRes.headers.get('Content-Length'));
+          if (len) size = len;
+          if (testRes.body && testRes.body.cancel) {
+            testRes.body.cancel().catch(() => {});
           }
         }
       } catch (rangeErr) {
@@ -2194,12 +2215,36 @@ async function parseChaptersFromUrl(url, token){
       throw new Error('Не удалось определить размер файла');
     }
 
+    if (!rangeSupported) {
+      throw new Error('Сервер не поддерживает Range-запросы — чтение глав по ссылке отменено, чтобы не докачивать файл целиком в фоне');
+    }
+
+    // Защитный потолок на случай, если сервер всё же начнёт отдавать больше,
+    // чем попросили (see readChunk ниже) — even в худшем случае чтение глав
+    // не должно соревноваться за канал с самим видео на большом файле.
+    const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
+    let bytesRead = 0;
+
     const getSize = () => size;
     const readChunk = async (chunkSize, offset) => {
       const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
-      if (!res.ok && res.status !== 206) throw new Error('Range-запрос не поддержан сервером');
+
+      // Сервер обязан ответить 206 (Partial Content) на Range-запрос. Если
+      // вместо этого пришёл 200 с полным телом — сервер Range игнорирует,
+      // и чтение "лёгких" 256 КБ метаданных незаметно превращается в полную
+      // повторную докачку всего видео. Отменяем недочитанное тело и прерываемся,
+      // вместо того чтобы молча принять это как валидный чанк.
+      if (res.status !== 206) {
+        if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
+        throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
+      }
+
       const buf = await res.arrayBuffer();
+      bytesRead += buf.byteLength;
+      if (bytesRead > MAX_CHAPTER_PROBE_BYTES) {
+        throw new Error('Превышен лимит данных для чтения глав по ссылке');
+      }
       return new Uint8Array(buf);
     };
 
@@ -2708,7 +2753,17 @@ document.body.addEventListener('drop', async e => {
   }
   loadFile(file, handle);
 });
+const fileInput = document.getElementById('file-input');
 dropzone.addEventListener('click', async () => {
+  // showOpenFilePicker (File System Access API) есть только в Chromium.
+  // В Firefox/Safari его нет — раньше в этом случае просто ничего не
+  // происходило (catch молча гасил исключение "функция не существует",
+  // как будто пользователь сам закрыл диалог). Теперь, как и у кнопки
+  // «папка», делаем то же самое ветвление с фолбэком на обычный <input>.
+  if (typeof window.showOpenFilePicker !== 'function'){
+    fileInput.click();
+    return;
+  }
   try{
     const [handle] = await window.showOpenFilePicker({
       types: [{ description: 'Видео', accept: { 'video/*': ['.mp4','.webm','.mov'] } }],
@@ -2718,6 +2773,20 @@ dropzone.addEventListener('click', async () => {
     try{ await idbSet(fileKey(file), handle); } catch(err){}
     loadFile(file, handle);
   } catch(err){ /* пользователь закрыл диалог выбора файла */ }
+});
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  fileInput.value = '';
+  if (!file) return;
+  if (!isVideoFile(file)) {
+    showErrMsg('Пожалуйста, выберите видеофайл (.mp4, .webm, .mov)');
+    return;
+  }
+  // Обычный <input type="file"> не даёт FileSystemFileHandle — «Продолжить»
+  // для этого файла позже потребует повторного выбора, как и в остальных
+  // случаях без File System Access API. Это уже штатно обрабатывается кодом
+  // восстановления прогресса ниже.
+  loadFile(file, null);
 });
 
 // --- оверлей и синхронизация controls ---
@@ -2824,6 +2893,20 @@ function ensureAudioGraph(){
     updateCompressor();
     connectGraph();
   } catch(e){
+    // ПРИМЕЧАНИЕ: в текущем Chrome createMediaElementSource() НЕ бросает
+    // SecurityError для кросс-доменного видео без CORS — вместо этого браузер
+    // молча выводит нулевой (беззвучный) сигнал (в консоли видно предупреждение
+    // "MediaElementAudioSource outputs zeroes due to CORS access restrictions").
+    // Поэтому эта ветка на практике почти не срабатывает в Chrome: реальный
+    // сценарий "сервер без CORS" сейчас ловится не здесь, а через 'error' на
+    // самой <video> и retryWithoutCrossOriginOnError() — там видео не грузится
+    // вовсе (crossOrigin='anonymous' не даёт даже скачать ресурс), и это
+    // перезапускает загрузку без CORS до того, как аудио-граф вообще нужен.
+    // Ветка ниже остаётся как страховка на случай, если браузер всё же
+    // бросит исключение (другие движки, будущие изменения поведения) —
+    // но сама по себе не гарантирует отсутствия беззвучного тайнтинга без
+    // предупреждения, если видео как-то загрузилось, а звук всё равно
+    // оказался затейнчен.
     if (e.name === 'SecurityError') {
       console.warn('CORS не поддерживается сервером, аудио-фичи отключены:', e);
       showStorageToast('Аудио-фичи недоступны для этого видео (отсутствует CORS)');
@@ -2977,7 +3060,7 @@ subsFile.addEventListener('change', (e) => {
     if (replacementCharCount > 0 && contentLength > 0 && (replacementCharCount / contentLength) > 0.05) {
       const reader1251 = new FileReader();
       reader1251.onload = (event1251) => {
-        content = event1251.result;
+        content = event1251.target.result;
         showStorageToast('Субтитры прочитаны в кодировке Windows-1251');
         processSubtitlesContent(content, file);
       };
@@ -3723,29 +3806,52 @@ function getFullscreenElement(){
 }
 function requestFs(el){
   const fn = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (fn) return fn.call(el);
+  // Стандартный requestFullscreen() возвращает Promise, но старые версии
+  // Safari/WebKit (webkitRequestFullscreen) возвращают undefined, а не Promise —
+  // и вызывающий код всегда делает .catch() на результате. Без этой обёртки
+  // .catch() падает с необработанным исключением, fullscreenPending не
+  // успевает сброситься, и кнопка фулскрина навсегда виснет до перезагрузки
+  // страницы. Тот же случай — если фулскрин вообще не поддерживается.
+  if (!fn) return Promise.reject(new Error('Fullscreen API не поддерживается'));
+  return Promise.resolve(fn.call(el));
 }
 function exitFs(){
   const fn = document.exitFullscreen || document.webkitExitFullscreen;
-  if (fn) return fn.call(document);
+  if (!fn) return Promise.reject(new Error('Fullscreen API не поддерживается'));
+  return Promise.resolve(fn.call(document));
 }
 
 // Дебаунс для предотвращения повторных быстрых нажатий
 let fullscreenPending = false;
+// Страховка: fullscreenPending обычно снимается событием fullscreenchange
+// (успех) или .catch() (явная ошибка/отказ Promise). Но у старых
+// webkit-префиксных реализаций запрос иногда молча ничего не делает —
+// не бросает исключение и не переводит документ в фулскрин, то есть не
+// происходит ни того, ни другого события. Без этого таймера кнопка тогда
+// зависала бы навсегда после первого же клика в такой среде.
+let fullscreenSafetyTimer = null;
+function armFullscreenSafety(){
+  clearTimeout(fullscreenSafetyTimer);
+  fullscreenSafetyTimer = setTimeout(() => { fullscreenPending = false; }, 1500);
+}
 
 fullscreenBtn.addEventListener('click', () => {
   if (fullscreenPending) return;
   
   if (!getFullscreenElement()){
     fullscreenPending = true;
+    armFullscreenSafety();
     requestFs(stage).catch(err => {
       console.warn('Fullscreen request failed:', err);
+      clearTimeout(fullscreenSafetyTimer);
       fullscreenPending = false;
     });
   } else {
     fullscreenPending = true;
+    armFullscreenSafety();
     exitFs().catch(err => {
       console.warn('Fullscreen exit failed:', err);
+      clearTimeout(fullscreenSafetyTimer);
       fullscreenPending = false;
     });
   }
@@ -3753,6 +3859,7 @@ fullscreenBtn.addEventListener('click', () => {
 
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
   document.addEventListener(evt, () => {
+    clearTimeout(fullscreenSafetyTimer);
     fullscreenPending = false;
     const isFs = !!getFullscreenElement();
     iconFsOpen.style.display = isFs ? 'none' : '';
@@ -3861,6 +3968,38 @@ video.addEventListener('loadeddata', () => {
   videoErrorEl.style.display = 'none';
 });
 
+// --- Индикатор буферизации (лаги сети) ---
+// waiting/stalled — плееру не хватает данных из сети; playing/canplay(through) —
+// воспроизведение восстановилось; pause/error/emptied — это не "лаг сети"
+// (действие пользователя или отдельный экран ошибки), спиннер прячем сразу.
+let bufferingShowTimer = null;
+
+function showBufferingIndicator(){
+  if (bufferingShowTimer) return; // уже запланирован показ
+  // Небольшая задержка, чтобы короткие рывки буфера не вызывали мигание спиннера
+  bufferingShowTimer = setTimeout(() => {
+    bufferingShowTimer = null;
+    bufferingOverlayEl.classList.add('visible');
+  }, 350);
+}
+
+function hideBufferingIndicator(){
+  if (bufferingShowTimer){
+    clearTimeout(bufferingShowTimer);
+    bufferingShowTimer = null;
+  }
+  bufferingOverlayEl.classList.remove('visible');
+}
+
+video.addEventListener('waiting', showBufferingIndicator);
+video.addEventListener('stalled', showBufferingIndicator);
+video.addEventListener('playing', hideBufferingIndicator);
+video.addEventListener('canplay', hideBufferingIndicator);
+video.addEventListener('canplaythrough', hideBufferingIndicator);
+video.addEventListener('pause', hideBufferingIndicator);
+video.addEventListener('error', hideBufferingIndicator);
+video.addEventListener('emptied', hideBufferingIndicator);
+
 // --- возврат к выбору файла ---
 backBtn.addEventListener('click', () => {
   if (isSwitching) return;
@@ -3870,6 +4009,7 @@ backBtn.addEventListener('click', () => {
   if (document.fullscreenElement) exitFs();
   
   stopProgressTracking();
+  hideBufferingIndicator();
   
   // Очищаем аудио-граф при выходе из плеера
   destroyAudioGraph();
@@ -3904,6 +4044,21 @@ let hls = null;
 let urlErrorHandler = null;
 let urlLoadToken = 0;
 
+// Прямые ссылки (обычный <video>, без hls.js) полагаются только на события
+// loadedmetadata/error браузера. Если соединение не рвётся и не отдаёт явную
+// ошибку, а просто очень медленное ("плохой интернет" — сервер отдаёт байты
+// по чуть-чуть, но не молчит совсем), ни одно из этих событий никогда не
+// произойдёт — спиннер крутится бесконечно без единой подсказки пользователю.
+// У HLS-веток и у CORS-фолбэка такой сторож уже есть, здесь его не было.
+function armDirectLoadWatchdog(thisLoadToken){
+  return setTimeout(() => {
+    if (thisLoadToken !== urlLoadToken) return; // запущена уже другая попытка загрузки
+    urlLoadingSpinner.style.display = 'none';
+    urlLoadBtn.disabled = false;
+    showUrlError('Не удалось загрузить видео: сервер слишком долго не отвечает. Проверьте соединение с интернетом или попробуйте другую ссылку', { duration: 8000 });
+  }, 20000);
+}
+
 async function diagnoseVideoLoadError(url, fallbackMessage){
   try {
     const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
@@ -3930,13 +4085,38 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
   drToggle.checked = false;
   showStorageToast('Аудио-эффекты (в т.ч. компрессор) недоступны для этой ссылки — сервер не поддерживает CORS. Видео проигрывается без них');
 
+  // Просто переприсвоить video.src тому же значению не всегда перезапускает
+  // загрузку (браузер может решить, что источник не поменялся, и остаться
+  // в состоянии "ошибка"/readyState 0 — видео тогда зависает на 0:00 без
+  // единого события). video.load() явно перезапускает resource selection.
   video.src = url;
+  video.load();
+
+  let settled = false;
+
+  // Страховочный таймаут: если после снятия crossOrigin браузер всё равно
+  // не выдаёт ни loadedmetadata, ни error (молчаливое зависание), не оставляем
+  // пользователя смотреть на пустой экран/спиннер вечно.
+  const hangTimeout = setTimeout(() => {
+    if (settled || thisLoadToken !== urlLoadToken) return;
+    settled = true;
+    urlLoadingSpinner.style.display = 'none';
+    urlLoadBtn.disabled = false;
+    showUrlError(' Не удалось загрузить видео (сервер не отвечает после повторной попытки без CORS)', { duration: 8000 });
+  }, 12000);
+
   video.addEventListener('loadedmetadata', function(){
+    if (settled) return;
+    settled = true;
+    clearTimeout(hangTimeout);
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
     onRecovered();
   }, { once: true });
   video.addEventListener('error', urlErrorHandler = function(){
+    if (settled) return;
+    settled = true;
+    clearTimeout(hangTimeout);
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
     const fallback = ' Не удалось загрузить видео';
@@ -3970,6 +4150,7 @@ function loadUrl(url){
   urlInput.classList.remove('error');
   hideErrMsg();
   videoErrorEl.style.display = 'none';
+  hideBufferingIndicator();
   stopProgressTracking();
 
   // Сбрасываем главы от предыдущего видео (сами новые читаем чуть ниже,
@@ -3995,15 +4176,17 @@ function loadUrl(url){
     parseChaptersFromUrl(url, chapterParseToken);
   }
   
-  // Если расширения нет, но URL выглядит как прямая ссылка на файл (без параметров или с параметрами файла)
-  // пробуем загрузить как прямую ссылку на видео
-  const isFileLike = !isM3U8 && !isDirectVideo && (
-    parsedUrl.hostname.includes('okcdn.ru') ||
-    parsedUrl.hostname.includes('vkvideo.cloud') ||
-    parsedUrl.hostname.includes('cdn') ||
-    parsedUrl.pathname.includes('/download') ||
-    parsedUrl.pathname.includes('/file')
-  );
+  // Если расширения нет, но ссылка в принципе может оказаться видео — пробуем
+  // загрузить её как прямую ссылку и даём браузеру самому решить, воспроизводимо
+  // ли это. Раньше здесь был закрытый список из 5 слов-триггеров (okcdn.ru,
+  // vkvideo.cloud, cdn, /download, /file) — всё, что в него не попадало,
+  // отклонялось мгновенно, даже не попытавшись. Это ломало типичные подписанные
+  // ссылки без расширения у S3/GCS/Bunny CDN/Cloudflare R2 и самописных
+  // медиа-бэкендов. Теперь эвристика запретительная только для расширений,
+  // которые точно не видео (html, json, картинки и т.п.) — во всех остальных
+  // случаях мы всё равно пробуем.
+  const NON_VIDEO_EXTENSION = /\.(html?|json|xml|txt|jpe?g|png|gif|webp|svg|css|js|php|aspx?)$/i;
+  const isFileLike = !isM3U8 && !isDirectVideo && !NON_VIDEO_EXTENSION.test(parsedUrl.pathname);
 
   // Останавливаем предыдущий HLS экземпляр
   if (hls){
@@ -4081,18 +4264,26 @@ function loadUrl(url){
       hls.loadSource(url);
       hls.attachMedia(video);
 
-      // Добавляем таймаут для загрузки - если ничего не происходит за 15 сек, показываем ошибку
-      const loadTimeout = setTimeout(() => {
-        if (urlLoadingSpinner.style.display !== 'none') {
+      // Таймаут-"сторож" для начальной загрузки/каждого ретрая. Раньше он
+      // ставился один раз на 15 сек и снимался при ЛЮБОМ error-событии — даже
+      // нефатальном или таком, после которого запускается ретрай. Из-за этого
+      // могло возникать вечное зависание без единой ошибки на экране: сторож
+      // уже снят, а MANIFEST_PARSED так и не наступает. Теперь таймаут заново
+      // взводится на каждый ретрай и снимается только когда мы окончательно
+      // либо успешно загрузились, либо сдались.
+      let loadTimeout = null;
+      function armLoadTimeout(ms){
+        clearTimeout(loadTimeout);
+        loadTimeout = setTimeout(() => {
+          if (hls !== hlsInstance) return;
           urlLoadingSpinner.style.display = 'none';
           urlLoadBtn.disabled = false;
-          showUrlError('Не удалось загрузить видео. Возможно, поток недоступен');
-          if (hls) {
-            hls.destroy();
-            hls = null;
-          }
-        }
-      }, 15000);
+          showUrlError('Не удалось загрузить видео. Возможно, поток недоступен', { duration: 8000 });
+          hlsInstance.destroy();
+          hls = null;
+        }, ms);
+      }
+      armLoadTimeout(15000);
 
       hls.on(Hls.Events.MANIFEST_PARSED, function(){
         clearTimeout(loadTimeout);
@@ -4112,86 +4303,122 @@ function loadUrl(url){
       });
 
       hls.on(Hls.Events.ERROR, function(event, data){
-        clearTimeout(loadTimeout);
-        if (data.fatal){
-          urlLoadingSpinner.style.display = 'none';
-          urlLoadBtn.disabled = false;
-          switch (data.type){
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              // Более детальные сообщения на основе data.details
-              {
-                let errorMessage = 'Встраиваемая ссылка недоступна';
-                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
-                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
-                  errorMessage = 'Не удалось загрузить манифест. Проверьте ссылку или наличие CORS';
-                } else if (data.details === Hls.ErrorDetails.KEY_LOAD_ERROR) {
-                  errorMessage = 'Не удалось загрузить ключ шифрования потока';
-                } else if (data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR) {
-                  errorMessage = 'Не удалось загрузить список качеств';
-                } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
-                  errorMessage = 'Не удалось загрузить сегмент видео';
-                }
-                
-                // Если это CORS ошибка (смотрим в response текст или проверяем origin)
-                if (data.response && data.response.code === 0) {
-                  // CORS ошибка - нет доступа к ответу
-                  hlsInstance.destroy();
-                  hls = null;
-                  showUrlError('Сайт-источник запрещает встраивание в другие страницы/плееры. Доступ заблокирован на стороне сервера', { duration: 8000 });
-                  return;
-                }
+        // Нефатальные ошибки (обычные для HLS-потоков — отдельный битый сегмент
+        // и т.п.) hls.js обрабатывает сам; они не должны снимать сторожевой
+        // таймаут и не должны прятать спиннер загрузки.
+        if (!data.fatal) return;
 
-                // 404 — ссылка мертва (истекла/удалена)
-                if (data.response && data.response.code === 404) {
-                  hlsInstance.destroy();
-                  hls = null;
-                  showUrlError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера', { duration: 8000 });
-                  return;
-                }
-
-                // 410 — ресурс Gone (был, но удалён)
-                if (data.response && data.response.code === 410) {
-                  hlsInstance.destroy();
-                  hls = null;
-                  showUrlError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера', { duration: 8000 });
-                  return;
-                }
-                
-                if (retryCount < MAX_RETRIES) {
-                  retryCount++;
-                  const delay = Math.pow(2, retryCount - 1) * 1000; // Экспоненциальная задержка: 1с, 2с, 4с
-                  setTimeout(() => {
-                    if (hls !== hlsInstance) return; // плеер уже закрыт/переключён — ничего не делаем
-                    try {
-                      hlsInstance.startLoad();
-                    } catch (e) {
-                      hlsInstance.destroy();
-                      hls = null;
-                      showUrlError(errorMessage, { duration: 8000 });
-                    }
-                  }, delay);
-                } else {
-                  // Лимит попыток исчерпан
-                  hlsInstance.destroy();
-                  hls = null;
-                  showUrlError(errorMessage, { duration: 8000 });
-                }
+        switch (data.type){
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            // Более детальные сообщения на основе data.details
+            {
+              let errorMessage = 'Встраиваемая ссылка недоступна';
+              const isManifestError = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+                  data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+                  data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+              if (isManifestError) {
+                errorMessage = 'Не удалось загрузить манифест. Проверьте ссылку или наличие CORS';
+              } else if (data.details === Hls.ErrorDetails.KEY_LOAD_ERROR) {
+                errorMessage = 'Не удалось загрузить ключ шифрования потока';
+              } else if (data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR) {
+                errorMessage = 'Не удалось загрузить список качеств';
+              } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
+                errorMessage = 'Не удалось загрузить сегмент видео';
               }
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              setTimeout(() => {
-                if (hls !== hlsInstance) return;
-                try {
-                  hlsInstance.recoverMediaError();
-                } catch (e) {
-                  hlsInstance.destroy();
-                  hls = null;
-                  showUrlError('Не удалось восстановить воспроизведение', { duration: 8000 });
-                }
-              }, 1000);
-              break;
-            default:
-              // Более детальные сообщения для default-ветки
+
+              // Если это CORS ошибка (смотрим в response текст или проверяем origin)
+              if (data.response && data.response.code === 0) {
+                // CORS ошибка - нет доступа к ответу
+                clearTimeout(loadTimeout);
+                urlLoadingSpinner.style.display = 'none';
+                urlLoadBtn.disabled = false;
+                hlsInstance.destroy();
+                hls = null;
+                showUrlError('Сайт-источник запрещает встраивание в другие страницы/плееры. Доступ заблокирован на стороне сервера', { duration: 8000 });
+                return;
+              }
+
+              // 404 — ссылка мертва (истекла/удалена)
+              if (data.response && data.response.code === 404) {
+                clearTimeout(loadTimeout);
+                urlLoadingSpinner.style.display = 'none';
+                urlLoadBtn.disabled = false;
+                hlsInstance.destroy();
+                hls = null;
+                showUrlError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера', { duration: 8000 });
+                return;
+              }
+
+              // 410 — ресурс Gone (был, но удалён)
+              if (data.response && data.response.code === 410) {
+                clearTimeout(loadTimeout);
+                urlLoadingSpinner.style.display = 'none';
+                urlLoadBtn.disabled = false;
+                hlsInstance.destroy();
+                hls = null;
+                showUrlError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера', { duration: 8000 });
+                return;
+              }
+
+              if (retryCount < MAX_RETRIES) {
+                retryCount++;
+                const delay = Math.pow(2, retryCount - 1) * 1000; // Экспоненциальная задержка: 1с, 2с, 4с
+                // Спиннер и сторож остаются активными на время ретрая — пользователь
+                // видит, что попытка ещё идёт, а не пустой экран без обратной связи.
+                armLoadTimeout(delay + 15000);
+                setTimeout(() => {
+                  if (hls !== hlsInstance) return; // плеер уже закрыт/переключён — ничего не делаем
+                  try {
+                    // Манифест мог вообще не загрузиться ни разу — startLoad()
+                    // в этом случае ничего не перезапускает (он лишь возобновляет
+                    // уже налаженную загрузку фрагментов/уровней). Для ошибок
+                    // уровня манифеста нужен полноценный повторный loadSource().
+                    if (isManifestError) {
+                      hlsInstance.loadSource(url);
+                    } else {
+                      hlsInstance.startLoad();
+                    }
+                  } catch (e) {
+                    clearTimeout(loadTimeout);
+                    urlLoadingSpinner.style.display = 'none';
+                    urlLoadBtn.disabled = false;
+                    hlsInstance.destroy();
+                    hls = null;
+                    showUrlError(errorMessage, { duration: 8000 });
+                  }
+                }, delay);
+              } else {
+                // Лимит попыток исчерпан
+                clearTimeout(loadTimeout);
+                urlLoadingSpinner.style.display = 'none';
+                urlLoadBtn.disabled = false;
+                hlsInstance.destroy();
+                hls = null;
+                showUrlError(errorMessage, { duration: 8000 });
+              }
+            }
+            break;
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            setTimeout(() => {
+              if (hls !== hlsInstance) return;
+              try {
+                hlsInstance.recoverMediaError();
+              } catch (e) {
+                clearTimeout(loadTimeout);
+                urlLoadingSpinner.style.display = 'none';
+                urlLoadBtn.disabled = false;
+                hlsInstance.destroy();
+                hls = null;
+                showUrlError('Не удалось восстановить воспроизведение', { duration: 8000 });
+              }
+            }, 1000);
+            break;
+          default:
+            // Более детальные сообщения для default-ветки
+            {
+              clearTimeout(loadTimeout);
+              urlLoadingSpinner.style.display = 'none';
+              urlLoadBtn.disabled = false;
               let errorMessage = ' Ссылка может быть недоступной или неправильной';
               if (data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR) {
                 errorMessage = ' Манифест повреждён или имеет неправильный формат.';
@@ -4199,10 +4426,10 @@ function loadUrl(url){
                 errorMessage = ' Видео использует неподдерживаемые кодеки.';
               }
               showUrlError(errorMessage, { duration: 8000 });
-              hls.destroy();
+              hlsInstance.destroy();
               hls = null;
-              break;
-          }
+            }
+            break;
         }
       });
       
@@ -4217,7 +4444,9 @@ function loadUrl(url){
   } else if (video.canPlayType('application/vnd.apple.mpegurl') && isM3U8){
     // Native HLS (Safari)
     video.src = url;
+    const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
     video.addEventListener('loadedmetadata', function(){
+      clearTimeout(directLoadTimeout);
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       showPlayer();
@@ -4231,6 +4460,7 @@ function loadUrl(url){
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
+      clearTimeout(directLoadTimeout);
       if (retryWithoutCrossOriginOnError(url, thisLoadToken, () => {
         showPlayer();
         video.play().catch(e => {
@@ -4258,7 +4488,9 @@ function loadUrl(url){
     // Ссылка похожа на файл (CDN без расширения, но с параметрами файла)
     // Пробуем загрузить как прямую ссылку на видео
     video.src = url;
+    const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
     video.addEventListener('loadedmetadata', function(){
+      clearTimeout(directLoadTimeout);
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       showPlayer();
@@ -4272,6 +4504,7 @@ function loadUrl(url){
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
+      clearTimeout(directLoadTimeout);
       if (retryWithoutCrossOriginOnError(url, thisLoadToken, () => {
         showPlayer();
         video.play().catch(e => {
@@ -4298,7 +4531,9 @@ function loadUrl(url){
   } else if (isDirectVideo || isM3U8){
     // Прямая ссылка на видео или m3u8 без поддержки HLS
     video.src = url;
+    const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
     video.addEventListener('loadedmetadata', function(){
+      clearTimeout(directLoadTimeout);
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       showPlayer();
@@ -4312,6 +4547,7 @@ function loadUrl(url){
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
+      clearTimeout(directLoadTimeout);
       if (!isM3U8 && retryWithoutCrossOriginOnError(url, thisLoadToken, () => {
         showPlayer();
         video.play().catch(e => {
