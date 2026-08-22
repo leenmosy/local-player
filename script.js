@@ -2269,8 +2269,6 @@ async function parseChaptersFromUrl(url, token){
       // Если данные ещё не загружены, загружаем один большой кусок с начала
       if (!preloadedData) {
         const preloadSize = Math.min(MAX_CHAPTER_PROBE_BYTES, size);
-        console.log(`[Chapters] Preloading ${preloadSize} bytes from offset 0`);
-        
         const res = await fetch(url, { headers: { Range: `bytes=0-${preloadSize - 1}` } });
         if (res.status !== 206) {
           if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
@@ -2279,7 +2277,6 @@ async function parseChaptersFromUrl(url, token){
 
         const buf = await res.arrayBuffer();
         preloadedData = new Uint8Array(buf);
-        console.log(`[Chapters] Preloaded ${preloadedData.length} bytes successfully`);
       }
 
       // Проверяем, попадает ли запрос в загруженный диапазон
@@ -2290,7 +2287,6 @@ async function parseChaptersFromUrl(url, token){
       }
 
       // Если запрос выходит за пределы загруженного, делаем отдельный запрос
-      console.log(`[Chapters] Request outside preloaded range: offset=${offset}, size=${chunkSize}`);
       const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
