@@ -13,8 +13,13 @@ const SUBS_PREFIX = 'lp_subs:';
 // (баг M-19). Пофайловыми остаются только те, что осмысленны для конкретного видео:
 // интервалы блюра, текст оверлея, зеркало, яркость и зум.
 const GLOBAL_DEFAULTS_KEY = 'lp_defaults';
+// Компрессора здесь намеренно нет. Для нового источника он должен включаться всегда
+// (жёсткий drToggle.checked = true), а не наследоваться от предыдущего файла. Иначе
+// одно открытие ссылки с сервера без CORS — где компрессор принудительно выключается —
+// записывало drToggle: false в глобальные умолчания, и после этого ВСЕ новые видео
+// стартовали без компрессора, ломая автоматическое включение при загрузке по ссылке.
 const GLOBAL_DEFAULT_FIELDS = [
-  'volume','drToggle','drStrength','drBoost','drSpeed',
+  'volume','drStrength','drBoost',
   'ovToggle','ovSize','ovColor','ovOpacity','ovAlign','ovPosX','ovPosY',
   'subsToggle','subsSize','subsColor','subsOpacity'
 ];
@@ -29,7 +34,12 @@ function saveGlobalDefaults(settings){
 function loadGlobalDefaults(){
   try{
     const raw = localStorage.getItem(GLOBAL_DEFAULTS_KEY);
-    return raw ? (JSON.parse(raw) || {}) : {};
+    const parsed = raw ? (JSON.parse(raw) || {}) : {};
+    // Записи, сделанные прежней версией, могли содержать drToggle и drSpeed —
+    // они больше не глобальные, игнорируем их
+    delete parsed.drToggle;
+    delete parsed.drSpeed;
+    return parsed;
   } catch(e){ return {}; }
 }
 // Бюджеты хранилища на пространство ключей. Записи прогресса весят десятки байт,

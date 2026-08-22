@@ -305,7 +305,6 @@ function applyGlobalDefaultsToUi(){
     volumeRange.value = video.volume;
     updateVolumeIcon();
   }
-  if (d.drToggle !== undefined){ drToggle.checked = !!d.drToggle; drEnabled = !!d.drToggle; }
   if (d.drStrength !== undefined){ drStrength.value = num(d.drStrength, 0, 100, 70); drStrengthVal.textContent = drStrength.value + '%'; }
   if (d.drBoost !== undefined){ drBoost.value = num(d.drBoost, 100, 300, 100); drBoostVal.textContent = drBoost.value + '%'; }
   if (d.subsToggle !== undefined){ subsToggle.checked = !!d.subsToggle; subtitles.style.display = subsToggle.checked ? 'block' : 'none'; }
