@@ -2263,6 +2263,7 @@ async function parseChaptersFromUrl(url, token){
     const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
     let bytesRead = 0;
     const chunkCache = new Map(); // Кешируем прочитанные чанки
+    let requestCount = 0;
 
     const getSize = () => size;
     const readChunk = async (chunkSize, offset) => {
@@ -2271,6 +2272,9 @@ async function parseChaptersFromUrl(url, token){
       if (chunkCache.has(cacheKey)) {
         return chunkCache.get(cacheKey);
       }
+
+      requestCount++;
+      console.log(`[Chapters] Request #${requestCount}: offset=${offset}, size=${chunkSize}, total read=${(bytesRead/1024/1024).toFixed(2)}MB`);
 
       const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
@@ -2283,6 +2287,8 @@ async function parseChaptersFromUrl(url, token){
 
       const buf = await res.arrayBuffer();
       bytesRead += buf.byteLength;
+      console.log(`[Chapters] Response #${requestCount}: received ${(buf.byteLength/1024).toFixed(2)}KB, total ${(bytesRead/1024/1024).toFixed(2)}MB`);
+      
       if (bytesRead > MAX_CHAPTER_PROBE_BYTES) {
         throw new Error('Превышен лимит данных для чтения глав по ссылке');
       }
