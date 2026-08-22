@@ -4384,18 +4384,19 @@ async function loadUrl(url){
   let isM3U8 = /\.m3u8$/i.test(parsedUrl.pathname);
   const isDirectVideo = /\.(mp4|webm|mov)$/i.test(parsedUrl.pathname);
 
-  if (!isM3U8 && !isDirectVideo){
-    const sniffed = await sniffHlsManifest(url);
-    if (thisLoadToken !== urlLoadToken) return;   // пользователь уже открыл другой источник
-    if (sniffed) isM3U8 = true;
-  }
-
   const NON_VIDEO_EXTENSION = /\.(html?|json|xml|txt|jpe?g|png|gif|webp|svg|css|js|php|aspx?)$/i;
   const isFileLike = !isM3U8 && !isDirectVideo && !NON_VIDEO_EXTENSION.test(parsedUrl.pathname);
 
   // Главы читаем только для того, что реально окажется прямым видеофайлом
+  // Запускаем параллельно с sniffHlsManifest, чтобы не ждать её завершения
   if (isDirectVideo || isFileLike){
     parseChaptersFromUrl(url, chapterParseToken);
+  }
+
+  if (!isM3U8 && !isDirectVideo){
+    const sniffed = await sniffHlsManifest(url);
+    if (thisLoadToken !== urlLoadToken) return;   // пользователь уже открыл другой источник
+    if (sniffed) isM3U8 = true;
   }
 
   // Останавливаем предыдущий HLS экземпляр
