@@ -2217,6 +2217,20 @@ function getMediaInfoInstance(){
   return mediaInfoPromise;
 }
 
+// Инициализируем MediaInfo заранее при загрузке страницы, чтобы главы читались сразу
+function preInitMediaInfo(){
+  getMediaInfoInstance().catch(err => {
+    console.warn('Не удалось инициализировать MediaInfo заранее:', err.message);
+  });
+}
+
+// Запускаем предварительную инициализацию после загрузки страницы
+if (document.readyState === 'complete') {
+  preInitMediaInfo();
+} else {
+  window.addEventListener('load', preInitMediaInfo);
+}
+
 // Читает файл через mediainfo.js кусками и превращает найденные главы 
 async function parseChaptersFromFile(file, token){
   try {
