@@ -2261,55 +2261,46 @@ async function parseChaptersFromUrl(url, token){
 
     // Ограничиваем объём загружаемых данных, чтобы чтение глав не мешало воспроизведению видео
     const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
-    let bytesRead = 0;
-    const chunkCache = new Map(); // Кешируем прочитанные чанки
-    let requestCount = 0;
-    
-    // Увеличиваем минимальный размер чанка для уменьшения количества запросов
-    const MIN_CHUNK_SIZE = 2 * 1024 * 1024; // 2 МБ минимальный размер запроса
+    let preloadedData = null; // Сразу загрузим один большой кусок
+    let preloadedOffset = 0;
 
     const getSize = () => size;
     const readChunk = async (chunkSize, offset) => {
-      // Проверяем кеш - если этот участок уже загружен, возвращаем из кеша
-      const cacheKey = `${offset}-${chunkSize}`;
-      if (chunkCache.has(cacheKey)) {
-        return chunkCache.get(cacheKey);
+      // Если данные ещё не загружены, загружаем один большой кусок с начала
+      if (!preloadedData) {
+        const preloadSize = Math.min(MAX_CHAPTER_PROBE_BYTES, size);
+        console.log(`[Chapters] Preloading ${preloadSize} bytes from offset 0`);
+        
+        const res = await fetch(url, { headers: { Range: `bytes=0-${preloadSize - 1}` } });
+        if (res.status !== 206) {
+          if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
+          throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
+        }
+
+        const buf = await res.arrayBuffer();
+        preloadedData = new Uint8Array(buf);
+        console.log(`[Chapters] Preloaded ${preloadedData.length} bytes successfully`);
       }
 
-      // Увеличиваем размер запроса для уменьшения количества HTTP запросов
-      // Если mediainfo просит маленький чанк, загружаем больший участок
-      const actualChunkSize = Math.max(chunkSize, MIN_CHUNK_SIZE);
-      const end = Math.min(offset + actualChunkSize, size) - 1;
+      // Проверяем, попадает ли запрос в загруженный диапазон
+      if (offset >= preloadedOffset && offset + chunkSize <= preloadedOffset + preloadedData.length) {
+        // Данные уже есть в памяти, возвращаем нужную часть
+        const relativeOffset = offset - preloadedOffset;
+        return preloadedData.slice(relativeOffset, relativeOffset + chunkSize);
+      }
 
-      requestCount++;
-      console.log(`[Chapters] Request #${requestCount}: offset=${offset}, requested=${chunkSize}, actual=${actualChunkSize}, total read=${(bytesRead/1024/1024).toFixed(2)}MB`);
-
+      // Если запрос выходит за пределы загруженного, делаем отдельный запрос
+      console.log(`[Chapters] Request outside preloaded range: offset=${offset}, size=${chunkSize}`);
+      const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
-      // При ответе 200 вместо 206 прекращаем чтение, так как сервер игнорирует Range-запрос
       if (res.status !== 206) {
         if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
         throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
       }
 
       const buf = await res.arrayBuffer();
-      bytesRead += buf.byteLength;
-      console.log(`[Chapters] Response #${requestCount}: received ${(buf.byteLength/1024).toFixed(2)}KB, total ${(bytesRead/1024/1024).toFixed(2)}MB`);
-      
-      if (bytesRead > MAX_CHAPTER_PROBE_BYTES) {
-        throw new Error('Превышен лимит данных для чтения глав по ссылке');
-      }
-      
-      // Возвращаем только запрошенную часть, но кешируем весь загруженный чанк
-      const fullUint8Array = new Uint8Array(buf);
-      const requestedPart = fullUint8Array.slice(0, chunkSize);
-      
-      // Кешируем весь загруженный чанк для будущих запросов
-      const fullCacheKey = `${offset}-${actualChunkSize}`;
-      chunkCache.set(fullCacheKey, fullUint8Array);
-      chunkCache.set(cacheKey, requestedPart);
-      
-      return requestedPart;
+      return new Uint8Array(buf);
     };
 
     const result = await mediainfo.analyzeData(getSize, readChunk);
