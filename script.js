@@ -2200,67 +2200,107 @@ async function parseChaptersFromUrl(url, token){
     if (token !== chapterParseToken) return;
 
     let size = null;
-    let headOk = false;
-
-    // Пробуем HEAD-запрос для получения размера файла
-    try {
-      const head = await fetch(url, { method: 'HEAD' });
-      if (head.ok) {
-        headOk = true;
-        size = Number(head.headers.get('Content-Length'));
-        if (head.headers.get('Accept-Ranges') !== 'bytes') {
-          // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
-          // не блокируем, просто пробуем читать куски ниже.
-        }
-      }
-    } catch (headErr) {
-      // HEAD не сработал (CORS, сеть и т.п.) — пробуем читать без предварительного размера
-      console.log('HEAD-запрос не удался, пробуем читать без размера:', headErr.message);
-    }
-
-    // Если HEAD не сработал или не вернул размер, определяем размер через частичное чтение
     let rangeSupported = true;
-    if (!size) {
-      try {
-        // Пробуем прочитать небольшой кусок для определения размера через Content-Length в ответе
-        const testRes = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
-        if (testRes.status === 206) {
-          const contentRange = testRes.headers.get('Content-Range');
-          if (contentRange) {
-            const match = /bytes \d+-(\d+)\/(\d+)/.exec(contentRange);
-            if (match) {
-              size = Number(match[2]); // общий размер из Content-Range
+
+    // Сразу пробуем Range-запрос для проверки поддержки и получения размера
+    // Это быстрее, чем отдельный HEAD-запрос
+    try {
+      const testRes = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
+      if (testRes.status === 206) {
+        // Range поддерживается - извлекаем размер из заголовков
+        const contentRange = testRes.headers.get('Content-Range');
+        if (contentRange) {
+          const match = /bytes \d+-(\d+)\/(\d+)/.exec(contentRange);
+          if (match) {
+            size = Number(match[2]); // общий размер из Content-Range
+          }
+        }
+        // Если размер всё ещё не известен, используем Content-Length из ответа
+        if (!size) {
+          size = Number(testRes.headers.get('Content-Length'));
+        }
+        // Сохраняем первые байты для использования в mediainfo
+        const initialChunk = await testRes.arrayBuffer();
+        
+        if (!size) {
+          throw new Error('Не удалось определить размер файла из Range-ответа');
+        }
+
+        // Ограничиваем объём загружаемых данных - достаточно для поиска метаданных и в начале, и в конце
+        const MAX_CHAPTER_PROBE_BYTES = 4 * 1024 * 1024; // 4 МБ - баланс между скоростью и поиском в конце файла
+        let bytesRead = initialChunk.byteLength;
+        let endChunkRequested = false;
+
+        const getSize = () => size;
+        const readChunk = async (chunkSize, offset) => {
+          // Если запрашиваются первые байты, возвращаем уже загруженный chunk
+          if (offset === 0 && initialChunk.byteLength > 0) {
+            return new Uint8Array(initialChunk);
+          }
+          
+          // Если запрашивается конец файла и мы ещё не читали конец, сразу читаем последние 2 МБ
+          if (offset > size / 2 && !endChunkRequested) {
+            endChunkRequested = true;
+            const tailSize = Math.min(2 * 1024 * 1024, size); // Последние 2 МБ
+            const tailOffset = Math.max(0, size - tailSize);
+            const tailRes = await fetch(url, { headers: { Range: `bytes=${tailOffset}-${size - 1}` } });
+            
+            if (tailRes.status === 206) {
+              const tailBuf = await tailRes.arrayBuffer();
+              bytesRead += tailBuf.byteLength;
+              // Если текущий запрос в пределах хвоста, возвращаем соответствующую часть
+              if (offset >= tailOffset) {
+                const relativeOffset = offset - tailOffset;
+                return new Uint8Array(tailBuf.slice(relativeOffset, relativeOffset + chunkSize));
+              }
             }
           }
-          // Если размер всё ещё не известен, используем Content-Length из ответа
-          if (!size) {
-            size = Number(testRes.headers.get('Content-Length'));
-          }
-        } else if (testRes.ok) {
-          // При ответе 200 на Range-запрос прекращаем загрузку и сохраняем размер полного файла
-          rangeSupported = false;
-          const len = Number(testRes.headers.get('Content-Length'));
-          if (len) size = len;
-          if (testRes.body && testRes.body.cancel) {
-            testRes.body.cancel().catch(() => {});
-          }
-        }
-      } catch (rangeErr) {
-        // Range-запрос тоже не сработал — пробуем без размера
-        console.log('Range-запрос не удался, пробуем без размера:', rangeErr.message);
-      }
-    }
+          
+          const end = Math.min(offset + chunkSize, size) - 1;
+          const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
-    if (!size) {
-      throw new Error('Не удалось определить размер файла');
+          // При ответе 200 вместо 206 прекращаем чтение
+          if (res.status !== 206) {
+            if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
+            throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
+          }
+
+          const buf = await res.arrayBuffer();
+          bytesRead += buf.byteLength;
+          if (bytesRead > MAX_CHAPTER_PROBE_BYTES) {
+            throw new Error('Превышен лимит данных для чтения глав по ссылке');
+          }
+          return new Uint8Array(buf);
+        };
+
+        const result = await mediainfo.analyzeData(getSize, readChunk);
+        if (token !== chapterParseToken) return;
+        applyChaptersFromMediaInfoResult(result, token);
+        return;
+      } else if (testRes.ok) {
+        // Range не поддерживается, но получили размер
+        rangeSupported = false;
+        const len = Number(testRes.headers.get('Content-Length'));
+        if (len) size = len;
+        if (testRes.body && testRes.body.cancel) {
+          testRes.body.cancel().catch(() => {});
+        }
+      }
+    } catch (rangeErr) {
+      // Range-запрос не сработал
+      console.log('Range-запрос не удался:', rangeErr.message);
     }
 
     if (!rangeSupported) {
       throw new Error('Сервер не поддерживает Range-запросы — чтение глав по ссылке отменено, чтобы не докачивать файл целиком в фоне');
     }
 
-    // Ограничиваем объём загружаемых данных, чтобы чтение глав не мешало воспроизведению видео
-    const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
+    if (!size) {
+      throw new Error('Не удалось определить размер файла');
+    }
+
+    // Fallback: если по какой-то причине выше не сработало, используем оригинальную логику
+    const MAX_CHAPTER_PROBE_BYTES = 4 * 1024 * 1024; // 4 МБ
     let bytesRead = 0;
 
     const getSize = () => size;
@@ -2268,7 +2308,6 @@ async function parseChaptersFromUrl(url, token){
       const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
-      // При ответе 200 вместо 206 прекращаем чтение, так как сервер игнорирует Range-запрос
       if (res.status !== 206) {
         if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
         throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
