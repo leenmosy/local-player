@@ -85,6 +85,7 @@ function processSubtitlesContent(content, file){
 // --- Удаление субтитров ---
 subsRemoveBtn.addEventListener('click', () => {
   subtitlesData = [];
+  if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
   savedSubsContent = null;
   isSubtitlesLoaded = false;
   subtitles.innerHTML = '';
@@ -143,6 +144,7 @@ function detectSubtitleFormat(content, fileName){
 
 function parseSubtitles(content, format) {
   subtitlesData = [];
+  if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
   let skippedCount = 0;
   // Нормализуем переносы строк (CRLF/одиночный CR → LF) один раз в начале, чтобы
   // символ \r не оказывался внутри текста реплики (text.trim() обрезает только

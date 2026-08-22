@@ -1,5 +1,6 @@
 tests/
-ПРОВЕРКА.md
+MANUAL-TESTING.md
+
 node_modules/
 .DS_Store
 Thumbs.db

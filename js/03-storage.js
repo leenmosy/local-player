@@ -460,6 +460,7 @@ function loadSettings(){
           // Записи старого формата (реплики лежали прямо в localStorage) читаем
           // как раньше и переносим в IndexedDB при первой возможности — см. M-10
           subtitlesData = JSON.parse(subsData.content);
+          if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
           savedSubsContent = subsData.content;
           const migrateKey = subsKey(currentFileKey);
           const migratePayload = subsData.content;
@@ -475,10 +476,12 @@ function loadSettings(){
           const keyForCues = SUBS_PREFIX + 'data:' + stripProgressPrefix(currentFileKey);
           const keyAtLoad = currentFileKey;
           subtitlesData = [];
+          if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
           idbGet(keyForCues).then(raw => {
             if (!raw || keyAtLoad !== currentFileKey) return;
             try{
               subtitlesData = JSON.parse(raw);
+              if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
               savedSubsContent = raw;
               updateSubtitles();
             } catch(e){}
@@ -492,6 +495,7 @@ function loadSettings(){
         subsRemoveBtn.style.display = 'flex';
       } catch(e) {
         subtitlesData = [];
+        if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
         savedSubsContent = null;
         isSubtitlesLoaded = false;
       }
@@ -499,6 +503,7 @@ function loadSettings(){
       savedSubsContent = null;
       isSubtitlesLoaded = false;
       subtitlesData = [];
+      if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
       subtitles.innerHTML = '';
       setSubsFileNameDisplay('Файл не выбран');
       subsFile.value = '';

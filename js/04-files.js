@@ -103,6 +103,7 @@ function applyDefaultSettingsForNewSource(){
   
   // Субтитры (контент и стиль) всегда сбрасываются для файла без настроек
   subtitlesData = [];
+  if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
   savedSubsContent = null;
   isSubtitlesLoaded = false;
   subtitles.innerHTML = '';

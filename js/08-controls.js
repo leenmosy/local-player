@@ -476,17 +476,54 @@ skipSegmentOverlay.addEventListener('click', () => {
   hideSkipSegmentOverlay();
 });
 
+// Реплика, которая сейчас нарисована. Нужна, чтобы не трогать DOM на каждом кадре:
+// после перехода на покадровую синхронизацию (H-2) updateSubtitles вызывается
+// десятки раз в секунду, и безусловная перезапись innerHTML заставляла браузер
+// каждый раз заново разбирать разметку и пересчитывать стили — впустую.
+let renderedSub = null;
+
+// Поиск реплики: сначала проверяем текущую и соседнюю (при обычном воспроизведении
+// этого хватает почти всегда), и только при промахе идём двоичным поиском.
+// Прежний линейный перебор на файле в 4000 реплик означал тысячи сравнений на кадр.
+let subSearchIdx = 0;
+function findSubtitleAt(t){
+  const n = subtitlesData.length;
+  if (!n) return null;
+  const hit = i => i >= 0 && i < n && t >= subtitlesData[i].start && t < subtitlesData[i].end;
+  if (hit(subSearchIdx)) return subtitlesData[subSearchIdx];
+  if (hit(subSearchIdx + 1)) { subSearchIdx += 1; return subtitlesData[subSearchIdx]; }
+
+  let lo = 0, hi = n - 1, found = -1;
+  while (lo <= hi){
+    const mid = (lo + hi) >> 1;
+    if (subtitlesData[mid].start <= t){ found = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  if (found === -1) return null;
+  subSearchIdx = found;
+  return hit(found) ? subtitlesData[found] : null;
+}
+
+function resetSubtitleRenderState(){
+  renderedSub = null;
+  subSearchIdx = 0;
+}
+
 function updateSubtitles() {
   if (!subsToggle.checked || subtitlesData.length === 0) {
-    subtitles.innerHTML = '';
+    if (renderedSub !== null){
+      subtitles.innerHTML = '';
+      renderedSub = null;
+    }
     return;
   }
-  
-  const currentTime = video.currentTime;
-  const currentSub = subtitlesData.find(sub => 
-    currentTime >= sub.start && currentTime < sub.end
-  );
-  
+
+  const currentSub = findSubtitleAt(video.currentTime) || null;
+
+  // Ничего не изменилось — DOM не трогаем
+  if (currentSub === renderedSub) return;
+  renderedSub = currentSub;
+
   if (currentSub) {
     subtitles.innerHTML = `<span>${escapeHtml(currentSub.text).replace(/\n/g, '<br>')}</span>`;
     applySubtitlesStyle();
