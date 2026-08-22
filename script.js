@@ -2264,6 +2264,9 @@ async function parseChaptersFromUrl(url, token){
     let bytesRead = 0;
     const chunkCache = new Map(); // Кешируем прочитанные чанки
     let requestCount = 0;
+    
+    // Увеличиваем минимальный размер чанка для уменьшения количества запросов
+    const MIN_CHUNK_SIZE = 2 * 1024 * 1024; // 2 МБ минимальный размер запроса
 
     const getSize = () => size;
     const readChunk = async (chunkSize, offset) => {
@@ -2273,10 +2276,14 @@ async function parseChaptersFromUrl(url, token){
         return chunkCache.get(cacheKey);
       }
 
-      requestCount++;
-      console.log(`[Chapters] Request #${requestCount}: offset=${offset}, size=${chunkSize}, total read=${(bytesRead/1024/1024).toFixed(2)}MB`);
+      // Увеличиваем размер запроса для уменьшения количества HTTP запросов
+      // Если mediainfo просит маленький чанк, загружаем больший участок
+      const actualChunkSize = Math.max(chunkSize, MIN_CHUNK_SIZE);
+      const end = Math.min(offset + actualChunkSize, size) - 1;
 
-      const end = Math.min(offset + chunkSize, size) - 1;
+      requestCount++;
+      console.log(`[Chapters] Request #${requestCount}: offset=${offset}, requested=${chunkSize}, actual=${actualChunkSize}, total read=${(bytesRead/1024/1024).toFixed(2)}MB`);
+
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
       // При ответе 200 вместо 206 прекращаем чтение, так как сервер игнорирует Range-запрос
@@ -2293,9 +2300,16 @@ async function parseChaptersFromUrl(url, token){
         throw new Error('Превышен лимит данных для чтения глав по ссылке');
       }
       
-      const uint8Array = new Uint8Array(buf);
-      chunkCache.set(cacheKey, uint8Array);
-      return uint8Array;
+      // Возвращаем только запрошенную часть, но кешируем весь загруженный чанк
+      const fullUint8Array = new Uint8Array(buf);
+      const requestedPart = fullUint8Array.slice(0, chunkSize);
+      
+      // Кешируем весь загруженный чанк для будущих запросов
+      const fullCacheKey = `${offset}-${actualChunkSize}`;
+      chunkCache.set(fullCacheKey, fullUint8Array);
+      chunkCache.set(cacheKey, requestedPart);
+      
+      return requestedPart;
     };
 
     const result = await mediainfo.analyzeData(getSize, readChunk);
