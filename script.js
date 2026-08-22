@@ -2262,9 +2262,16 @@ async function parseChaptersFromUrl(url, token){
     // Ограничиваем объём загружаемых данных, чтобы чтение глав не мешало воспроизведению видео
     const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
     let bytesRead = 0;
+    const chunkCache = new Map(); // Кешируем прочитанные чанки
 
     const getSize = () => size;
     const readChunk = async (chunkSize, offset) => {
+      // Проверяем кеш - если этот участок уже загружен, возвращаем из кеша
+      const cacheKey = `${offset}-${chunkSize}`;
+      if (chunkCache.has(cacheKey)) {
+        return chunkCache.get(cacheKey);
+      }
+
       const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
@@ -2279,7 +2286,10 @@ async function parseChaptersFromUrl(url, token){
       if (bytesRead > MAX_CHAPTER_PROBE_BYTES) {
         throw new Error('Превышен лимит данных для чтения глав по ссылке');
       }
-      return new Uint8Array(buf);
+      
+      const uint8Array = new Uint8Array(buf);
+      chunkCache.set(cacheKey, uint8Array);
+      return uint8Array;
     };
 
     const result = await mediainfo.analyzeData(getSize, readChunk);
