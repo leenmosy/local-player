@@ -2680,8 +2680,8 @@ dropzone.addEventListener('drop', async e => {
 
   const files = e.dataTransfer.files;
   if (!files || files.length === 0) {
-    // Обрабатываем перетаскивание текста и ссылок
-    showErrMsg('Это не файл. Перетащите видеофайл или вставьте ссылку в поле справа');
+    // Обрабатываем перетаскивание текста
+    showErrMsg('Не удалось получить файл. Попробуйте выбрать файл через диалог');
     return;
   }
   
