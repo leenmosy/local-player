@@ -2136,9 +2136,6 @@ let dismissedChapterSegments = new Set();
 let chapterParseToken = 0;
 let activeSkipSegment = null;
 
-// Кеш глав для URL, чтобы не перечитывать при повторной загрузке
-const chaptersUrlCache = new Map();
-
 function nextEpisodeThreshold(duration){
   if (!duration || !isFinite(duration) || duration <= 0) return 12;
   const pct = duration * 0.06; // ~6% длительности серии
@@ -2249,19 +2246,6 @@ async function parseChaptersFromFile(file, token){
 // Для URL загружаем нужные части через fetch с Range-запросами; при ошибке продолжаем без глав
 async function parseChaptersFromUrl(url, token){
   try {
-    // Проверяем кеш
-    if (chaptersUrlCache.has(url)) {
-      const cached = chaptersUrlCache.get(url);
-      if (token !== chapterParseToken) return;
-      mediaChapters = cached.chapters;
-      dismissedChapterSegments = new Set(cached.dismissed);
-      // Сразу показываем кнопку "Пропустить заставку", если главы есть и видео уже воспроизводится
-      if (mediaChapters.length > 0 && !video.paused) {
-        updateSkipSegmentOverlay(false);
-      }
-      return;
-    }
-
     const mediainfo = await getMediaInfoInstance();
     if (token !== chapterParseToken) return;
 
@@ -2326,8 +2310,7 @@ async function parseChaptersFromUrl(url, token){
     }
 
     // Ограничиваем объём загружаемых данных, чтобы чтение глав не мешало воспроизведению видео
-    // Главы обычно находятся в начале файла, 1-2 МБ достаточно для большинства случаев
-    const MAX_CHAPTER_PROBE_BYTES = 2 * 1024 * 1024; // 2 МБ
+    const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
     let preloadedData = null; // Сразу загрузим один большой кусок
     let preloadedOffset = 0;
 
@@ -2369,12 +2352,6 @@ async function parseChaptersFromUrl(url, token){
     const result = await mediainfo.analyzeData(getSize, readChunk);
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
-
-    // Сохраняем в кеш
-    chaptersUrlCache.set(url, {
-      chapters: mediaChapters,
-      dismissed: Array.from(dismissedChapterSegments)
-    });
   } catch (err){
     // Нет CORS, нет Range, файл без глав и т.п. — штатно продолжаем без них.
     console.warn('Главы (chapters) по ссылке не прочитаны:', err && err.message ? err.message : err);
