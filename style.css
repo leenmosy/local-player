@@ -1560,31 +1560,3 @@ input[type=range]::-moz-range-thumb{
   opacity: 1;
   transform: translate(-50%, 0);
 }
-
-/* ---------- Отметки просмотренных серий в плейлисте (баг M-17) ---------- */
-.playlist-item{ position: relative; }
-.playlist-item-badge{
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 13px;
-  line-height: 1;
-  color: var(--accent, #F2C245);
-  opacity: .85;
-}
-.playlist-item.watched .playlist-item-name{ opacity: .55; }
-.playlist-item.watched .playlist-item-badge{ color: #7FB77E; }
-.playlist-item.in-progress .playlist-item-badge{ color: var(--accent, #F2C245); }
-
-/* ---------- Масштабирование субтитров и оверлея под размер сцены (баг M-7) ----------
-   Раньше размеры задавались в абсолютных px, и в полноэкранном режиме на большом
-   мониторе субтитры выглядели втрое мельче относительно кадра. Теперь базовый px
-   умножается на коэффициент, который скрипт пересчитывает по высоте сцены. */
-.subtitles span{
-  font-size: calc(var(--subs-size, 28px) * var(--stage-scale, 1)) !important;
-}
-.overlay .ov-title{
-  font-size: calc(var(--ov-size, 17px) * var(--stage-scale, 1));
-}
-.overlay .ov-time{
-  font-size: calc((var(--ov-size, 17px) - 1px) * var(--stage-scale, 1));
-}
