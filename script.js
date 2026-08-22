@@ -342,6 +342,7 @@ function collectSettings(){
     drBrightness: parseFloat(drBrightness.value),
     zoomLevel: zoomLevel,
     mirror: mirrorEnabled,
+    duration: isDurationUsable() ? video.duration : null,
     blurRanges: blurRanges,
     ovToggle: ovToggle.checked,
     ovSize: parseFloat(ovSize.value),
@@ -1134,6 +1135,26 @@ function subsKey(key){
   return SUBS_PREFIX + stripProgressPrefix(key);
 }
 
+const PROGRESS_DURATION_TOLERANCE = 2;
+// Ключ ссылки не учитывает query, поэтому разные видео одного пути могут совпасть —
+// сверяем длительность, прежде чем применять найденную запись
+function isForeignRecord(savedDuration){
+  if (!currentFileKey || !currentFileKey.startsWith(URL_KEY_PREFIX)) return false;
+  if (typeof savedDuration !== 'number' || !isFinite(savedDuration)) return false;
+  if (!isDurationUsable()) return false;
+  return Math.abs(savedDuration - video.duration) > PROGRESS_DURATION_TOLERANCE;
+}
+
+// Настройки применяются раньше метаданных, поэтому чужие откатываем уже после них
+function dropForeignSettings(){
+  if (!currentFileKey) return;
+  try{
+    const raw = localStorage.getItem(settingsKey(currentFileKey));
+    const saved = raw ? JSON.parse(raw) : null;
+    if (saved && isForeignRecord(saved.duration)) applyDefaultSettingsForNewSource();
+  } catch(e){ /* повреждённая запись — оставляем как есть */ }
+}
+
 // Периодически очищаем старые записи localStorage, чтобы не допустить переполнения
 const lastCleanupAt = Object.create(null);
 const CLEANUP_MIN_INTERVAL_MS = 60000;
@@ -1171,20 +1192,40 @@ function cleanupStorageNow(prefix){
   }
 }
 
-// Обработчик завершения предотвращает восстановление записи прогресса после удаления завершённого видео
-let justEndedKey = null;
+// Отметка «досмотрено» вместо удаления записи: по ней строятся значки в плейлисте
+// и выбор серии при повторном открытии папки
+function markProgressCompleted(){
+  if (!currentFileKey) return;
+  try{
+    const raw = localStorage.getItem(currentFileKey);
+    const data = (raw && JSON.parse(raw)) || {};
+    data.completed = true;
+    data.t = 0;
+    data.ts = Date.now();
+    if (isDurationUsable()) data.duration = video.duration;
+    data.name = data.name || originalFileName || currentFileName;
+    data.displayName = data.displayName || currentFileName;
+    data.source = currentFileKey.startsWith(URL_KEY_PREFIX) ? 'url' : (currentFileIsFolder ? 'folder' : 'file');
+    if (currentFileKey.startsWith(URL_KEY_PREFIX)) data.url = currentFileKey.slice(URL_KEY_PREFIX.length);
+    if (currentFileIsFolder && currentFolderName) data.folderName = currentFolderName;
+    if (currentFileIsFolder && currentFolderId) data.folderId = currentFolderId;
+    localStorage.setItem(currentFileKey, JSON.stringify(data));
+    cleanupStorage(PROGRESS_PREFIX);
+    markStorageOk();
+  } catch(e){ notifyStorageIssue(); }
+}
+
 function saveProgress(){
   if (!currentFileKey || !video.duration || !isFinite(video.duration)) return;
-  if (justEndedKey === currentFileKey) return;
-  // Досмотрено до конца — прогресс хранить незачем
   if (video.currentTime >= video.duration - 0.5){
-    try{ localStorage.removeItem(currentFileKey); } catch(e){}
+    markProgressCompleted();
     return;
   }
   try{
     // Сохраняем только данные прогресса просмотра.
     const progressData = {
       t: video.currentTime,
+      completed: false,
       duration: video.duration,
       ts: Date.now(),
       name: originalFileName || currentFileName, // Исходное имя файла.
@@ -1537,7 +1578,15 @@ function restoreProgress(){
     const raw = localStorage.getItem(currentFileKey);
     if (!raw) return;
     const data = JSON.parse(raw);
-    
+
+    if (data && isForeignRecord(data.duration)){
+      try{
+        localStorage.removeItem(currentFileKey);
+        localStorage.removeItem(settingsKey(currentFileKey));
+      } catch(e){}
+      return;
+    }
+
     // Адаптивные пороги для коротких видео
     const minThreshold = Math.min(3, video.duration * 0.1); // максимум 3 сек или 10% от длительности
     const maxThreshold = Math.min(5, video.duration * 0.2); // максимум 5 сек или 20% от длительности
@@ -1601,7 +1650,7 @@ function renderResumeList(){
     if (!key || !key.startsWith(PROGRESS_PREFIX)) continue;
     try{
       const data = JSON.parse(localStorage.getItem(key));
-      if (data && typeof data.t === 'number'){
+      if (data && typeof data.t === 'number' && !data.completed){
         items.push(Object.assign({ key }, data));
       }
     } catch(e){ /* пропускаем битую запись */ }
@@ -1951,6 +2000,7 @@ function applyDefaultSettingsForNewSource(){
 
 function loadFile(file, handle, meta){
   if (!file){ return; }
+  cancelPendingUrlLoad();
   
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)){
@@ -1966,7 +2016,6 @@ function loadFile(file, handle, meta){
   currentFileIsFolder = !!(meta && meta.isFolder);
   currentFolderName = (meta && meta.folderName) || null;
   currentFolderId = (meta && meta.folderId) || null;
-  justEndedKey = null;
   currentFileKey = fileKey(file, currentFileIsFolder, currentFolderId);
   // Записи, сохранённые до появления folderId в ключе, переносим на новый ключ
   if (currentFileIsFolder) migrateLegacyFolderKey(file, currentFileKey);
@@ -2025,6 +2074,8 @@ function loadFile(file, handle, meta){
     ovTime.textContent = txt;
     timeDisplay.textContent = txt;
 
+    dropForeignSettings();
+
     // Не применяем fixInfiniteDuration для HLS потоков - hls.js сам управляет live-потоками
     if (!hls) {
       fixInfiniteDuration(() => {
@@ -2047,13 +2098,12 @@ function loadFile(file, handle, meta){
   dropView.style.display = 'none';
   playerView.classList.add('active');
 
-  // Очищаем старый аудио-граф перед созданием нового
+  // Локальный файл читается через blob-URL, ограничений CORS у него нет
+  audioSourceTainted = false;
+  setAudioFeaturesAvailable(true);
   destroyAudioGraph();
-  // Для локальных файлов создаём аудио-граф сразу, а для URL — при их загрузке
-  if (!currentFileKey || !currentFileKey.startsWith(URL_KEY_PREFIX)) {
-    ensureAudioGraph();
-    audioHint.classList.add('hidden'); // Скрываем подсказку для локальных файлов
-  }
+  audioHint.classList.add('hidden');
+  if (drToggle.checked || parseFloat(drBoost.value) > 100) ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
   // Запускаем воспроизведение
@@ -2642,20 +2692,28 @@ function findMatchingFolderId(files, folderName){
   return best;
 }
 
-// Индекс серии с самой свежей записью прогресса; 0, если папку ещё не смотрели
+// Начатая серия важнее нетронутой, нетронутая важнее досмотренной;
+// если пройдена вся папка — открываем её с начала
 function findLastWatchedIndex(files, folderId){
-  let bestIdx = 0, bestTs = -1;
+  let startedIdx = -1, startedTs = -1, firstUntouched = -1;
   files.forEach((entry, idx) => {
+    let data = null;
     try{
       const raw = localStorage.getItem(fileKey(entry.file, true, folderId))
                || localStorage.getItem(legacyFolderKey(entry.file));
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      const ts = data && typeof data.ts === 'number' ? data.ts : 0;
-      if (ts > bestTs){ bestTs = ts; bestIdx = idx; }
-    } catch(e){}
+      data = raw ? JSON.parse(raw) : null;
+    } catch(e){ data = null; }
+    if (!data || data.completed){
+      if (!data && firstUntouched === -1) firstUntouched = idx;
+      return;
+    }
+    if (firstUntouched === -1 && !(typeof data.t === 'number' && data.t > 0)) firstUntouched = idx;
+    const ts = typeof data.ts === 'number' ? data.ts : 0;
+    if (typeof data.t === 'number' && data.t > 0 && ts > startedTs){ startedTs = ts; startedIdx = idx; }
   });
-  return bestIdx;
+  if (startedIdx > -1) return startedIdx;
+  if (firstUntouched > -1) return firstUntouched;
+  return 0;
 }
 
 // Состояние серии для отметок в плейлисте: 'watched' | 'in-progress' | null
@@ -2665,8 +2723,9 @@ function playlistEntryState(entry, folderId){
              || localStorage.getItem(legacyFolderKey(entry.file));
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || typeof data.t !== 'number') return null;
-    if (data.duration && data.t >= data.duration * 0.9) return 'watched';
+    if (!data) return null;
+    if (data.completed) return 'watched';
+    if (typeof data.t !== 'number' || data.t <= 0) return null;
     return 'in-progress';
   } catch(e){ return null; }
 }
@@ -2950,6 +3009,8 @@ let compressorNode = null;
 let boostGain = null;
 let drEnabled = true;
 let isSwitching = false;
+// Источник cross-origin без CORS: MediaElementAudioSourceNode отдаёт по нему тишину
+let audioSourceTainted = false;
 
 function updateCompressor(){
   if (!compressorNode) return;
@@ -2977,6 +3038,7 @@ function connectGraph(){
 }
 
 function ensureAudioGraph(){
+  if (audioSourceTainted) return;
   if (audioCtx) {
     // AudioContext уже существует, просто переподключаем граф
     try {
@@ -3009,6 +3071,14 @@ function ensureAudioGraph(){
   }
 }
 
+// Аудио-граф поднимается только после успешной загрузки: до неё неизвестно,
+// отдаёт ли сервер CORS, а на источнике без него граф даёт тишину
+function initAudioGraphForCurrentSource(){
+  if (audioSourceTainted) return;
+  if (!drToggle.checked && parseFloat(drBoost.value) <= 100) return;
+  reapplyCompressorState();
+}
+
 // Гарантированно применяет фактическое (не только визуальное) состояние компрессора
 function reapplyCompressorState(){
   ensureAudioGraph();
@@ -3027,14 +3097,25 @@ function reapplyCompressorState(){
   connectGraph();
 }
 
-// После создания MediaElementAudioSourceNode звук всегда проходит через аудиограф
-// При отключении графа возвращаем источник напрямую в destination
+// Убирает компрессор и усиление из цепочки, оставляя прямой путь до динамиков.
+// Закрывать audioCtx нельзя — воспроизведение останавливается на 00:00
 function bypassAudioGraph(){
   if (!audioCtx || !sourceNode) return;
   try { sourceNode.disconnect(); } catch(e) {}
   try { if (compressorNode) compressorNode.disconnect(); } catch(e) {}
   try { if (boostGain) boostGain.disconnect(); } catch(e) {}
   try { sourceNode.connect(audioCtx.destination); } catch(e) {}
+}
+
+// Компрессор и усиление требуют CORS — на остальных ссылках их нечем применить
+function setAudioFeaturesAvailable(available){
+  drToggle.disabled = !available;
+  drStrength.disabled = !available;
+  drBoost.disabled = !available;
+  if (!available){
+    drEnabled = false;
+    drToggle.checked = false;
+  }
 }
 
 function destroyAudioGraph(){
@@ -3146,9 +3227,10 @@ subsLoadBtn.addEventListener('click', () => {
 subsFile.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  
+
+  const previousName = subsFileName.title || subsFileName.textContent;
   setSubsFileNameDisplay(file.name);
-  
+
   const reader = new FileReader();
   reader.onload = (event) => {
     let content = event.target.result;
@@ -3163,25 +3245,24 @@ subsFile.addEventListener('change', (e) => {
       reader1251.onload = (event1251) => {
         content = event1251.target.result;
         showStorageToast('Субтитры прочитаны в кодировке Windows-1251');
-        processSubtitlesContent(content, file);
+        processSubtitlesContent(content, file, previousName);
       };
       reader1251.onerror = () => {
         // Если не удалось прочитать как Windows-1251, используем UTF-8
         showStorageToast('Возможно, неправильная кодировка субтитров');
-        processSubtitlesContent(content, file);
+        processSubtitlesContent(content, file, previousName);
       };
       reader1251.readAsText(file, 'windows-1251');
     } else {
-      processSubtitlesContent(content, file);
+      processSubtitlesContent(content, file, previousName);
     }
   };
   reader.readAsText(file);
 });
 
-function processSubtitlesContent(content, file){
+function processSubtitlesContent(content, file, previousName){
   // Сохраняем текущие применённые субтитры, чтобы использовать их при неудачной загрузке новых
   const previousData = subtitlesData;
-  const previousName = subsFileName.textContent;
 
   parseSubtitles(content, detectSubtitleFormat(content, file.name));
 
@@ -3189,10 +3270,9 @@ function processSubtitlesContent(content, file){
     // Разобрать не удалось — предупреждение уже показано в parseSubtitles.
     // Возвращаем прежние субтитры и НЕ трогаем сохранённую запись.
     subtitlesData = previousData;
-    if (previousData.length){
-      setSubsFileNameDisplay(previousName);
-      updateSubtitles();
-    }
+    setSubsFileNameDisplay(previousData.length ? (previousName || 'Файл не выбран') : 'Файл не выбран');
+    if (previousData.length) updateSubtitles();
+    subsRemoveBtn.style.display = previousData.length ? 'flex' : 'none';
     return;
   }
 
@@ -3344,39 +3424,6 @@ function parseSubtitles(content, format) {
   if (subtitlesData.length === 0 && content.trim().length > 0) {
     showStorageToast('Не удалось распознать ни одной реплики субтитров. Проверьте формат файла');
   }
-}
-
-function parseSRTTime(timeStr) {
-  const parts = timeStr.split(':');
-  const hours = parseInt(parts[0]);
-  const minutes = parseInt(parts[1]);
-  const secondsParts = parts[2].split(',');
-  const seconds = parseInt(secondsParts[0]);
-  const milliseconds = parseInt(secondsParts[1]);
-  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
-}
-
-function parseVTTTime(timeStr) {
-  const parts = timeStr.split(':');
-  let hours, minutes, secondsParts, seconds, milliseconds;
-  
-  if (parts.length === 2) {
-    // Формат мм:сс.ммм (без часов)
-    hours = 0;
-    minutes = parseInt(parts[0]);
-    secondsParts = parts[1].split('.');
-    seconds = parseInt(secondsParts[0]);
-    milliseconds = parseInt(secondsParts[1]);
-  } else {
-    // Формат чч:мм:сс.ммм
-    hours = parseInt(parts[0]);
-    minutes = parseInt(parts[1]);
-    secondsParts = parts[2].split('.');
-    seconds = parseInt(secondsParts[0]);
-    milliseconds = parseInt(secondsParts[1]);
-  }
-  
-  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
 }
 
 // --- Настройки субтитров ---
@@ -3711,11 +3758,7 @@ video.addEventListener('ratechange', () => {
   }
 });
 video.addEventListener('ended', () => {
-  if (currentFileKey){
-    // Помечаем ключ как «досмотрено», чтобы последующие pause/back/next не воскресили запись
-    justEndedKey = currentFileKey;
-    try{ localStorage.removeItem(currentFileKey); } catch(e){}
-  }
+  markProgressCompleted();
   hideNextEpisodeOverlay();
   hideSkipSegmentOverlay();
   // Автопереход к следующему видео в плейлисте папки
@@ -4135,6 +4178,7 @@ const ERROR_SOLUTIONS = {
 };
 
 video.addEventListener('error', () => {
+  if (!playerView.classList.contains('active')) return;
   const err = video.error;
   const code = err ? err.code : null;
   const msg = ERROR_MESSAGES[code] || 'Не удалось воспроизвести файл по неизвестной причине.';
@@ -4184,13 +4228,15 @@ video.addEventListener('emptied', hideBufferingIndicator);
 backBtn.addEventListener('click', () => {
   if (isSwitching) return;
   isSwitching = true;
+  cancelPendingUrlLoad();
   
   // Выходим из полноэкранного режима перед скрытием плеера
   if (document.fullscreenElement) exitFs();
   
   stopProgressTracking();
   hideBufferingIndicator();
-  
+  videoErrorEl.style.display = 'none';
+
   // Очищаем аудио-граф при выходе из плеера
   destroyAudioGraph();
   
@@ -4222,7 +4268,24 @@ backBtn.addEventListener('click', () => {
 // --- Загрузка видео по URL (m3u8 и обычные ссылки) ---
 let hls = null;
 let urlErrorHandler = null;
+let urlLoadedHandler = null;
 let urlLoadToken = 0;
+
+// Снимает слушатели и сторожевые таймеры незавершённой загрузки по ссылке,
+// чтобы её результат не догнал уже другой открытый источник
+function cancelPendingUrlLoad(){
+  urlLoadToken++;
+  if (urlErrorHandler){
+    video.removeEventListener('error', urlErrorHandler);
+    urlErrorHandler = null;
+  }
+  if (urlLoadedHandler){
+    video.removeEventListener('loadedmetadata', urlLoadedHandler);
+    urlLoadedHandler = null;
+  }
+  urlLoadingSpinner.style.display = 'none';
+  urlLoadBtn.disabled = false;
+}
 
 function armDirectLoadWatchdog(thisLoadToken){
   return setTimeout(() => {
@@ -4254,12 +4317,8 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
   if (thisLoadToken !== urlLoadToken) return false; // запущена уже другая попытка загрузки
 
   video.removeAttribute('crossOrigin');
-  // Не рвём граф, а переводим его в обход: иначе видео зависнет на 00:00
+  audioSourceTainted = true;
   bypassAudioGraph();
-  drEnabled = false;
-  drToggle.checked = false;
-  showStorageToast('Компрессор и усиление недоступны для этой ссылки — сервер не поддерживает CORS. Само видео и звук работают как обычно');
-
 
   video.src = url;
   video.load();
@@ -4277,18 +4336,27 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
     showUrlError('Не удалось загрузить видео (сервер не отвечает после повторной попытки без CORS)', { duration: 20000 });
   }, 12000);
 
-  video.addEventListener('loadedmetadata', function(){
+  video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
     if (settled) return;
     settled = true;
     clearTimeout(hangTimeout);
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
+    setAudioFeaturesAvailable(false);
+    // Существующий MediaElementAudioSourceNode отдаёт по такому источнику тишину,
+    // и снять его без перезагрузки страницы браузер не позволяет
+    showStorageToast(audioCtx
+      ? 'Сервер ссылки не поддерживает CORS. Звук будет доступен, если открыть эту ссылку сразу после перезагрузки страницы'
+      : 'Компрессор и усиление недоступны для этой ссылки — сервер не поддерживает CORS. Видео и звук работают как обычно');
     onRecovered();
   }, { once: true });
   video.addEventListener('error', urlErrorHandler = function(){
     if (settled) return;
     settled = true;
     clearTimeout(hangTimeout);
+    // Причина была не в CORS — возвращаем аудио-настройки в рабочее состояние
+    audioSourceTainted = false;
+    setAudioFeaturesAvailable(true);
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
     const fallback = 'Не удалось загрузить видео';
@@ -4329,11 +4397,7 @@ async function fetchManifestHead(url, useRange){
 }
 
 async function loadUrl(url){
-  if (urlErrorHandler){
-    video.removeEventListener('error', urlErrorHandler);
-    urlErrorHandler = null;
-  }
-  urlLoadToken++;
+  cancelPendingUrlLoad();
   const thisLoadToken = urlLoadToken;
 
 
@@ -4401,7 +4465,6 @@ async function loadUrl(url){
     hls = null;
   }
 
-  justEndedKey = null;
   migrateLegacyUrlKey(url);
   currentFileKey = urlKey(url);
   originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя из URL
@@ -4435,9 +4498,10 @@ async function loadUrl(url){
       // Попробуем native HLS
       video.src = url;
       videoInitialized = true;
-      video.addEventListener('loadedmetadata', function(){
+      video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
+        initAudioGraphForCurrentSource();
         restoreProgress();
       }, { once: true });
       video.addEventListener('error', urlErrorHandler = function(){
@@ -4480,7 +4544,7 @@ async function loadUrl(url){
           if (hls !== hlsInstance) return;
           urlLoadingSpinner.style.display = 'none';
           urlLoadBtn.disabled = false;
-          showUrlError('Не удалось загрузить видео. Возможно, поток недоступен', { duration: 20000 });
+          showPlaybackError('Не удалось загрузить видео. Возможно, поток недоступен');
           hlsInstance.destroy();
           hls = null;
         }, ms);
@@ -4491,8 +4555,9 @@ async function loadUrl(url){
         clearTimeout(loadTimeout);
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
+        initAudioGraphForCurrentSource();
         showPlayer();
-        
+
         // Показываем подсказку о стабилизации звука для HLS
         showAudioHint();
         video.play().catch(e => {
@@ -4536,7 +4601,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showUrlError('Сайт-источник запрещает встраивание в другие страницы/плееры. Доступ заблокирован на стороне сервера', { duration: 20000 });
+                showPlaybackError('Сайт-источник запрещает встраивание в другие страницы/плееры. Доступ заблокирован на стороне сервера');
                 return;
               }
 
@@ -4547,7 +4612,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showUrlError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера', { duration: 20000 });
+                showPlaybackError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера');
                 return;
               }
 
@@ -4558,7 +4623,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showUrlError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера', { duration: 20000 });
+                showPlaybackError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера');
                 return;
               }
 
@@ -4582,7 +4647,7 @@ async function loadUrl(url){
                     urlLoadBtn.disabled = false;
                     hlsInstance.destroy();
                     hls = null;
-                    showUrlError(errorMessage, { duration: 20000 });
+                    showPlaybackError(errorMessage);
                   }
                 }, delay);
               } else {
@@ -4592,7 +4657,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showUrlError(errorMessage, { duration: 20000 });
+                showPlaybackError(errorMessage);
               }
             }
             break;
@@ -4607,7 +4672,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showUrlError('Не удалось восстановить воспроизведение', { duration: 20000 });
+                showPlaybackError('Не удалось восстановить воспроизведение');
               }
             }, 1000);
             break;
@@ -4623,7 +4688,7 @@ async function loadUrl(url){
               } else if (data.details === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR) {
                 errorMessage = ' Видео использует неподдерживаемые кодеки.';
               }
-              showUrlError(errorMessage, { duration: 20000 });
+              showPlaybackError(errorMessage);
               hlsInstance.destroy();
               hls = null;
             }
@@ -4643,10 +4708,11 @@ async function loadUrl(url){
     // Native HLS (Safari)
     video.src = url;
     const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
-    video.addEventListener('loadedmetadata', function(){
+    video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
       clearTimeout(directLoadTimeout);
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
+      initAudioGraphForCurrentSource();
       showPlayer();
       video.play().catch(e => {
         if (e.name === 'NotAllowedError') {
@@ -4687,10 +4753,11 @@ async function loadUrl(url){
     // Пробуем загрузить как прямую ссылку на видео
     video.src = url;
     const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
-    video.addEventListener('loadedmetadata', function(){
+    video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
       clearTimeout(directLoadTimeout);
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
+      initAudioGraphForCurrentSource();
       showPlayer();
       video.play().catch(e => {
         if (e.name === 'NotAllowedError') {
@@ -4730,10 +4797,11 @@ async function loadUrl(url){
     // Прямая ссылка на видео или m3u8 без поддержки HLS
     video.src = url;
     const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
-    video.addEventListener('loadedmetadata', function(){
+    video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
       clearTimeout(directLoadTimeout);
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
+      initAudioGraphForCurrentSource();
       showPlayer();
       video.play().catch(e => {
         if (e.name === 'NotAllowedError') {
@@ -4803,6 +4871,8 @@ function loadUrlCommonInit(){
     ovTime.textContent = txt;
     timeDisplay.textContent = txt;
 
+    dropForeignSettings();
+
     // Не применяем fixInfiniteDuration для HLS потоков - hls.js сам управляет live-потоками
     if (!hls) {
       fixInfiniteDuration(() => {
@@ -4821,10 +4891,17 @@ function loadUrlCommonInit(){
   };
   video.addEventListener('durationchange', durationChangeHandler, { once: true });
 
-  // Очищаем старый аудио-граф перед созданием нового
   destroyAudioGraph();
-  // Реально применяем состояние компрессора для этой ссылки, а не только чекбокс
-  reapplyCompressorState();
+}
+
+// Сообщение об ошибке потока: #err-msg лежит на стартовом экране и в плеере не виден
+function showPlaybackError(message){
+  if (playerView.classList.contains('active')){
+    videoErrorEl.innerHTML = '<div class="ve-title">Не удалось воспроизвести поток</div>'
+      + '<div class="ve-detail">' + escapeHtml(message) + '</div>';
+    videoErrorEl.style.display = 'flex';
+  }
+  showUrlError(message, { duration: 20000 });
 }
 
 let urlInputErrorTimeout = null;

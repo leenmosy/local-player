@@ -6,7 +6,7 @@
 <title>Локальный плеер</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23FFDA37'/%3E%3Cpolygon points='20,16 48,32 20,48' fill='%230B0D10'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="vendor/hlsjs/hls.min.js"></script>
 <script src="vendor/mediainfo/mediainfo.min.js"></script>
 </head>
 <body>
@@ -176,7 +176,7 @@
           <div class="dr-row">
             <label for="dr-strength">Интенсивность</label>
             <input type="range" id="dr-strength" min="0" max="100" step="5" value="70">
-            <span class="dr-val" id="dr-strength-val">60%</span>
+            <span class="dr-val" id="dr-strength-val">70%</span>
           </div>
           <div class="dr-row">
             <label for="dr-boost">Громкость</label>
