@@ -2200,12 +2200,13 @@ async function parseChaptersFromUrl(url, token){
     if (token !== chapterParseToken) return;
 
     let size = null;
-    let rangeSupported = true;
+    let headOk = false;
 
     // Пробуем HEAD-запрос для получения размера файла
     try {
       const head = await fetch(url, { method: 'HEAD' });
       if (head.ok) {
+        headOk = true;
         size = Number(head.headers.get('Content-Length'));
         if (head.headers.get('Accept-Ranges') !== 'bytes') {
           // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
@@ -2218,6 +2219,7 @@ async function parseChaptersFromUrl(url, token){
     }
 
     // Если HEAD не сработал или не вернул размер, определяем размер через частичное чтение
+    let rangeSupported = true;
     if (!size) {
       try {
         // Пробуем прочитать небольшой кусок для определения размера через Content-Length в ответе
@@ -2258,32 +2260,11 @@ async function parseChaptersFromUrl(url, token){
     }
 
     // Ограничиваем объём загружаемых данных, чтобы чтение глав не мешало воспроизведению видео
-    const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ - возвращаем оригинальный лимит
+    const MAX_CHAPTER_PROBE_BYTES = 8 * 1024 * 1024; // 8 МБ
     let bytesRead = 0;
-    let initialChunk = null;
 
     const getSize = () => size;
     const readChunk = async (chunkSize, offset) => {
-      // Если запрашиваются первые байты и мы их ещё не загрузили, кешируем их
-      if (offset === 0 && !initialChunk) {
-        const end = Math.min(offset + chunkSize, size) - 1;
-        const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
-
-        if (res.status !== 206) {
-          if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
-          throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
-        }
-
-        initialChunk = await res.arrayBuffer();
-        bytesRead += initialChunk.byteLength;
-        return new Uint8Array(initialChunk);
-      }
-      
-      // Если запрашиваются первые байты и они уже закешированы, возвращаем из кеша
-      if (offset === 0 && initialChunk) {
-        return new Uint8Array(initialChunk);
-      }
-      
       const end = Math.min(offset + chunkSize, size) - 1;
       const res = await fetch(url, { headers: { Range: `bytes=${offset}-${end}` } });
 
