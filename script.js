@@ -690,6 +690,7 @@ function parseTimeToSeconds(str){
 }
 
 function renderBlurRanges(){
+  if (isEditing) stopEditingSession();
   timingList.innerHTML = '';
   blurRanges.forEach((range, idx) => {
     const item = document.createElement('div');
@@ -2123,6 +2124,11 @@ function isVideoFile(file){
   return isVideoByType || isVideoByExtension;
 }
 
+// Отличает папку от файла по отсутствию MIME-типа и расширения в имени
+function looksLikeFolderDrop(file){
+  return !file.type && !/\.[a-z0-9]{2,5}$/i.test(file.name);
+}
+
 // --- Плейлист (загрузка папки) ---
 let playlistFiles = [];
 let playlistIndex = -1;
@@ -2480,10 +2486,10 @@ function hideSkipSegmentOverlay(){
   skipSegmentOverlay.classList.remove('show');
   activeSkipSegment = null;
 }
-// Формируем стабильный ID папки по именам файлов, чтобы повторное открытие использовало тот же манифест
-function computeFolderId(items){
-  const sig = items
-    .map(it => it.file.name)
+// Строит ID папки из её имени и сигнатуры файлов (имя+размер+дата)
+function computeFolderId(items, folderName){
+  const sig = (folderName || '') + '::' + items
+    .map(it => it.file.name + ':' + it.file.size + ':' + (it.file.lastModified || 0))
     .join('|');
   let hash = 0;
   for (let i = 0; i < sig.length; i++){
@@ -2666,7 +2672,7 @@ function openFolderPlaylist(items, folderName){
   playlistFiles = videos;
   playlistFolderName = folderName || null;
   // Сохраняем ID папки при добавлении новых серий, чтобы не терять существующий прогресс
-  playlistFolderId = findMatchingFolderId(playlistFiles, playlistFolderName) || computeFolderId(playlistFiles);
+  playlistFolderId = findMatchingFolderId(playlistFiles, playlistFolderName) || computeFolderId(playlistFiles, playlistFolderName);
   // При повторном открытии папки открываем серию, на которой пользователь остановился
   playlistIndex = findLastWatchedIndex(playlistFiles, playlistFolderId);
   playlistBtn.style.display = playlistFiles.length > 1 ? '' : 'none';
@@ -2683,9 +2689,10 @@ function openFolderPlaylist(items, folderName){
   loadFile(first.file, first.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
 }
 
-// Ищет сохранённый манифест той же папки по имени или совпадению не менее 60% файлов
+// Ищет сохранённый манифест той же папки по имени папки и сигнатуре файлов (имя+размер+дата)
 function findMatchingFolderId(files, folderName){
-  const names = new Set(files.map(f => f.file.name));
+  const sigOf = f => f.name + ':' + f.size + ':' + (f.lastModified || 0);
+  const sigs = new Set(files.map(f => sigOf(f.file)));
   let best = null, bestScore = 0;
   for (let i = 0; i < localStorage.length; i++){
     const key = localStorage.key(i);
@@ -2693,11 +2700,12 @@ function findMatchingFolderId(files, folderName){
     try{
       const m = JSON.parse(localStorage.getItem(key));
       if (!m || !Array.isArray(m.files) || !m.files.length) continue;
-      const saved = m.files.map(f => f.name);
-      const common = saved.filter(n => names.has(n)).length;
-      const score = common / Math.max(saved.length, names.size);
-      const sameFolderName = folderName && m.folderName && m.folderName === folderName;
-      if ((score >= 0.6 || (sameFolderName && score > 0)) && score > bestScore){
+      // Имя папки должно совпадать точно
+      if ((folderName || null) !== (m.folderName || null)) continue;
+      const saved = m.files.map(sigOf);
+      const common = saved.filter(s => sigs.has(s)).length;
+      const score = common / Math.max(saved.length, sigs.size);
+      if (score >= 0.6 && score > bestScore){
         bestScore = score;
         best = key.slice(PLAYLIST_MANIFEST_PREFIX.length);
       }
@@ -2781,8 +2789,7 @@ dropzone.addEventListener('drop', async e => {
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)) {
     // Для перетащенной папки показываем подсказку с использованием отдельной зоны загрузки
-    const looksLikeFolder = !file.type && !/\.[a-z0-9]{2,5}$/i.test(file.name);
-    showErrMsg(looksLikeFolder
+    showErrMsg(looksLikeFolderDrop(file)
       ? 'Похоже, это папка. Перетащите её в зону «Выберите папку» справа'
       : 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
     return;
@@ -2830,6 +2837,16 @@ dropzoneFolder.addEventListener('drop', async e => {
   dropzoneFolder.classList.remove('dragover');
 
   const items = e.dataTransfer.items;
+
+  // Одиночный файл в зоне папки — направляем в зону файла
+  if (items && items.length === 1 && typeof items[0].webkitGetAsEntry === 'function'){
+    const entry = items[0].webkitGetAsEntry();
+    if (entry && entry.isFile){
+      showErrMsg('Похоже, это файл. Перетащите его в зону «Выберите файл» слева');
+      return;
+    }
+  }
+
   let files = [];
   let folderName = null;
   if (items && items.length && (typeof items[0].getAsFileSystemHandle === 'function' || typeof items[0].webkitGetAsEntry === 'function')){
@@ -2921,10 +2938,12 @@ document.body.addEventListener('drop', async e => {
   
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)) {
-    showErrMsg('Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
+    showErrMsg(looksLikeFolderDrop(file)
+      ? 'Похоже, это папка. Перетащите её в зону «Выберите папку» справа'
+      : 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
     return;
   }
-  
+
   const dtItem = e.dataTransfer.items && e.dataTransfer.items[0];
   let handle = null;
   if (dtItem && typeof dtItem.getAsFileSystemHandle === 'function'){
@@ -4737,18 +4756,9 @@ async function loadUrl(url){
       });
     }, { once: true });
 
+    // Для m3u8 crossOrigin не выставляется, поэтому ретрай без него здесь не нужен
     video.addEventListener('error', urlErrorHandler = function(){
       clearTimeout(directLoadTimeout);
-      if (retryWithoutCrossOriginOnError(url, thisLoadToken, () => {
-        showPlayer();
-        video.play().catch(e => {
-          if (e.name === 'NotAllowedError') {
-            console.log('Autoplay prevented - user interaction required');
-          } else {
-            console.warn('Play error:', e);
-          }
-        });
-      })) return;
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       const fallback = 'Не удалось загрузить видео';
@@ -4758,7 +4768,7 @@ async function loadUrl(url){
         if (msg !== fallback) showUrlError(msg, { duration: 20000 });
       });
     }, { once: true });
-    
+
     // Общая инициализация для этой ветки
     loadUrlCommonInit();
     return;
@@ -5106,7 +5116,7 @@ urlLoadBtn.addEventListener('click', () => {
   loadUrl(urlInput.value);
 });
 
-urlInput.addEventListener('keypress', (e) => {
+urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter'){
     loadUrl(urlInput.value);
   }
