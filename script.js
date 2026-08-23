@@ -134,6 +134,8 @@ const ovSizeVal = document.getElementById('ov-size-val');
 const ovColor = document.getElementById('ov-color');
 const ovOpacity = document.getElementById('ov-opacity');
 const ovOpacityVal = document.getElementById('ov-opacity-val');
+const ovBgOpacity = document.getElementById('ov-bg-opacity');
+const ovBgOpacityVal = document.getElementById('ov-bg-opacity-val');
 const posPad = document.getElementById('pos-pad');
 const posHandle = document.getElementById('pos-handle');
 const alignButtons = document.querySelectorAll('.align-btn');
@@ -145,6 +147,7 @@ const OV_POS_MAX = 98.5;
 const OV_DEFAULT_SIZE = 17;
 const OV_DEFAULT_COLOR = '#ffffff';
 const OV_DEFAULT_OPACITY = 50;
+const OV_DEFAULT_BG_OPACITY = 0;
 const OV_DEFAULT_POS_X = OV_POS_MAX;
 const OV_DEFAULT_POS_Y = OV_POS_MAX;
 const OV_DEFAULT_ALIGN = 'right';
@@ -160,6 +163,7 @@ ovToggle.addEventListener('change', () => { applyOverlaySettings(); saveSettings
 ovSize.addEventListener('input', () => { ovSizeVal.textContent = ovSize.value + 'px'; applyOverlaySettings(); saveSettings(); });
 ovColor.addEventListener('input', () => { applyOverlaySettings(); saveSettings(); });
 ovOpacity.addEventListener('input', () => { ovOpacityVal.textContent = ovOpacity.value + '%'; applyOverlaySettings(); saveSettings(); });
+ovBgOpacity.addEventListener('input', () => { ovBgOpacityVal.textContent = ovBgOpacity.value + '%'; applyOverlaySettings(); saveSettings(); });
 titleInput.addEventListener('input', () => {
   ovTitle.textContent = titleInput.value;
   saveSettings();
@@ -196,6 +200,14 @@ function setOverlayPosition(x, y){
   posHandle.style.left = ovPosX + '%';
   posHandle.style.top = ovPosY + '%';
   syncPresetActiveState();
+}
+
+// Выравнивание текста по трети ширины пада, так же, как у угловых пресетов
+function alignFromX(x){
+  const third = (OV_POS_MAX - OV_POS_MIN) / 3;
+  if (x < OV_POS_MIN + third) return 'left';
+  if (x > OV_POS_MAX - third) return 'right';
+  return 'center';
 }
 
 // --- пресеты быстрого позиционирования ---
@@ -243,6 +255,7 @@ function applyDragPosition(){
   if (!lastPointerEvent) return;
   const p = posFromPointer(lastPointerEvent);
   setOverlayPosition(p.x, p.y);
+  setOverlayAlign(alignFromX(ovPosX));
   applyOverlaySettings();
 }
 
@@ -252,6 +265,7 @@ posPad.addEventListener('pointerdown', (e) => {
   posPad.setPointerCapture(e.pointerId);
   const p = posFromPointer(e);
   setOverlayPosition(p.x, p.y);
+  setOverlayAlign(alignFromX(ovPosX));
   applyOverlaySettings();
 });
 posPad.addEventListener('pointermove', (e) => {
@@ -280,7 +294,9 @@ posPad.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowDown') dy = step;
   else return;
   e.preventDefault();
+  e.stopPropagation();
   setOverlayPosition(ovPosX + dx, ovPosY + dy);
+  setOverlayAlign(alignFromX(ovPosX));
   applyOverlaySettings();
   saveSettings();
 });
@@ -310,6 +326,7 @@ function applyOverlaySettings(){
   overlayEl.style.top = ovPosY + '%';
   overlayEl.style.transform = `translate(${-ovPosX}%, ${-ovPosY}%)`;
   overlayEl.style.alignItems = ovAlign === 'left' ? 'flex-start' : (ovAlign === 'right' ? 'flex-end' : 'center');
+  overlayEl.style.background = hexToRgba('#000000', ovBgOpacity.value / 100);
 
   overlayEl.style.display = ovToggle.checked ? 'flex' : 'none';
 }
@@ -361,6 +378,7 @@ function collectSettings(){
     ovSize: parseFloat(ovSize.value),
     ovColor: ovColor.value,
     ovOpacity: parseFloat(ovOpacity.value),
+    ovBgOpacity: parseFloat(ovBgOpacity.value),
     ovPosX: ovPosX,
     ovPosY: ovPosY,
     ovAlign: ovAlign,
@@ -464,7 +482,7 @@ const timingAddBtn = document.getElementById('timing-add-btn');
 const timingErr = document.getElementById('timing-err');
 const timingList = document.getElementById('timing-list');
 
-// Время вводится по отдельным полям: после 2 цифр фокус переходит дальше, Backspace — к предыдущему
+// Время вводится по отдельным полям: после 2 цифр фокус переходит дальше, Backspace, к предыдущему
 function wireSegmentedInput(hh, mm, ss, onEnter = null){
   const segments = [hh, mm, ss];
   segments.forEach((seg, i) => {
@@ -491,7 +509,7 @@ function wireSegmentedInput(hh, mm, ss, onEnter = null){
         segments[i + 1].select();
       } else if (e.key === ':'){
         e.preventDefault();
-        // Если есть следующее поле — переходим к нему
+        // Если есть следующее поле, переходим к нему
         if (i < segments.length - 1){
           segments[i + 1].focus();
           segments[i + 1].select();
@@ -560,7 +578,7 @@ wireSegmentedInput(timingToHH, timingToMM, timingToSS);
 
 // Связываем две группы таймингов для переходов между ними
 function wireTimingGroups(fromHH, fromMM, fromSS, toHH, toMM, toSS){
-  // При заполнении последнего сегмента (секунды) в начале — переходим к концу
+  // При заполнении последнего сегмента (секунды) в начале, переходим к концу
   fromSS.addEventListener('input', () => {
     if (fromSS.value.length === 2){
       toHH.focus();
@@ -615,7 +633,7 @@ function wireTimingGroups(fromHH, fromMM, fromSS, toHH, toMM, toSS){
 wireTimingGroups(timingFromHH, timingFromMM, timingFromSS, timingToHH, timingToMM, timingToSS);
 
 // Собирает секунды из трёх полей чч/мм/сс; пустая часть считается нулём
-// Если все три части пустые — считаем, что пользователь вообще ничего не ввёл
+// Если все три части пустые, считаем, что пользователь вообще ничего не ввёл
 function getSegmentedSeconds(hh, mm, ss){
   if (hh.value === '' && mm.value === '' && ss.value === '') return null;
   const h = hh.value === '' ? '0' : hh.value;
@@ -640,7 +658,7 @@ function clearSegmented(hh, mm, ss){
 }
 
 // Создаёт группу из трёх полей чч:мм:сс с теми же классами/стилями, что и статичная
-// разметка в HTML — используется при редактировании уже добавленных таймингов
+// разметка в HTML, используется при редактировании уже добавленных таймингов
 function createSegmentedGroup(onEnter = null){
   const container = document.createElement('div');
   container.className = 'dr-text-input timing-time-input timing-segmented';
@@ -750,7 +768,7 @@ function renderBlurRanges(){
 
 let activeOutsideClickHandler = null;
 
-// Единая точка завершения сессии редактирования — снимает обработчик клика вне поля
+// Единая точка завершения сессии редактирования, снимает обработчик клика вне поля
 // и сбрасывает флаги, чтобы состояние редактирования не «зависало» между рендерами
 function stopEditingSession(){
   if (activeOutsideClickHandler){
@@ -767,7 +785,7 @@ function startEditingRange(idx, item, rangeText) {
     return;
   }
 
-  // Если уже редактируем другой диапазон — закрываем его и переключаемся на новый
+  // Если уже редактируем другой диапазон, закрываем его и переключаемся на новый
   if (currentEditingItem !== null) {
     stopEditingSession();
     renderBlurRanges();
@@ -876,7 +894,7 @@ function startEditingRange(idx, item, rangeText) {
   cancelBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
   
   // Переиспользуем уже существующую кнопку удаления элемента (со своим обработчиком).
-  // Во время редактирования её не показываем — просто прячем на месте.
+  // Во время редактирования её не показываем, просто прячем на месте.
   const deleteBtn = item.querySelector('.timing-remove-btn');
   if (deleteBtn) deleteBtn.style.display = 'none';
   
@@ -929,7 +947,7 @@ function startEditingRange(idx, item, rangeText) {
   
   // Закрытие редактирования при клике вне области
   const closeOnClickOutside = (e) => {
-    // Для другого диапазона ничего не делаем — его обработчик сам переключит режим редактирования
+    // Для другого диапазона ничего не делаем, его обработчик сам переключит режим редактирования
     if (e.target.closest && e.target.closest('.timing-range')) {
       return;
     }
@@ -946,7 +964,7 @@ function startEditingRange(idx, item, rangeText) {
     activeOutsideClickHandler = closeOnClickOutside;
   }, 10);
   
-  // Сохранение при Enter / отмена при Escape — вешаем на все сегменты обеих групп
+  // Сохранение при Enter / отмена при Escape, вешаем на все сегменты обеих групп
   const attachEnterEscape = (segments, onEnter, onEscape) => {
     segments.forEach(seg => {
       seg.addEventListener('keydown', (e) => {
@@ -1033,7 +1051,7 @@ function formatSpeedLabel(rate){
   return (Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)))) + 'x';
 }
 function isInBlurRange(t){
-  // "до" указывается с точностью до секунды — считаем её включительно
+  // "до" указывается с точностью до секунды, считаем её включительно
   // до конца этой секунды, а не только до её начала
   return blurRanges.some(r => t >= r.from && t < r.to + 1);
 }
@@ -1055,7 +1073,7 @@ function niceTitleFromFilename(name){
 }
 
 
-// Имя файла обрезается многоточием — дублируем в title для наведения
+// Имя файла обрезается многоточием, дублируем в title для наведения
 function setSubsFileNameDisplay(name){
   const nameWithoutExt = name === 'Файл не выбран' ? name : name.replace(/\.[^/.]+$/, '');
   subsFileName.textContent = nameWithoutExt;
@@ -1092,7 +1110,7 @@ function fileKey(file, isFolder, folderId){
   const fid = folderId || currentFolderId;
   return FOLDER_PROGRESS_PREFIX + (fid ? fid + ':' : '') + tail;
 }
-// Ключ в старом формате (без folderId) — нужен для чтения ранее сохранённых записей
+// Ключ в старом формате (без folderId), нужен для чтения ранее сохранённых записей
 function legacyFolderKey(file){
   return FOLDER_PROGRESS_PREFIX + file.name + ':' + file.size + ':' + (file.lastModified || 0);
 }
@@ -1151,7 +1169,7 @@ function subsKey(key){
 }
 
 const PROGRESS_DURATION_TOLERANCE = 2;
-// Ключ ссылки не учитывает query, поэтому разные видео одного пути могут совпасть —
+// Ключ ссылки не учитывает query, поэтому разные видео одного пути могут совпасть,
 // сверяем длительность, прежде чем применять найденную запись
 function isForeignRecord(savedDuration){
   if (!currentFileKey || !currentFileKey.startsWith(URL_KEY_PREFIX)) return false;
@@ -1167,7 +1185,7 @@ function dropForeignSettings(){
     const raw = localStorage.getItem(settingsKey(currentFileKey));
     const saved = raw ? JSON.parse(raw) : null;
     if (saved && isForeignRecord(saved.duration)) applyDefaultSettingsForNewSource();
-  } catch(e){ /* повреждённая запись — оставляем как есть */ }
+  } catch(e){ /* повреждённая запись, оставляем как есть */ }
 }
 
 // Периодически очищаем старые записи localStorage, чтобы не допустить переполнения
@@ -1295,9 +1313,9 @@ function removeDuplicateProgress(currentKey){
     const key = localStorage.key(i);
     if (!key || key === currentKey) continue;
     if (!key.startsWith(PROGRESS_PREFIX)) continue;
-    // url-записи пропускаем — у них нет размера/даты, сравнивать их по этому принципу нельзя
+    // url-записи пропускаем, у них нет размера/даты, сравнивать их по этому принципу нельзя
     if (key.startsWith(URL_KEY_PREFIX)) continue;
-    // Пропускаем записи из "чужого" пространства (папка vs одиночный файл) —
+    // Пропускаем записи из "чужого" пространства (папка vs одиночный файл),
     // они по определению разные записи, даже при совпадении размера/даты
     if (key.startsWith(FOLDER_PROGRESS_PREFIX) !== currentIsFolder) continue;
     if (folderScope && !key.startsWith(folderScope)) continue;
@@ -1341,7 +1359,7 @@ function saveTitleToProgress(){
   } catch(e){ notifyStorageIssue(); }
 }
 
-// (дублирующий saveSettings удалён, актуальная версия — выше, с дебаунсом)
+// (дублирующий saveSettings удалён, актуальная версия, выше, с дебаунсом)
 
 function loadSettings(){
   if (!currentFileKey) {
@@ -1387,6 +1405,7 @@ function loadSettings(){
     settings.zoomLevel = validateNumber(settings.zoomLevel, 50, 200, 100);
     settings.ovSize = validateNumber(settings.ovSize, 10, 20, OV_DEFAULT_SIZE);
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
+    settings.ovBgOpacity = validateNumber(settings.ovBgOpacity, 0, 100, OV_DEFAULT_BG_OPACITY);
     
     // Валидация настроек субтитров
     settings.subsSize = validateNumber(settings.subsSize, 20, 30, 25);
@@ -1428,7 +1447,7 @@ function loadSettings(){
     // Нормализуем громкость, чтобы video.volume всегда получал корректное значение
     settings.volume = validateNumber(settings.volume, 0, 1, DEFAULT_VOLUME);
   } catch(e){
-    /* повреждённая запись — считаем, что настроек нет */
+    /* повреждённая запись, считаем, что настроек нет */
     return false;
   }
 
@@ -1464,6 +1483,8 @@ function loadSettings(){
     ovColor.value = settings.ovColor;
     ovOpacity.value = settings.ovOpacity;
     ovOpacityVal.textContent = ovOpacity.value + '%';
+    ovBgOpacity.value = settings.ovBgOpacity;
+    ovBgOpacityVal.textContent = ovBgOpacity.value + '%';
     setOverlayAlign(settings.ovAlign);
 
     if (settings.ovPosX !== undefined && settings.ovPosY !== undefined){
@@ -1630,12 +1651,12 @@ function restoreProgress(){
       currentFileName = nameWithoutExt;
       fnameEl.textContent = nameWithoutExt;
     }
-  } catch(e){ /* повреждённая запись — игнорируем */ }
+  } catch(e){ /* повреждённая запись, игнорируем */ }
 }
 
 function startProgressTracking(){
   clearInterval(progressInterval);
-  // Здесь сохраняем только прогресс просмотра — настройки сохраняются отдельно
+  // Здесь сохраняем только прогресс просмотра, настройки сохраняются отдельно
   progressInterval = setInterval(() => {
     saveProgress();
   }, 4000);
@@ -1862,17 +1883,17 @@ async function tryRestoreFolderPlaylist(folderId, activeFile, activeHandle, load
         // Найденный старый handle сразу переносим на новый ключ
         if (h) idbSet(key, h).catch(() => {});
       }
-      if (!h) continue; // хэндла для этой серии нет — пропускаем, покажем остальные
+      if (!h) continue; // хэндла для этой серии нет, пропускаем, покажем остальные
       let perm = await h.queryPermission({ mode: 'read' });
       if (perm !== 'granted') perm = await h.requestPermission({ mode: 'read' });
       if (perm !== 'granted') continue;
       const f = await h.getFile();
       resolved.push({ file: f, handle: h });
-    } catch(err){ /* недоступный файл — пропускаем, остальной плейлист всё равно покажем */ }
+    } catch(err){ /* недоступный файл, пропускаем, остальной плейлист всё равно покажем */ }
   }
 
   if (activeIndex === -1 || resolved.length < 2){
-    // Восстановить остальные серии не вышло — открываем как одиночное видео
+    // Восстановить остальные серии не вышло, открываем как одиночное видео
     loadFile(activeFile, activeHandle, loadMeta);
     return;
   }
@@ -1912,7 +1933,7 @@ function idbOpen(){
     req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
     req.onsuccess = () => {
       idbConnection = req.result;
-      // Если базу закрыли извне (обновление версии, очистка данных) — сбрасываем кэш
+      // Если базу закрыли извне (обновление версии, очистка данных), сбрасываем кэш
       idbConnection.onclose = () => { idbConnection = null; };
       idbConnection.onversionchange = () => {
         try { idbConnection.close(); } catch(e){}
@@ -1957,7 +1978,7 @@ async function idbDelete(key){
 
 // Единая инициализация настроек для новых источников, чтобы одинаково обрабатывать файлы и URL
 function applyDefaultSettingsForNewSource(){
-  // Если нет настроек — сбрасываем настройки до дефолтных
+  // Если нет настроек, сбрасываем настройки до дефолтных
   resetSpeed();
   resetBrightness();
   resetZoom();
@@ -1973,6 +1994,8 @@ function applyDefaultSettingsForNewSource(){
   ovColor.value = OV_DEFAULT_COLOR;
   ovOpacity.value = OV_DEFAULT_OPACITY;
   ovOpacityVal.textContent = OV_DEFAULT_OPACITY + '%';
+  ovBgOpacity.value = OV_DEFAULT_BG_OPACITY;
+  ovBgOpacityVal.textContent = OV_DEFAULT_BG_OPACITY + '%';
   setOverlayAlign(OV_DEFAULT_ALIGN);
   setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
   titleInput.value = currentFileName;
@@ -2017,7 +2040,7 @@ function applyDefaultSettingsForNewSource(){
   subsBgOpacityVal.textContent = '85%';
   applySubtitlesStyle();
 
-  // Громкость нового файла (без сохранённых настроек) — фиксированные 20%,
+  // Громкость нового файла (без сохранённых настроек), фиксированные 20%,
   // а не громкость, оставшаяся от предыдущего файла в этой сессии.
   video.volume = DEFAULT_VOLUME;
   volumeRange.value = video.volume;
@@ -2038,7 +2061,7 @@ function loadFile(file, handle, meta){
   videoErrorEl.style.display = 'none';
   hideBufferingIndicator();
   stopProgressTracking();
-  // meta.isFolder помечает, что файл открыт как часть папки (плейлиста) — тогда
+  // meta.isFolder помечает, что файл открыт как часть папки (плейлиста), тогда
   // прогресс уходит в отдельное пространство ключей (FOLDER_PROGRESS_PREFIX)
   currentFileIsFolder = !!(meta && meta.isFolder);
   currentFolderName = (meta && meta.folderName) || null;
@@ -2050,7 +2073,7 @@ function loadFile(file, handle, meta){
   hideNextEpisodeOverlay();
   originalFileName = file.name; // Сохраняем исходное имя с расширением
 
-  // Сбрасываем главы предыдущего файла и запускаем разбор нового — асинхронно,
+  // Сбрасываем главы предыдущего файла и запускаем разбор нового, асинхронно,
   // не блокируя запуск воспроизведения ниже
   resetMediaChapters();
   parseChaptersFromFile(file, chapterParseToken);
@@ -2305,12 +2328,12 @@ async function parseChaptersFromUrl(url, token){
         headOk = true;
         size = Number(head.headers.get('Content-Length'));
         if (head.headers.get('Accept-Ranges') !== 'bytes') {
-          // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают —
+          // Некоторые серверы не пишут этот заголовок, но Range всё равно поддерживают,
           // не блокируем, просто пробуем читать куски ниже.
         }
       }
     } catch (headErr) {
-      // HEAD не сработал (CORS, сеть и т.п.) — пробуем читать без предварительного размера
+      // HEAD не сработал (CORS, сеть и т.п.), пробуем читать без предварительного размера
       console.log('HEAD-запрос не удался, пробуем читать без размера:', headErr.message);
     }
 
@@ -2342,7 +2365,7 @@ async function parseChaptersFromUrl(url, token){
           }
         }
       } catch (rangeErr) {
-        // Range-запрос тоже не сработал — пробуем без размера
+        // Range-запрос тоже не сработал, пробуем без размера
         console.log('Range-запрос не удался, пробуем без размера:', rangeErr.message);
       }
     }
@@ -2352,7 +2375,7 @@ async function parseChaptersFromUrl(url, token){
     }
 
     if (!rangeSupported) {
-      throw new Error('Сервер не поддерживает Range-запросы — чтение глав по ссылке отменено, чтобы не докачивать файл целиком в фоне');
+      throw new Error('Сервер не поддерживает Range-запросы, чтение глав по ссылке отменено, чтобы не докачивать файл целиком в фоне');
     }
 
     // Ограничиваем объём загружаемых данных, чтобы чтение глав не мешало воспроизведению видео
@@ -2368,7 +2391,7 @@ async function parseChaptersFromUrl(url, token){
         const res = await fetch(url, { headers: { Range: `bytes=0-${preloadSize - 1}` } });
         if (res.status !== 206) {
           if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
-          throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
+          throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206), чтение глав отменено`);
         }
 
         const buf = await res.arrayBuffer();
@@ -2388,7 +2411,7 @@ async function parseChaptersFromUrl(url, token){
 
       if (res.status !== 206) {
         if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
-        throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206) — чтение глав отменено`);
+        throw new Error(`Сервер не поддерживает Range-запросы (получен статус ${res.status} вместо 206), чтение глав отменено`);
       }
 
       const buf = await res.arrayBuffer();
@@ -2399,7 +2422,7 @@ async function parseChaptersFromUrl(url, token){
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
   } catch (err){
-    // Нет CORS, нет Range, файл без глав и т.п. — штатно продолжаем без них.
+    // Нет CORS, нет Range, файл без глав и т.п., штатно продолжаем без них.
     console.warn('Главы (chapters) по ссылке не прочитаны:', err && err.message ? err.message : err);
   }
 }
@@ -2413,7 +2436,7 @@ function applyChaptersFromMediaInfoResult(result, token){
   if (menuTracks.length === 0) return;
 
   // Собираем тайм-коды глав. Останавливаемся на первом Menu-треке, где
-  // нашлись непустые метки (обычно он один; если их несколько — это, как
+  // нашлись непустые метки (обычно он один; если их несколько, это, как
   // правило, разноязычные дубликаты одних и тех же глав).
   const raw = [];
   for (const track of menuTracks){
@@ -2443,15 +2466,15 @@ function applyChaptersFromMediaInfoResult(result, token){
     intro: 15 * 60,
     recap: 15 * 60,
     custom: 20 * 60
-    // credits — без ограничения
+    // credits: без ограничения
   };
 
   const segments = [];
   for (let i = 0; i < dedup.length; i++){
     const info = classifySkippableChapter(dedup[i].title);
-    if (!info) continue; // обычная (не заставка/титры) глава — пропускаем
+    if (!info) continue; // обычная (не заставка/титры) глава, пропускаем
     const start = dedup[i].time;
-    let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity — "до конца видео"
+    let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity значит "до конца видео"
     const cap = SKIP_KIND_MAX_DURATION[info.kind];
     if (cap !== undefined) end = Math.min(end, start + cap);
     if (end <= start) continue;
@@ -2471,7 +2494,7 @@ function applyChaptersFromMediaInfoResult(result, token){
   }
 }
 
-// Реальный конец сегмента с учётом Infinity (последняя глава файла) —
+// Реальный конец сегмента с учётом Infinity (последняя глава файла),
 // как только известна длительность видео, подставляем её.
 function skipSegmentEffectiveEnd(seg){
   if (seg.end !== Infinity) return seg.end;
@@ -2578,11 +2601,11 @@ async function collectFilesFromDataTransferItems(items){
         await collectFilesFromDirectoryHandle(handle, out, handle.name);
         return { files: out, folderName: handle.name };
       }
-    } catch(err){ /* не получилось — пробуем резервный способ ниже */ }
+    } catch(err){ /* не получилось, пробуем резервный способ ниже */ }
   }
 
   // Резервный способ (Firefox/Safari, либо getAsFileSystemHandle недоступен/не
-  // сработал) — через устаревший FileSystemEntry API. Постоянных хэндлов не даёт.
+  // сработал), через устаревший FileSystemEntry API. Постоянных хэндлов не даёт.
   const out = [];
   const entries = [];
   for (const item of itemsArr){
@@ -2594,7 +2617,7 @@ async function collectFilesFromDataTransferItems(items){
   for (const entry of entries){
     await collectFilesFromEntry(entry, out);
   }
-  // Если перетащили ровно одну папку верхнего уровня — запоминаем её имя для подписи
+  // Если перетащили ровно одну папку верхнего уровня, запоминаем её имя для подписи
   const topDirs = entries.filter(e => e.isDirectory);
   const folderName = topDirs.length === 1 ? topDirs[0].name : null;
   return { files: out, folderName };
@@ -2670,7 +2693,7 @@ function updatePlaylistNavButtons(){
   }
 }
 
-// Сохраняет лёгкий "манифест" плейлиста (имена/размеры/даты файлов, без самих File) —
+// Сохраняет лёгкий "манифест" плейлиста (имена/размеры/даты файлов, без самих File),
 // по нему при "Продолжить" восстанавливается весь плейлист, а не только один эпизод.
 function savePlaylistManifest(folderId, folderName, items){
   try{
@@ -2685,7 +2708,7 @@ function savePlaylistManifest(folderId, folderName, items){
     };
     localStorage.setItem(PLAYLIST_MANIFEST_PREFIX + folderId, JSON.stringify(manifest));
     cleanupStorage(PLAYLIST_MANIFEST_PREFIX);
-  } catch(err){ /* некритично — просто не сможем восстановить весь плейлист позже */ }
+  } catch(err){ /* некритично, просто не сможем восстановить весь плейлист позже */ }
 }
 
 function openFolderPlaylist(items, folderName){
@@ -2741,7 +2764,7 @@ function findMatchingFolderId(files, folderName){
 }
 
 // Начатая серия важнее нетронутой, нетронутая важнее досмотренной;
-// если пройдена вся папка — открываем её с начала
+// если пройдена вся папка, открываем её с начала
 function findLastWatchedIndex(files, folderId){
   let startedIdx = -1, startedTs = -1, firstUntouched = -1;
   files.forEach((entry, idx) => {
@@ -2778,7 +2801,7 @@ function playlistEntryState(entry, folderId){
   } catch(e){ return null; }
 }
 
-// Дропзоны — это div с role="button", Enter/Space нужно вешать вручную
+// Дропзоны, это div с role="button", Enter/Space нужно вешать вручную
 [dropzone, dropzoneFolder].forEach(zone => {
   zone.addEventListener('keydown', e => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -2873,7 +2896,7 @@ dropzoneFolder.addEventListener('drop', async e => {
 
   const items = e.dataTransfer.items;
 
-  // Одиночный файл в зоне папки — направляем в зону файла
+  // Одиночный файл в зоне папки, направляем в зону файла
   if (items && items.length === 1 && typeof items[0].webkitGetAsEntry === 'function'){
     const entry = items[0].webkitGetAsEntry();
     if (entry && entry.isFile){
@@ -3155,7 +3178,7 @@ function initAudioGraphForCurrentSource(){
 function reapplyCompressorState(){
   ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  // Web Audio недоступен (например, нет CORS и граф не создался) — применять нечего
+  // Web Audio недоступен (например, нет CORS и граф не создался), применять нечего
   if (!audioCtx || !sourceNode || !compressorNode || !boostGain) return;
 
   const savedState = drToggle.checked; // фактическое сохранённое состояние для этой ссылки
@@ -3170,7 +3193,7 @@ function reapplyCompressorState(){
 }
 
 // Убирает компрессор и усиление из цепочки, оставляя прямой путь до динамиков.
-// Закрывать audioCtx нельзя — воспроизведение останавливается на 00:00
+// Закрывать audioCtx нельзя, воспроизведение останавливается на 00:00
 function bypassAudioGraph(){
   if (!audioCtx || !sourceNode) return;
   try { sourceNode.disconnect(); } catch(e) {}
@@ -3179,7 +3202,7 @@ function bypassAudioGraph(){
   try { sourceNode.connect(audioCtx.destination); } catch(e) {}
 }
 
-// Компрессор и усиление требуют CORS — на остальных ссылках их нечем применить
+// Компрессор и усиление требуют CORS, на остальных ссылках их нечем применить
 function setAudioFeaturesAvailable(available){
   drToggle.disabled = !available;
   drStrength.disabled = !available;
@@ -3339,7 +3362,7 @@ function processSubtitlesContent(content, file, previousName){
   parseSubtitles(content, detectSubtitleFormat(content, file.name));
 
   if (subtitlesData.length === 0){
-    // Разобрать не удалось — предупреждение уже показано в parseSubtitles.
+    // Разобрать не удалось, предупреждение уже показано в parseSubtitles.
     // Возвращаем прежние субтитры и НЕ трогаем сохранённую запись.
     subtitlesData = previousData;
     setSubsFileNameDisplay(previousData.length ? (previousName || 'Файл не выбран') : 'Файл не выбран');
@@ -3354,7 +3377,7 @@ function processSubtitlesContent(content, file, previousName){
   try{
     localStorage.setItem(subsKey(currentFileKey), JSON.stringify(subsData));
     cleanupStorage(SUBS_PREFIX);
-  } catch(e){ /* хранилище недоступно — не мешаем применить субтитры для текущей сессии */ }
+  } catch(e){ /* хранилище недоступно, не мешаем применить субтитры для текущей сессии */ }
   idbSet(SUBS_PREFIX + 'data:' + stripProgressPrefix(currentFileKey), serialized).catch(() => {});
   savedSubsContent = serialized;
   isSubtitlesLoaded = true;
@@ -3797,7 +3820,7 @@ function syncPlayStateUI(){
   }
 }
 
-// Постоянная синхронизация UI с фактическим состоянием видео —
+// Постоянная синхронизация UI с фактическим состоянием видео,
 // работает только пока видео реально играет, а не всё время жизни страницы
 function startUiSync(){
   if (uiSyncInterval) return;
@@ -3888,7 +3911,7 @@ function syncBlurFilter(){
 }
 
 // Событие timeupdate спецификация разрешает слать не чаще раза в 250 мс, и на этой
-// частоте блюр опаздывал включиться на начало интервала, а субтитры — на реплику
+// частоте блюр опаздывал включиться на начало интервала, а субтитры, на реплику
 let frameSyncHandle = null;
 function frameSyncLoop(){
   frameSyncHandle = null;
@@ -3932,7 +3955,7 @@ video.addEventListener('timeupdate', () => {
   // Обновление субтитров
   updateSubtitles();
 
-  // Подсказка "Следующая серия" — показываем ближе к концу текущего эпизода
+  // Подсказка "Следующая серия", показываем ближе к концу текущего эпизода
   const hasNextEpisode = playlistFiles.length > 1 && playlistIndex > -1 && playlistIndex < playlistFiles.length - 1;
   let showNextEpisode = false;
   if (hasNextEpisode && isDurationUsable() && !nextEpisodePromptDismissed && !anyPanelOpen()){
@@ -3973,13 +3996,13 @@ function updateSkipSegmentOverlay(suppressed){
 }
 
 video.addEventListener('seeking', () => {
-  // Как только браузер зафиксировал начало перемотки — сразу подстраховываемся
+  // Как только браузер зафиксировал начало перемотки, сразу подстраховываемся
   // блюром, если перемотка задевает диапазон блюра
   syncBlurFilter();
 });
 
 video.addEventListener('seeked', () => {
-  // Пересчитываем blur-фильтр сразу по завершении перемотки — не ждём timeupdate
+  // Пересчитываем blur-фильтр сразу по завершении перемотки, не ждём timeupdate
   syncBlurFilter();
 
   if (mediaChapters.length === 0) return;
@@ -4048,7 +4071,7 @@ function updateSubtitles() {
 
   const currentSub = findSubtitleAt(video.currentTime) || null;
 
-  // Ничего не изменилось — DOM не трогаем
+  // Ничего не изменилось, DOM не трогаем
   if (currentSub === renderedSub) return;
   renderedSub = currentSub;
 
@@ -4069,7 +4092,7 @@ seek.addEventListener('input', () => {
     video.currentTime = t;
     timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
 
-    // Форсируем пересчёт blur-фильтра сразу, не дожидаясь timeupdate/seeked —
+    // Форсируем пересчёт blur-фильтра сразу, не дожидаясь timeupdate/seeked,
     // иначе при быстром драге фильтр может "залипнуть" на старом состоянии.
     syncBlurFilter();
   }
@@ -4115,14 +4138,14 @@ function toggleMute(){
 muteBtn.addEventListener('click', toggleMute);
 updateVolumeIcon();
 
-// Обёртки для Fullscreen API — с поддержкой старого Safari/iOS
+// Обёртки для Fullscreen API, с поддержкой старого Safari/iOS
 function getFullscreenElement(){
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 function requestFs(el){
   const fn = el.requestFullscreen || el.webkitRequestFullscreen;
   // Стандартный requestFullscreen() возвращает Promise, но старые версии
-  // Safari/WebKit (webkitRequestFullscreen) возвращают undefined, а не Promise —
+  // Safari/WebKit (webkitRequestFullscreen) возвращают undefined, а не Promise,
   // и вызывающий код всегда делает .catch() на результате
   if (!fn) return Promise.reject(new Error('Fullscreen API не поддерживается'));
   return Promise.resolve(fn.call(el));
@@ -4393,7 +4416,7 @@ async function diagnoseVideoLoadError(url, fallbackMessage){
       return `Сервер вернул ошибку ${resp.status}. Ссылка недоступна`;
     }
   } catch (e){
-    // fetch не прошёл (CORS/сеть) — молча остаёмся на исходном сообщении
+    // fetch не прошёл (CORS/сеть), молча остаёмся на исходном сообщении
   }
   return fallbackMessage;
 }
@@ -4441,7 +4464,7 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
     if (settled) return;
     settled = true;
     clearTimeout(hangTimeout);
-    // Причина была не в CORS — возвращаем аудио-настройки в рабочее состояние
+    // Причина была не в CORS, возвращаем аудио-настройки в рабочее состояние
     audioSourceTainted = false;
     setAudioFeaturesAvailable(true);
     urlLoadingSpinner.style.display = 'none';
@@ -4472,7 +4495,7 @@ async function fetchManifestHead(url, useRange){
     const res = await fetch(url, useRange ? { headers: { Range: 'bytes=0-1023' } } : undefined);
     if (!res.ok && res.status !== 206) return null;
     const ct = (res.headers.get('Content-Type') || '').toLowerCase();
-    // Тип уже всё говорит — тело читать незачем
+    // Тип уже всё говорит, тело читать незачем
     if (ct.includes('mpegurl') || ct.startsWith('video/') || ct.startsWith('audio/')){
       if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
       return { ct, head: '' };
@@ -4612,7 +4635,7 @@ async function loadUrl(url){
         maxBufferLength: 30,
         maxMaxBufferLength: 60
       });
-      // Локальная ссылка на именно этот экземпляр — нужна, чтобы отложенные
+      // Локальная ссылка на именно этот экземпляр, нужна, чтобы отложенные
       // ретраи ниже не трогали чужой/уже уничтоженный hls, если пользователь
       // успел уйти со страницы плеера (нажал "Назад") до срабатывания таймера.
       const hlsInstance = hls;
@@ -4657,7 +4680,7 @@ async function loadUrl(url){
       });
 
       hls.on(Hls.Events.ERROR, function(event, data){
-        // Нефатальные ошибки (обычные для HLS-потоков — отдельный битый сегмент
+        // Нефатальные ошибки (обычные для HLS-потоков, отдельный битый сегмент
         // и т.п.) hls.js обрабатывает сам; они не должны снимать сторожевой
         // таймаут и не должны прятать спиннер загрузки.
         if (!data.fatal) return;
@@ -4692,7 +4715,7 @@ async function loadUrl(url){
                 return;
               }
 
-              // 404 — ссылка мертва (истекла/удалена)
+              // 404: ссылка мертва (истекла/удалена)
               if (data.response && data.response.code === 404) {
                 clearTimeout(loadTimeout);
                 urlLoadingSpinner.style.display = 'none';
@@ -4703,7 +4726,7 @@ async function loadUrl(url){
                 return;
               }
 
-              // 410 — ресурс Gone (был, но удалён)
+              // 410: ресурс Gone (был, но удалён)
               if (data.response && data.response.code === 410) {
                 clearTimeout(loadTimeout);
                 urlLoadingSpinner.style.display = 'none';
@@ -4717,11 +4740,11 @@ async function loadUrl(url){
               if (retryCount < MAX_RETRIES) {
                 retryCount++;
                 const delay = Math.pow(2, retryCount - 1) * 1000; // Экспоненциальная задержка: 1с, 2с, 4с
-                // Спиннер и сторож остаются активными на время ретрая — пользователь
+                // Спиннер и сторож остаются активными на время ретрая, пользователь
                 // видит, что попытка ещё идёт, а не пустой экран без обратной связи.
                 armLoadTimeout(delay + 15000);
                 setTimeout(() => {
-                  if (hls !== hlsInstance) return; // плеер уже закрыт/переключён — ничего не делаем
+                  if (hls !== hlsInstance) return; // плеер уже закрыт/переключён, ничего не делаем
                   try {
                     if (isManifestError) {
                       hlsInstance.loadSource(url);
@@ -4818,7 +4841,7 @@ async function loadUrl(url){
       const fallback = 'Не удалось загрузить видео';
       showUrlError(fallback);
       diagnoseVideoLoadError(url, fallback).then(msg => {
-        if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки — не мешаем ей
+        if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки, не мешаем ей
         if (msg !== fallback) showUrlError(msg);
       });
     }, { once: true });
@@ -4863,7 +4886,7 @@ async function loadUrl(url){
       const fallback = 'Не удалось загрузить видео. Возможно, ссылка недоступна';
       showUrlError(fallback);
       diagnoseVideoLoadError(url, fallback).then(msg => {
-        if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки — не мешаем ей
+        if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки, не мешаем ей
         if (msg !== fallback) showUrlError(msg);
       });
     }, { once: true });
@@ -4910,7 +4933,7 @@ async function loadUrl(url){
         const fallback = 'Не удалось загрузить видео';
         showUrlError(fallback);
         diagnoseVideoLoadError(url, fallback).then(msg => {
-          if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки — не мешаем ей
+          if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки, не мешаем ей
           if (msg !== fallback) showUrlError(msg);
         });
       }
@@ -5048,7 +5071,7 @@ async function getOriginalFileNameFromUrl(url){
 
 function showPlayer(){
   // Заголовок (fnameEl/ovTitle) уже корректно выставлен выше по коду loadUrl()
-  // (восстановленное кастомное имя или "красивое" имя из URL) — здесь его
+  // (восстановленное кастомное имя или "красивое" имя из URL), здесь его
   // больше не перезаписываем сырым currentFileName, иначе переименование
   // и форматирование теряются сразу после загрузки видео по ссылке.
   dropView.style.display = 'none';
@@ -5106,6 +5129,7 @@ fnameEl.addEventListener('keydown', (e) => {
   if (!isEditingTitle) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
+      e.stopPropagation();
       fnameEl.click();
     }
     return;
