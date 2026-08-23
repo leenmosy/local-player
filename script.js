@@ -4357,7 +4357,7 @@ function armDirectLoadWatchdog(thisLoadToken){
     if (thisLoadToken !== urlLoadToken) return; // запущена уже другая попытка загрузки
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
-    showUrlError('Не удалось загрузить видео: сервер слишком долго не отвечает. Проверьте соединение с интернетом или попробуйте другую ссылку', { duration: 20000 });
+    showUrlError('Не удалось загрузить видео: сервер слишком долго не отвечает. Проверьте соединение с интернетом или попробуйте другую ссылку');
   }, 20000);
 }
 
@@ -4398,7 +4398,7 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
     settled = true;
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
-    showUrlError('Не удалось загрузить видео (сервер не отвечает после повторной попытки без CORS)', { duration: 20000 });
+    showUrlError('Не удалось загрузить видео (сервер не отвечает после повторной попытки без CORS)');
   }, 12000);
 
   video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
@@ -4425,10 +4425,10 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
     urlLoadingSpinner.style.display = 'none';
     urlLoadBtn.disabled = false;
     const fallback = 'Не удалось загрузить видео';
-    showUrlError(fallback, { duration: 20000 });
+    showUrlError(fallback);
     diagnoseVideoLoadError(url, fallback).then(msg => {
       if (thisLoadToken !== urlLoadToken) return;
-      if (msg !== fallback) showUrlError(msg, { duration: 20000 });
+      if (msg !== fallback) showUrlError(msg);
     });
   }, { once: true });
   return true;
@@ -4794,10 +4794,10 @@ async function loadUrl(url){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       const fallback = 'Не удалось загрузить видео';
-      showUrlError(fallback, { duration: 20000 });
+      showUrlError(fallback);
       diagnoseVideoLoadError(url, fallback).then(msg => {
         if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки — не мешаем ей
-        if (msg !== fallback) showUrlError(msg, { duration: 20000 });
+        if (msg !== fallback) showUrlError(msg);
       });
     }, { once: true });
 
@@ -4839,10 +4839,10 @@ async function loadUrl(url){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       const fallback = 'Не удалось загрузить видео. Возможно, ссылка недоступна';
-      showUrlError(fallback, { duration: 20000 });
+      showUrlError(fallback);
       diagnoseVideoLoadError(url, fallback).then(msg => {
         if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки — не мешаем ей
-        if (msg !== fallback) showUrlError(msg, { duration: 20000 });
+        if (msg !== fallback) showUrlError(msg);
       });
     }, { once: true });
 
@@ -4883,13 +4883,13 @@ async function loadUrl(url){
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
       if (isM3U8){
-        showUrlError('Браузер не поддерживает m3u8', { duration: 20000 });
+        showUrlError('Браузер не поддерживает m3u8');
       } else {
         const fallback = 'Не удалось загрузить видео';
-        showUrlError(fallback, { duration: 20000 });
+        showUrlError(fallback);
         diagnoseVideoLoadError(url, fallback).then(msg => {
           if (thisLoadToken !== urlLoadToken) return; // запущена новая попытка загрузки — не мешаем ей
-          if (msg !== fallback) showUrlError(msg, { duration: 20000 });
+          if (msg !== fallback) showUrlError(msg);
         });
       }
     }, { once: true });
@@ -4957,7 +4957,7 @@ function showPlaybackError(message){
       + '<div class="ve-detail">' + escapeHtml(message) + '</div>';
     videoErrorEl.style.display = 'flex';
   }
-  showUrlError(message, { duration: 20000 });
+  showUrlError(message);
 }
 
 let urlInputErrorTimeout = null;
