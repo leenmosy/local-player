@@ -4251,7 +4251,7 @@ video.addEventListener('error', () => {
   
   videoErrorEl.innerHTML = `
     <div class="ve-title">Не получилось воспроизвести файл</div>
-    <div class="ve-detail">${msg}<br>Код ошибки браузера: ${code ?? '—'}</div>
+    <div class="ve-detail">${msg}${code != null ? `<br>Код ошибки браузера: ${code}` : ''}</div>
     ${solution}
   `;
   videoErrorEl.style.display = 'flex';
