@@ -358,6 +358,8 @@ function collectSettings(){
     subsSize: parseFloat(subsSize.value),
     subsColor: subsColor.value,
     subsOpacity: parseFloat(subsOpacity.value),
+    subsPosition: parseFloat(subsPosition.value),
+    subsBgOpacity: parseFloat(subsBgOpacity.value),
     ts: Date.now()
   };
 }
@@ -1375,8 +1377,10 @@ function loadSettings(){
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
     
     // Валидация настроек субтитров
-    settings.subsSize = validateNumber(settings.subsSize, 22, 32, 28);
+    settings.subsSize = validateNumber(settings.subsSize, 20, 30, 25);
     settings.subsOpacity = validateNumber(settings.subsOpacity, 0, 100, 100);
+    settings.subsPosition = validateNumber(settings.subsPosition, 0, 20, 5);
+    settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 85);
     
     // Валидация позиций оверлея
     if (settings.ovPosX !== undefined) {
@@ -1470,13 +1474,19 @@ function loadSettings(){
     subsToggle.checked = settings.subsToggle !== undefined ? settings.subsToggle : true;
     subtitles.style.display = subsToggle.checked ? 'block' : 'none';
     
-    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 28;
+    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 25;
     subsSizeVal.textContent = subsSize.value + 'px';
     
     subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#fffdeb';
     subsOpacity.value = settings.subsOpacity !== undefined ? settings.subsOpacity : 100;
     subsOpacityVal.textContent = subsOpacity.value + '%';
-    
+
+    subsPosition.value = settings.subsPosition !== undefined ? settings.subsPosition : 5;
+    subsPositionVal.textContent = subsPosition.value + '%';
+
+    subsBgOpacity.value = settings.subsBgOpacity !== undefined ? settings.subsBgOpacity : 85;
+    subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
+
     applySubtitlesStyle();
     
     // Восстанавливаем содержимое субтитров из отдельного ключа
@@ -1984,11 +1994,15 @@ function applyDefaultSettingsForNewSource(){
 
   subsToggle.checked = true;
   subtitles.style.display = 'block';
-  subsSize.value = 28;
-  subsSizeVal.textContent = '28px';
+  subsSize.value = 25;
+  subsSizeVal.textContent = '25px';
   subsColor.value = '#fffdeb';
   subsOpacity.value = 100;
   subsOpacityVal.textContent = '100%';
+  subsPosition.value = 5;
+  subsPositionVal.textContent = '5%';
+  subsBgOpacity.value = 85;
+  subsBgOpacityVal.textContent = '85%';
   applySubtitlesStyle();
 
   // Громкость нового файла (без сохранённых настроек) — фиксированные 20%,
@@ -3020,6 +3034,10 @@ const subsSizeVal = document.getElementById('subs-size-val');
 const subsColor = document.getElementById('subs-color');
 const subsOpacity = document.getElementById('subs-opacity');
 const subsOpacityVal = document.getElementById('subs-opacity-val');
+const subsPosition = document.getElementById('subs-position');
+const subsPositionVal = document.getElementById('subs-position-val');
+const subsBgOpacity = document.getElementById('subs-bg-opacity');
+const subsBgOpacityVal = document.getElementById('subs-bg-opacity-val');
 const drToggle = document.getElementById('dr-toggle');
 const drStrength = document.getElementById('dr-strength');
 const drStrengthVal = document.getElementById('dr-strength-val');
@@ -3463,19 +3481,22 @@ function parseSubtitles(content, format) {
 function applySubtitlesStyle() {
   const size = subsSize.value + 'px';
   const color = hexToRgba(subsColor.value, subsOpacity.value / 100);
-  
+  const bgColor = hexToRgba('#000000', subsBgOpacity.value / 100);
+
   const span = subtitles.querySelector('span');
   if (span) {
     span.style.fontSize = size;
     span.style.color = color;
-    
+    span.style.background = bgColor;
+
     const textLines = span.innerHTML.split('<br>').length;
     const fontSize = parseInt(subsSize.value);
     const offset = Math.round(fontSize * 0.65);
-    
-    subtitles.style.bottom = textLines > 1 ? `calc(5% - ${offset}px)` : '5%';
+    const position = subsPosition.value + '%';
+
+    subtitles.style.bottom = textLines > 1 ? `calc(${position} - ${offset}px)` : position;
   } else {
-    subtitles.style.bottom = '5%';
+    subtitles.style.bottom = subsPosition.value + '%';
   }
 }
 
@@ -3497,6 +3518,18 @@ subsColor.addEventListener('input', () => {
 
 subsOpacity.addEventListener('input', () => {
   subsOpacityVal.textContent = subsOpacity.value + '%';
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsPosition.addEventListener('input', () => {
+  subsPositionVal.textContent = subsPosition.value + '%';
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsBgOpacity.addEventListener('input', () => {
+  subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
   applySubtitlesStyle();
   saveSettings();
 });
