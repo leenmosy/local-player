@@ -321,7 +321,7 @@ function showStorageToast(msg){
 function notifyStorageIssue(){
   if (storageErrorShown) return;
   storageErrorShown = true;
-  showStorageToast('Не удалось сохранить настройки или прогресс — хранилище браузера недоступно или переполнено');
+  showStorageToast('Не удалось сохранить настройки или прогресс. Хранилище браузера недоступно или переполнено');
 }
 
 // Вызывается после любой удачной записи, чтобы следующий сбой снова показал уведомление
@@ -1772,7 +1772,7 @@ resumeList.addEventListener('click', async (e) => {
           : fileKey(file, false);
         const legacyMatch = isFolderKey && legacyFolderKey(file) === key;
         if (expectedKey !== key && !legacyMatch){
-          showErrMsg('Выбран другой файл — он откроется как новое видео. Сохранённый прогресс относится к другому файлу');
+          showErrMsg('Выбран другой файл, он откроется как новое видео. Сохранённый прогресс относится к другому файлу');
           loadFile(file, newHandle, isFolderKey ? { isFolder: true, folderName: savedFolderName, folderId: savedFolderId } : undefined);
           return;
         }
@@ -2619,7 +2619,7 @@ function resetPlaylist(){
 }
 
 function renderPlaylist(){
-  playlistTitle.textContent = playlistFolderName ? `Плейлист — ${playlistFolderName}` : 'Плейлист';
+  playlistTitle.textContent = playlistFolderName ? `Плейлист: ${playlistFolderName}` : 'Плейлист';
   playlistList.innerHTML = '';
   playlistFiles.forEach((entry, idx) => {
     const item = document.createElement('div');
@@ -2809,7 +2809,7 @@ dropzone.addEventListener('drop', async e => {
   }
 
   if (files.length > 1){
-    showErrMsg(`Перетащено файлов: ${files.length}. Открыт первый — «${file.name}». Для нескольких серий перетащите папку`);
+    showErrMsg(`Перетащено файлов: ${files.length}. Открыт первый: «${file.name}». Для нескольких серий перетащите папку`);
   }
   
   const dtItem = e.dataTransfer.items && e.dataTransfer.items[0];
@@ -3467,7 +3467,7 @@ function parseSubtitles(content, format) {
 
   if (skippedCount > 0){
     console.warn(`Субтитры: пропущено ${skippedCount} строк с некорректным таймингом`);
-    showStorageToast(`Не удалось разобрать ${skippedCount} ${skippedCount === 1 ? 'реплику' : 'реплик'} субтитров — тайминг повреждён, они пропущены`);
+    showStorageToast(`Не удалось разобрать ${skippedCount} ${skippedCount === 1 ? 'реплику' : 'реплик'} субтитров, тайминг повреждён, они пропущены`);
   }
   
   // Если после парсинга нет субтитров, но файл не пустой - предупреждаем пользователя
@@ -4219,7 +4219,7 @@ document.addEventListener('keydown', (e) => {
 const ERROR_MESSAGES = {
   1: 'Загрузка была прервана.',
   2: 'Ошибка сети при чтении файла.',
-  3: 'Браузер не смог декодировать файл — скорее всего, не поддерживается кодек видео или аудио.',
+  3: 'Браузер не смог декодировать файл. Скорее всего, не поддерживается кодек видео или аудио.',
   4: 'Формат файла не поддерживается браузером вообще.',
 };
 
@@ -4228,7 +4228,7 @@ const ERROR_SOLUTIONS = {
     <div class="ve-solution">
       <strong>Как исправить:</strong>
       <br>• Скорее всего файл использует кодек H.265/HEVC, AC3 или DTS
-      <br>• Конвертируйте файл в H.264 + AAC (HandBrake — бесплатный)
+      <br>• Конвертируйте файл в H.264 + AAC (HandBrake, бесплатный)
       <br>• Для стримеров: используйте H.264 для максимальной совместимости
       <br>• Рекомендуемые настройки: H.264, AAC, 1080p или ниже
     </div>
@@ -4412,7 +4412,7 @@ function retryWithoutCrossOriginOnError(url, thisLoadToken, onRecovered){
     // и снять его без перезагрузки страницы браузер не позволяет
     showStorageToast(audioCtx
       ? 'Сервер ссылки не поддерживает CORS. Звук будет доступен, если открыть эту ссылку сразу после перезагрузки страницы'
-      : 'Компрессор и усиление недоступны для этой ссылки — сервер не поддерживает CORS. Видео и звук работают как обычно');
+      : 'Компрессор и усиление недоступны для этой ссылки: сервер не поддерживает CORS. Видео и звук работают как обычно');
     onRecovered();
   }, { once: true });
   video.addEventListener('error', urlErrorHandler = function(){
