@@ -35,11 +35,6 @@
   window.addEventListener('resize', checkDeviceBlock);
 })();
 
-// Если контент стартового экрана не влезает по высоте — сразу докручиваем в конечное
-// положение, до любого клика, чтобы фокус на инпуте/кнопке не вызывал заметный прыжок.
-document.documentElement.scrollTop = document.documentElement.scrollHeight;
-document.body.scrollTop = document.body.scrollHeight;
-
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const btn = e.target.closest('button');
@@ -5180,4 +5175,8 @@ window.addEventListener('beforeunload', () => {
 if (!FS_ACCESS_SUPPORTED){
   showErrMsg('В этом браузере не работает продолжение просмотра без повторного выбора файла. Открывать видео и папки можно как обычно; для полной функциональности используйте Chrome или Edge', { persistent: true });
 }
+
+// Докручиваем сразу до конца, чтобы фокус на инпуте/кнопке не вызывал прыжок
+document.documentElement.scrollTop = document.documentElement.scrollHeight;
+document.body.scrollTop = document.body.scrollHeight;
 
