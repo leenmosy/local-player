@@ -2765,6 +2765,15 @@ function playlistEntryState(entry, folderId){
   } catch(e){ return null; }
 }
 
+// Дропзоны — это div с role="button", Enter/Space нужно вешать вручную
+[dropzone, dropzoneFolder].forEach(zone => {
+  zone.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    zone.click();
+  });
+});
+
 // --- перетаскивание файла ---
 ['dragenter','dragover'].forEach(evt =>
   dropzone.addEventListener(evt, e => { 
