@@ -978,7 +978,6 @@ function showTimingError(msg){
 }
 function clearTimingError(){
   clearTimeout(timingErrTimeout);
-  timingErr.textContent = '';
   timingErr.classList.remove('show');
 }
 
