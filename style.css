@@ -1103,7 +1103,7 @@ input[type=range]::-moz-range-thumb{
 }
 .checkbox .box{
   position:absolute; inset:0; border-radius:3px;
-  border:1px solid #3a3f46; background:#1B1F26;
+  border:2px solid #3a3f46; background:#1B1F26;
   transition:.15s ease;
 }
 .checkbox:hover .box{
