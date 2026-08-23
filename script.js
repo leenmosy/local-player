@@ -271,6 +271,19 @@ function endPadDrag(e){
 }
 posPad.addEventListener('pointerup', endPadDrag);
 posPad.addEventListener('pointercancel', endPadDrag);
+posPad.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 1 : 4;
+  let dx = 0, dy = 0;
+  if (e.key === 'ArrowLeft') dx = -step;
+  else if (e.key === 'ArrowRight') dx = step;
+  else if (e.key === 'ArrowUp') dy = -step;
+  else if (e.key === 'ArrowDown') dy = step;
+  else return;
+  e.preventDefault();
+  setOverlayPosition(ovPosX + dx, ovPosY + dy);
+  applyOverlaySettings();
+  saveSettings();
+});
 setOverlayPosition(ovPosX, ovPosY);
 setOverlayAlign(ovAlign);
 overlayEl.classList.add('pos-smooth');
@@ -1699,7 +1712,7 @@ function renderResumeList(){
         ${item.url
           ? `<button type="button" class="ri-continue" data-url="${escapeHtmlAttr(item.url)}">Продолжить</button>`
           : `<button type="button" class="ri-continue" data-key="${escapeHtmlAttr(item.key)}">Продолжить</button>`}
-        <button type="button" class="ri-clear" data-key="${escapeHtmlAttr(item.key)}">✕</button>
+        <button type="button" class="ri-clear" data-key="${escapeHtmlAttr(item.key)}" aria-label="Удалить «${escapeHtmlAttr(displayName)}» из списка">✕</button>
       </div>
     </div>
   `;
@@ -5059,6 +5072,8 @@ const saveTitle = () => {
   fnameEl.classList.remove('editing');
   fnameEl.style.userSelect = 'none';
   fnameEl.removeAttribute('data-placeholder');
+  fnameEl.setAttribute('role', 'button');
+  fnameEl.setAttribute('aria-label', 'Изменить название видео');
   fnameEl.textContent = newTitle;
   
   // Обновляем связанные элементы
@@ -5080,13 +5095,21 @@ const cancelEdit = () => {
   fnameEl.classList.remove('editing');
   fnameEl.style.userSelect = 'none';
   fnameEl.removeAttribute('data-placeholder');
+  fnameEl.setAttribute('role', 'button');
+  fnameEl.setAttribute('aria-label', 'Изменить название видео');
   fnameEl.textContent = originalTitle;
   isEditingTitle = false;
 };
 
 // Обработчики редактирования (навешиваются один раз при инициализации)
 fnameEl.addEventListener('keydown', (e) => {
-  if (!isEditingTitle) return;
+  if (!isEditingTitle) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fnameEl.click();
+    }
+    return;
+  }
   if (e.key === 'Enter') {
     e.preventDefault();
     e.stopPropagation();
@@ -5122,12 +5145,14 @@ fnameEl.addEventListener('paste', (e) => {
 
 fnameEl.addEventListener('click', () => {
   if (isEditingTitle) return;
-  
+
   isEditingTitle = true;
   originalTitle = fnameEl.textContent;
-  
+
   fnameEl.contentEditable = 'true';
   fnameEl.classList.add('editing');
+  fnameEl.removeAttribute('role');
+  fnameEl.removeAttribute('aria-label');
   fnameEl.focus();
   
   // Не выделяем текст автоматически
