@@ -99,6 +99,7 @@ html, body{
   font-weight: 300;
   display:flex; flex-direction:column;
   overflow: auto;
+  scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: #3a3f46 transparent;
 }
