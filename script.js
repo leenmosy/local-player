@@ -4966,7 +4966,7 @@ function showUrlError(message, opts = {}){
   urlLoadBtn.disabled = false;
   urlInput.classList.add('error');
   clearTimeout(urlInputErrorTimeout);
-  const duration = opts.duration || 20000;
+  const duration = opts.duration || 8000;
   urlInputErrorTimeout = setTimeout(() => urlInput.classList.remove('error'), duration);
   showErrMsg(message, opts);
 }
