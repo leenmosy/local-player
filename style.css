@@ -386,7 +386,7 @@ input[type=file]{ display:none; }
 
 .err-msg{
   color: var(--accent-red); font-size: 13px; margin-top: 10px; font-family:'JetBrains Mono', monospace;
-  min-height: 16px;
+  min-height: 17px;
   opacity: 0;
   visibility: hidden;
   transition: opacity .3s ease, visibility .3s ease;
