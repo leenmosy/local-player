@@ -35,6 +35,11 @@
   window.addEventListener('resize', checkDeviceBlock);
 })();
 
+// Если контент стартового экрана не влезает по высоте — сразу докручиваем в конечное
+// положение, до любого клика, чтобы фокус на инпуте/кнопке не вызывал заметный прыжок.
+document.documentElement.scrollTop = document.documentElement.scrollHeight;
+document.body.scrollTop = document.body.scrollHeight;
+
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const btn = e.target.closest('button');
