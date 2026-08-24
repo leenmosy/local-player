@@ -21,8 +21,6 @@
 
 <p align="center">
   <img src="screenshots/main-screen.png" alt="Главный экран" width="800">
-  <br>
-  <img src="screenshots/caption-main-screen.svg" alt="Главный экран">
 </p>
 
 <br>
@@ -43,24 +41,18 @@
 
 <p align="center">
   <img src="screenshots/player.png" alt="Плеер во время просмотра" width="800">
-  <br>
-  <img src="screenshots/caption-player.svg" alt="Плеер во время просмотра">
 </p>
 
 <br>
 
 <p align="center">
   <img src="screenshots/settings-blur.png" alt="Блюр по таймингу" width="800">
-  <br>
-  <img src="screenshots/caption-settings-blur.svg" alt="Блюр по таймингу">
 </p>
 
 <br>
 
 <p align="center">
   <img src="screenshots/resume-progress.png" alt="Сохранённый прогресс просмотра" width="800">
-  <br>
-  <img src="screenshots/caption-resume-progress.svg" alt="Сохранённый прогресс просмотра">
 </p>
 
 <br>
