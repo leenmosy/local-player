@@ -108,12 +108,9 @@
     <div class="buffering-overlay" id="buffering-overlay" aria-hidden="true">
       <div class="buffering-spinner"></div>
     </div>
-    <div class="audio-hint" id="audio-hint" style="display:none;">
-      <button class="audio-hint-close" id="audio-hint-close" aria-label="Закрыть">×</button>
-      <div class="audio-hint-body">
-        <div class="audio-hint-text">Из-за особенностей HLS-ссылок <strong>Компрессор</strong> может не работать должным образом. Если возникли проблемы, попробуйте выключить, а затем включить чекбокс в настройках плеера</div>
-      </div>
-      <div class="audio-hint-progress"><div class="audio-hint-progress-fill" id="audio-hint-progress-fill"></div></div>
+    <div class="toast toast-warning audio-hint" id="audio-hint">
+      <span class="toast-text">С HLS-ссылками <strong>Компрессор</strong> может работать нестабильно. Если возникли проблемы, то переключите чекбокс в настройках</span>
+      <button type="button" class="toast-close" id="audio-hint-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
     </div>
     <div class="controls-bar" id="controls-bar">
       <div class="playback-group">
@@ -160,8 +157,14 @@
         </button>
       </div>
     </div>
-    <div class="storage-toast" id="storage-toast"></div>
-    <div class="codec-warning-toast" id="codec-warning-toast"></div>
+    <div class="toast toast-error" id="storage-toast">
+      <span class="toast-text" id="storage-toast-text"></span>
+      <button type="button" class="toast-close" id="storage-toast-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    </div>
+    <div class="toast toast-warning" id="codec-warning-toast">
+      <span class="toast-text" id="codec-warning-toast-text"></span>
+      <button type="button" class="toast-close" id="codec-warning-toast-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    </div>
     <div class="dr-panel" id="dr-panel">
       <!-- Категория: Звук -->
       <div class="dr-category">

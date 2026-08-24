@@ -783,100 +783,6 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
   to{ transform: rotate(360deg); }
 }
 
-.audio-hint{
-  position: absolute;
-  bottom: 88px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(18,20,24,.92);
-  backdrop-filter: blur(10px);
-  border-radius: 8px;
-  overflow: hidden;
-  max-width: 500px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.35);
-  z-index: 10;
-  opacity: 1;
-  transition: opacity .3s ease, transform .3s ease;
-  user-select: none;
-  cursor: default;
-  animation: audio-hint-in .3s ease;
-}
-@keyframes audio-hint-in{
-  from{ opacity: 0; transform: translateX(-50%) translateY(8px); }
-  to{ opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-.audio-hint.hidden{
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px);
-  pointer-events: none;
-}
-.audio-hint-body{
-  min-width: 0;
-  text-align: left;
-  padding: 10px 30px 9px 12px;
-}
-.audio-hint-title{
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Inter-SemiBold', sans-serif;
-  color: var(--text);
-  margin-bottom: 3px;
-}
-.audio-hint-text{
-  font-size: 12px;
-  color: white;
-  line-height: 1.5;
-}
-.audio-hint-text strong{
-  color: var(--accent-orange);
-  font-weight: 500;
-  font-family: 'Inter-SemiBold', sans-serif;
-}
-.audio-hint-close{
-  position: absolute;
-  top: 7px;
-  right: 6px;
-  width: 20px;
-  height: 20px;
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  line-height: 1;
-  padding: 0;
-  border-radius: 4px;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-.audio-hint-close:hover{
-  color: #ffffff;
-  background: rgba(255,255,255,0.1);
-}
-.audio-hint-progress{
-  height: 2.5px;
-  background: rgba(255,255,255,.08);
-}
-.audio-hint-progress-fill{
-  height: 100%;
-  width: 100%;
-  background: var(--accent-orange);
-  transform-origin: left;
-  animation: audio-hint-shrink 7s linear forwards;
-}
-.audio-hint:hover .audio-hint-progress-fill{
-  animation-play-state: paused;
-}
-@keyframes audio-hint-shrink{
-  from{ transform: scaleX(1); }
-  to{ transform: scaleX(0); }
-}
-@media (max-width: 560px){
-  .audio-hint{ max-width: calc(100vw - 32px); }
-}
-
 /* ---------- ПАНЕЛЬ УПРАВЛЕНИЯ ---------- */
 .stage:fullscreen, .stage:-webkit-full-screen{ margin: 0; border-radius: 0; }
 .stage:fullscreen video, .stage:-webkit-full-screen video{ max-height: 100vh; }
@@ -1592,16 +1498,14 @@ input[type=range]::-moz-range-thumb{
   .center-play-icon svg{ width: 20px; height: 20px; }
 }
 
-.storage-toast{
+.toast{
   position: fixed;
   left: 50%;
   bottom: 24px;
   transform: translate(-50%, 12px);
   max-width: min(420px, calc(100% - 32px));
-  padding: 12px 16px;
+  padding: 12px 34px 12px 16px;
   border-radius: 10px;
-  background: #2A1D1A;
-  border: 1px solid #E08B7D;
   color: #F2E4DF;
   font-size: 13px;
   line-height: 1.4;
@@ -1610,30 +1514,48 @@ input[type=range]::-moz-range-thumb{
   pointer-events: none;
   transition: opacity .25s ease, transform .25s ease;
 }
-.storage-toast.show{
+.toast.show{
   opacity: 1;
   transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.toast-close{
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+.toast-close svg{
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.toast-close:hover{
+  color: #ffffff;
+  background: rgba(255,255,255,.1);
 }
 
-.codec-warning-toast{
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translate(-50%, 12px);
-  max-width: min(420px, calc(100% - 32px));
-  padding: 12px 16px;
-  border-radius: 10px;
+.toast-error{
+  background: #2A1D1A;
+  border: 1px solid #E08B7D;
+}
+
+.toast-warning{
   background: #2A2210;
   border: 1px solid var(--accent-orange);
-  color: #F2E4DF;
-  font-size: 13px;
-  line-height: 1.4;
-  z-index: 50;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .25s ease, transform .25s ease;
 }
-.codec-warning-toast.show{
-  opacity: 1;
-  transform: translate(-50%, 0);
+.toast-text strong{
+  color: var(--accent-orange);
+  font-weight: 500;
+  font-family: 'Inter-SemiBold', sans-serif;
 }

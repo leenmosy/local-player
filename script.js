@@ -104,27 +104,23 @@ const centerIconPause = document.getElementById('center-icon-pause');
 const subsFileName = document.getElementById('subs-file-name');
 const subsRemoveBtn = document.getElementById('subs-remove-btn');
 const urlLoadingSpinner = document.getElementById('url-loading-spinner');
+const TOAST_DURATION_MS = 8000;
+
 const audioHint = document.getElementById('audio-hint');
 const audioHintClose = document.getElementById('audio-hint-close');
-const audioHintProgressFill = document.getElementById('audio-hint-progress-fill');
+let audioHintTimeout = null;
 
-// Обработчик закрытия подсказки
-audioHintClose.addEventListener('click', () => {
-  audioHint.classList.add('hidden');
-});
+function hideAudioHint(){
+  clearTimeout(audioHintTimeout);
+  audioHint.classList.remove('show');
+}
 
-// Скрываем подсказку после завершения анимации прогресс-бара
-audioHintProgressFill.addEventListener('animationend', () => {
-  audioHint.classList.add('hidden');
-});
+audioHintClose.addEventListener('click', hideAudioHint);
 
-// Показывает подсказку и перезапускает полоску прогресса с нуля
 function showAudioHint(){
-  audioHint.style.display = 'block';
-  audioHint.classList.remove('hidden');
-  audioHintProgressFill.style.animation = 'none';
-  void audioHintProgressFill.offsetWidth;
-  audioHintProgressFill.style.animation = '';
+  audioHint.classList.add('show');
+  clearTimeout(audioHintTimeout);
+  audioHintTimeout = setTimeout(hideAudioHint, TOAST_DURATION_MS);
 }
 
 // --- элементы управления оверлеем ---
@@ -338,31 +334,40 @@ let uiSyncInterval = null;
 
 // --- уведомление о недоступности localStorage (переполнена квота, приватный режим и т.п.) ---
 const storageToast = document.getElementById('storage-toast');
+const storageToastText = document.getElementById('storage-toast-text');
 let storageToastTimeout = null;
 let storageErrorShown = false; // Не показываем уведомление при каждом автоматическом сохранении
 
 function showStorageToast(msg){
-  storageToast.textContent = msg;
+  storageToastText.textContent = msg;
   storageToast.classList.add('show');
   clearTimeout(storageToastTimeout);
-  storageToastTimeout = setTimeout(() => storageToast.classList.remove('show'), 5000);
+  storageToastTimeout = setTimeout(() => storageToast.classList.remove('show'), TOAST_DURATION_MS);
 }
 
+document.getElementById('storage-toast-close').addEventListener('click', () => {
+  clearTimeout(storageToastTimeout);
+  storageToast.classList.remove('show');
+});
+
 const codecWarningToast = document.getElementById('codec-warning-toast');
+const codecWarningToastText = document.getElementById('codec-warning-toast-text');
 let codecWarningTimeout = null;
 const RISKY_VIDEO_CODECS = ['HEVC'];
 
 function showCodecWarningToast(msg){
-  codecWarningToast.textContent = msg;
+  codecWarningToastText.textContent = msg;
   codecWarningToast.classList.add('show');
   clearTimeout(codecWarningTimeout);
-  codecWarningTimeout = setTimeout(() => codecWarningToast.classList.remove('show'), 7000);
+  codecWarningTimeout = setTimeout(() => codecWarningToast.classList.remove('show'), TOAST_DURATION_MS);
 }
 
 function hideCodecWarningToast(){
   clearTimeout(codecWarningTimeout);
   codecWarningToast.classList.remove('show');
 }
+
+document.getElementById('codec-warning-toast-close').addEventListener('click', hideCodecWarningToast);
 
 function checkCodecWarning(result, token){
   if (token !== chapterParseToken) return;
@@ -2255,7 +2260,7 @@ function loadFile(file, handle, meta){
   audioSourceTainted = false;
   setAudioFeaturesAvailable(true);
   destroyAudioGraph();
-  audioHint.classList.add('hidden');
+  hideAudioHint();
   if (drToggle.checked || parseFloat(drBoost.value) > 100) ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
