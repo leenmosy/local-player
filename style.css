@@ -1340,7 +1340,7 @@ input[type=range]::-moz-range-thumb{
   width: 2.3ch;
 }
 .timing-edit-container .timing-segmented:focus-within{
-  border-color: var(--accent-orange);
+  border-color: var(--accent);
   outline: none;
 }
 .timing-edit-container .timing-segmented.has-error{
