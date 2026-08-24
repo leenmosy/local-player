@@ -6,7 +6,6 @@
   <img src="https://img.shields.io/badge/platform-desktop%20only-informational" alt="desktop only">
   <img src="https://img.shields.io/badge/backend-none-lightgrey" alt="no backend">
   <img src="https://img.shields.io/badge/dependencies-hls.js-yellow" alt="hls.js">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3 license">
 </p>
 
 <br>
