@@ -4322,43 +4322,6 @@ video.addEventListener('loadeddata', () => {
   videoErrorEl.style.display = 'none';
 });
 
-// Звук играет, а кадры не декодируются (HEVC без поддержки), MediaError тут не бросается, ловим по totalVideoFrames
-let frameCheckTimeout = null;
-let frameCheckShown = false;
-
-function resetFrameCheck(){
-  if (frameCheckTimeout){ clearTimeout(frameCheckTimeout); frameCheckTimeout = null; }
-}
-
-function scheduleFrameCheck(){
-  resetFrameCheck();
-  if (frameCheckShown || !video.getVideoPlaybackQuality) return;
-  const startTime = video.currentTime;
-  const startFrames = video.getVideoPlaybackQuality().totalVideoFrames;
-  frameCheckTimeout = setTimeout(() => {
-    frameCheckTimeout = null;
-    if (frameCheckShown || video.paused || video.seeking) return;
-    const advanced = video.currentTime - startTime;
-    const frames = video.getVideoPlaybackQuality().totalVideoFrames;
-    if (advanced > 0.3 && frames <= startFrames){
-      frameCheckShown = true;
-      video.pause();
-      videoErrorEl.innerHTML = `
-        <div class="ve-title">Не получилось воспроизвести файл</div>
-        <div class="ve-detail">Звук воспроизводится, но кадры видео не декодируются. Браузер не поддерживает кодек видеодорожки.</div>
-        ${ERROR_SOLUTIONS[3]}
-      `;
-      videoErrorEl.style.display = 'flex';
-    }
-  }, 2500);
-}
-
-video.addEventListener('playing', scheduleFrameCheck);
-video.addEventListener('pause', resetFrameCheck);
-video.addEventListener('seeking', resetFrameCheck);
-video.addEventListener('error', resetFrameCheck);
-video.addEventListener('emptied', () => { resetFrameCheck(); frameCheckShown = false; });
-
 // --- Индикатор буферизации (лаги сети) ---
 let bufferingShowTimer = null;
 
