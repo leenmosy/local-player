@@ -1699,11 +1699,43 @@ function escapeHtmlAttr(str){
     .replace(/>/g, '&gt;');
 }
 
+// разрешает анимацию панели начиная со второго рендера
+let resumePanelReady = false;
+
+function setResumePanelOpen(open, animate){
+  const isOpen = resumePanel.classList.contains('show');
+  if (isOpen === open) return;
+  if (!animate){
+    resumePanel.classList.toggle('show', open);
+    resumePanel.style.maxHeight = open ? 'none' : '0px';
+    return;
+  }
+  if (open){
+    resumePanel.classList.add('show');
+    resumePanel.style.maxHeight = resumePanel.scrollHeight + 'px';
+    const onDone = (ev) => {
+      if (ev.target !== resumePanel || ev.propertyName !== 'max-height') return;
+      resumePanel.removeEventListener('transitionend', onDone);
+      if (resumePanel.classList.contains('show')) resumePanel.style.maxHeight = 'none';
+    };
+    resumePanel.addEventListener('transitionend', onDone);
+  } else {
+    resumePanel.style.maxHeight = resumePanel.scrollHeight + 'px';
+    void resumePanel.offsetHeight;
+    resumePanel.classList.remove('show');
+    resumePanel.style.maxHeight = '0px';
+  }
+}
+
 function updatePanelVisibility(){
-  resumePanel.classList.toggle('show', resumeList.children.length > 0);
+  setResumePanelOpen(resumeList.children.length > 0, resumePanelReady);
+  resumePanelReady = true;
 }
 
 function renderResumeList(){
+  // ключи карточек, показанных до перерисовки
+  const prevKeys = new Set(Array.from(resumeList.children).map(el => el.dataset.key));
+
   const items = [];
   for (let i = 0; i < localStorage.length; i++){
     const key = localStorage.key(i);
@@ -1737,7 +1769,7 @@ function renderResumeList(){
       typeBadge = '<span class="ri-type-badge ri-type-file">Файл</span>';
     }
     return `
-    <div class="resume-item">
+    <div class="resume-item" data-key="${escapeHtmlAttr(item.key)}">
       <div class="ri-info">
         <div class="ri-name">${escapeHtml(displayName)}</div>
         <div class="ri-time">
@@ -1755,6 +1787,20 @@ function renderResumeList(){
     </div>
   `;
   }).join('');
+
+  // новые карточки (не из prevKeys) появляются с анимацией
+  if (prevKeys.size > 0){
+    const enteringItems = Array.from(resumeList.querySelectorAll('.resume-item')).filter(el => !prevKeys.has(el.dataset.key));
+    enteringItems.forEach(el => el.classList.add('collapsed'));
+    if (enteringItems.length){
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          enteringItems.forEach(el => el.classList.remove('collapsed'));
+        });
+      });
+    }
+  }
+
   updatePanelVisibility();
 }
 
@@ -1762,6 +1808,20 @@ resumeList.addEventListener('click', async (e) => {
   const btn = e.target.closest('.ri-clear');
   if (btn) {
     const key = btn.dataset.key;
+    const item = btn.closest('.resume-item');
+
+    if (item){
+      item.classList.add('collapsed');
+      await new Promise(resolve => {
+        const onDone = (ev) => {
+          if (ev.target !== item || ev.propertyName !== 'max-height') return;
+          item.removeEventListener('transitionend', onDone);
+          resolve();
+        };
+        item.addEventListener('transitionend', onDone);
+      });
+    }
+
     try{
       // Удаляем прогресс
       localStorage.removeItem(key);
@@ -3261,12 +3321,31 @@ function destroyAudioGraph(){
   // Не закрываем audioContext и не обнуляем sourceNode
 }
 
+// высота считается динамически через scrollHeight, а не фиксированным числом
+function collapseCategoryContent(content){
+  content.style.maxHeight = content.scrollHeight + 'px';
+  void content.offsetHeight;
+  content.classList.add('collapsed');
+  content.style.maxHeight = '0px';
+}
+
+function expandCategoryContent(content){
+  content.classList.remove('collapsed');
+  content.style.maxHeight = content.scrollHeight + 'px';
+  const onDone = (ev) => {
+    if (ev.target !== content || ev.propertyName !== 'max-height') return;
+    content.removeEventListener('transitionend', onDone);
+    if (!content.classList.contains('collapsed')) content.style.maxHeight = 'none';
+  };
+  content.addEventListener('transitionend', onDone);
+}
+
 function collapseCategoriesIn(panelEl){
   panelEl.querySelectorAll('.dr-category-header').forEach(header => {
     header.setAttribute('aria-expanded', 'false');
     const content = header.nextElementSibling;
-    if (content && content.classList.contains('dr-category-content')) {
-      content.classList.add('collapsed');
+    if (content && content.classList.contains('dr-category-content') && !content.classList.contains('collapsed')) {
+      collapseCategoryContent(content);
     }
   });
 }
@@ -3603,7 +3682,9 @@ function initCategoryHeaders(){
     header.setAttribute('aria-expanded', 'false');
     const content = header.nextElementSibling;
     if (content && content.classList.contains('dr-category-content')) {
+      // При загрузке страницы сворачиваем сразу, без анимации
       content.classList.add('collapsed');
+      content.style.maxHeight = '0px';
     }
   });
 }
@@ -3615,14 +3696,13 @@ function setupCategoryClickHandlers(){
     header.addEventListener('click', () => {
       const isExpanded = header.getAttribute('aria-expanded') === 'true';
       header.setAttribute('aria-expanded', !isExpanded);
-      
-      // Добавляем/удаляем класс collapsed для контента
+
       const content = header.nextElementSibling;
       if (content && content.classList.contains('dr-category-content')) {
         if (!isExpanded) {
-          content.classList.remove('collapsed');
+          expandCategoryContent(content);
         } else {
-          content.classList.add('collapsed');
+          collapseCategoryContent(content);
         }
       }
     });
