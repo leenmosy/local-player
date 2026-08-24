@@ -722,13 +722,14 @@ function parseTimeToSeconds(str){
   return seconds >= 0 ? seconds : null;
 }
 
-function renderBlurRanges(){
+function renderBlurRanges(newIndex){
   if (isEditing) stopEditingSession();
   timingList.innerHTML = '';
   blurRanges.forEach((range, idx) => {
     const item = document.createElement('div');
     item.className = 'timing-item';
-    
+    if (idx === newIndex) item.classList.add('collapsed');
+
     const rangeText = document.createElement('span');
     rangeText.className = 'timing-range';
     rangeText.textContent = `${formatTime(range.from)} – ${formatTime(range.to)}`;
@@ -748,9 +749,7 @@ function renderBlurRanges(){
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       stopEditingSession();
-      item.style.maxHeight = item.offsetHeight + 'px';
-      void item.offsetHeight;
-      item.classList.add('removing');
+      item.classList.add('collapsed');
       item.addEventListener('transitionend', () => {
         blurRanges.splice(idx, 1);
         renderBlurRanges();
@@ -769,6 +768,12 @@ function renderBlurRanges(){
     
     timingList.appendChild(item);
   });
+  const newItem = timingList.children[newIndex];
+  if (newItem){
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => newItem.classList.remove('collapsed'));
+    });
+  }
 }
 
 let activeOutsideClickHandler = null;
@@ -1042,7 +1047,8 @@ timingAddBtn.addEventListener('click', () => {
   }
   blurRanges.push({ from, to });
   blurRanges.sort((a, b) => a.from - b.from);
-  renderBlurRanges();
+  const newIndex = blurRanges.findIndex(r => r.from === from && r.to === to);
+  renderBlurRanges(newIndex);
   updateVideoFilter();
   saveSettings();
   clearSegmented(timingFromHH, timingFromMM, timingFromSS);

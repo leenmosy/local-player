@@ -1279,12 +1279,14 @@ input[type=range]::-moz-range-thumb{
 .timing-item{
   display:flex; align-items:center; justify-content:space-between; gap: 10px;
   padding: 8px 0; border-bottom: 1px solid #20242b;
+  max-height: 40px;
+  opacity: 1;
   overflow: hidden;
   transition: max-height .3s ease, opacity .3s ease, padding .3s ease, border-color .3s ease;
 }
 .timing-item:last-child{ border-bottom:none; }
-.timing-item.removing{
-  max-height: 0 !important;
+.timing-item.collapsed{
+  max-height: 0;
   opacity: 0;
   padding-top: 0;
   padding-bottom: 0;
@@ -1329,6 +1331,7 @@ input[type=range]::-moz-range-thumb{
 .timing-item.editing{
   align-items: stretch;
   padding: 8px 0;
+  max-height: none;
 }
 .timing-edit-container{
   display: flex;
