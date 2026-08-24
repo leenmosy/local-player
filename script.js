@@ -348,6 +348,32 @@ function showStorageToast(msg){
   storageToastTimeout = setTimeout(() => storageToast.classList.remove('show'), 5000);
 }
 
+const codecWarningToast = document.getElementById('codec-warning-toast');
+let codecWarningTimeout = null;
+const RISKY_VIDEO_CODECS = ['HEVC'];
+
+function showCodecWarningToast(msg){
+  codecWarningToast.textContent = msg;
+  codecWarningToast.classList.add('show');
+  clearTimeout(codecWarningTimeout);
+  codecWarningTimeout = setTimeout(() => codecWarningToast.classList.remove('show'), 7000);
+}
+
+function hideCodecWarningToast(){
+  clearTimeout(codecWarningTimeout);
+  codecWarningToast.classList.remove('show');
+}
+
+function checkCodecWarning(result, token){
+  if (token !== chapterParseToken) return;
+  if (!result || !result.media || !Array.isArray(result.media.track)) return;
+  const videoTrack = result.media.track.find(t => t && t['@type'] === 'Video');
+  const format = videoTrack && videoTrack.Format ? videoTrack.Format.toUpperCase() : null;
+  if (format && RISKY_VIDEO_CODECS.includes(format)) {
+    showCodecWarningToast(`Видео в ${format}: если появится чёрный экран со звуком, конвертируйте файл в H.264`);
+  }
+}
+
 function notifyStorageIssue(){
   if (storageErrorShown) return;
   storageErrorShown = true;
@@ -2383,6 +2409,7 @@ async function parseChaptersFromFile(file, token){
     const result = await mediainfo.analyzeData(getSize, readChunk);
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
+    checkCodecWarning(result, token);
   } catch (err){
     // Если метаданные недоступны, продолжаем работу без глав и плашек пропуска
     console.warn('Главы (chapters) не прочитаны:', err && err.message ? err.message : err);
@@ -2498,6 +2525,7 @@ async function parseChaptersFromUrl(url, token){
     const result = await mediainfo.analyzeData(getSize, readChunk);
     if (token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
+    checkCodecWarning(result, token);
   } catch (err){
     // Нет CORS, нет Range, файл без глав и т.п., штатно продолжаем без них.
     console.warn('Главы (chapters) по ссылке не прочитаны:', err && err.message ? err.message : err);
@@ -2583,6 +2611,7 @@ function resetMediaChapters(){
   mediaChapters = [];
   dismissedChapterSegments = new Set();
   hideSkipSegmentOverlay();
+  hideCodecWarningToast();
 }
 
 // Переход к следующему видео в плейлисте (общая логика для автоперехода по
