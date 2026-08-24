@@ -1762,17 +1762,31 @@ resumeList.addEventListener('click', async (e) => {
   const btn = e.target.closest('.ri-clear');
   if (btn) {
     const key = btn.dataset.key;
-    try{
-      // Удаляем прогресс
-      localStorage.removeItem(key);
-      // Удаляем связанные настройки
-      localStorage.removeItem(settingsKey(key));
-      // Удаляем связанные субтитры
-      localStorage.removeItem(subsKey(key));
-    } catch(err){}
-    try{ await idbDelete(key); } catch(err){}
-    try{ await idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)); } catch(err){}
-    renderResumeList();
+    const item = btn.closest('.resume-item');
+    const removeRecord = async () => {
+      try{
+        // Удаляем прогресс
+        localStorage.removeItem(key);
+        // Удаляем связанные настройки
+        localStorage.removeItem(settingsKey(key));
+        // Удаляем связанные субтитры
+        localStorage.removeItem(subsKey(key));
+      } catch(err){}
+      try{ await idbDelete(key); } catch(err){}
+      try{ await idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)); } catch(err){}
+      renderResumeList();
+    };
+    if (!item){
+      await removeRecord();
+      return;
+    }
+    item.classList.add('collapsed');
+    const onCollapseEnd = (ev) => {
+      if (ev.target !== item || ev.propertyName !== 'max-height') return;
+      item.removeEventListener('transitionend', onCollapseEnd);
+      removeRecord();
+    };
+    item.addEventListener('transitionend', onCollapseEnd);
     return;
   }
   
