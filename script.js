@@ -750,12 +750,18 @@ function renderBlurRanges(newIndex){
       e.stopPropagation();
       stopEditingSession();
       item.classList.add('collapsed');
-      item.addEventListener('transitionend', () => {
+      // Слушаем именно max-height и именно на самом item: клик по кнопке
+      // запускает её собственный transform-transition (тап-фидбек), который
+      // всплывает раньше и обрывал бы анимацию схлопывания на середине
+      const onCollapseEnd = (ev) => {
+        if (ev.target !== item || ev.propertyName !== 'max-height') return;
+        item.removeEventListener('transitionend', onCollapseEnd);
         blurRanges.splice(idx, 1);
         renderBlurRanges();
         updateVideoFilter();
         saveSettings();
-      }, { once: true });
+      };
+      item.addEventListener('transitionend', onCollapseEnd);
     });
     
     item.appendChild(rangeText);
