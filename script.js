@@ -4322,52 +4322,30 @@ video.addEventListener('loadeddata', () => {
   videoErrorEl.style.display = 'none';
 });
 
-// Звук играет, а картинки нет (HEVC-декодер иногда честно считает кадры декодированными,
-// но не выводит их), MediaError тут не бросается, поэтому сверяем ещё и реальные пиксели кадра
+// Звук играет, а кадры не декодируются (HEVC без поддержки), MediaError тут не бросается, ловим по totalVideoFrames
 let frameCheckTimeout = null;
 let frameCheckShown = false;
-let frameSampleCanvas = null;
 
 function resetFrameCheck(){
   if (frameCheckTimeout){ clearTimeout(frameCheckTimeout); frameCheckTimeout = null; }
 }
 
-// Средняя яркость уменьшенного кадра, null если canvas недоступен (например, затейнтован кросс-доменным потоком)
-function sampleFrameBrightness(){
-  try{
-    const w = 16, h = 9;
-    if (!frameSampleCanvas) frameSampleCanvas = document.createElement('canvas');
-    frameSampleCanvas.width = w;
-    frameSampleCanvas.height = h;
-    const ctx = frameSampleCanvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, w, h);
-    const data = ctx.getImageData(0, 0, w, h).data;
-    let sum = 0;
-    for (let i = 0; i < data.length; i += 4) sum += data[i] + data[i + 1] + data[i + 2];
-    return sum / (data.length / 4 * 3);
-  } catch(e){ return null; }
-}
-
 function scheduleFrameCheck(){
   resetFrameCheck();
-  if (frameCheckShown) return;
+  if (frameCheckShown || !video.getVideoPlaybackQuality) return;
   const startTime = video.currentTime;
-  const startFrames = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality().totalVideoFrames : null;
-  const startBrightness = sampleFrameBrightness();
+  const startFrames = video.getVideoPlaybackQuality().totalVideoFrames;
   frameCheckTimeout = setTimeout(() => {
     frameCheckTimeout = null;
     if (frameCheckShown || video.paused || video.seeking) return;
     const advanced = video.currentTime - startTime;
-    if (advanced <= 0.3) return;
-    const noFrames = startFrames !== null && video.getVideoPlaybackQuality().totalVideoFrames <= startFrames;
-    const endBrightness = sampleFrameBrightness();
-    const stillBlack = startBrightness !== null && endBrightness !== null && startBrightness < 2 && endBrightness < 2;
-    if (noFrames || stillBlack){
+    const frames = video.getVideoPlaybackQuality().totalVideoFrames;
+    if (advanced > 0.3 && frames <= startFrames){
       frameCheckShown = true;
       video.pause();
       videoErrorEl.innerHTML = `
         <div class="ve-title">Не получилось воспроизвести файл</div>
-        <div class="ve-detail">Звук воспроизводится, но картинки нет. Браузер не поддерживает кодек видеодорожки.</div>
+        <div class="ve-detail">Звук воспроизводится, но кадры видео не декодируются. Браузер не поддерживает кодек видеодорожки.</div>
         ${ERROR_SOLUTIONS[3]}
       `;
       videoErrorEl.style.display = 'flex';
