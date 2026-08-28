@@ -1588,7 +1588,7 @@ function loadSettings(){
       setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
     }
     
-    titleInput.value = settings.titleInput !== undefined ? settings.titleInput : currentFileName;
+    titleInput.value = String(settings.titleInput !== undefined ? settings.titleInput : currentFileName).slice(0, MAX_TITLE_LEN);
     ovTitle.textContent = titleInput.value;
     
     applyOverlaySettings();
@@ -3612,8 +3612,10 @@ function parseSubtitleTime(timeStr){
 function cleanSubtitleText(text){
   return String(text)
     .replace(/\{\\[^}]*\}/g, '')
-    .replace(/<\/?(?:i|b|u|s|em|strong|font|ruby|rt|c|v|lang)(?:\s[^>]*)?>/gi, '')
-    .replace(/<\/?\d{1,2}:\d{2}[.,]\d{1,3}>/g, '')
+    // теги с необязательным классом (<c.yellow>, <lang.en-US>) или атрибутами (<v Speaker>)
+    .replace(/<\/?(?:i|b|u|s|em|strong|font|ruby|rt|c|v|lang)(?:[.\s][^>]*)?>/gi, '')
+    // караоке-метки WebVTT, в т.ч. с часами: <00:50:01.000>
+    .replace(/<\/?(?:\d{1,3}:)?\d{1,2}:\d{2}[.,]\d{1,3}>/g, '')
     .trim();
 }
 
@@ -5275,10 +5277,11 @@ let isEditingTitle = false;
 let originalTitle = '';
 let checkEmpty = null;
 
+const MAX_TITLE_LEN = 200;
 const saveTitle = () => {
   if (!isEditingTitle) return;
-  const newTitle = fnameEl.textContent.trim() || originalTitle;
-  
+  const newTitle = (fnameEl.textContent.trim() || originalTitle).slice(0, MAX_TITLE_LEN);
+
   if (checkEmpty) fnameEl.removeEventListener('input', checkEmpty);
   fnameEl.contentEditable = 'false';
   fnameEl.classList.remove('editing');
