@@ -494,20 +494,26 @@ function fixInfiniteDuration(onReady){
 // Приостанавливаем воспроизведение во время проверки длительности, чтобы скрыть служебный переход в конец файла и обратно
   const wasPlaying = !video.paused;
   if (wasPlaying) video.pause();
-  const onTimeUpdate = () => {
+  let settled = false;
+  let watchdog = null;
+  const finish = (resetTime) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(watchdog);
     video.removeEventListener('timeupdate', onTimeUpdate);
-    video.currentTime = 0;
+    if (resetTime){
+      try { video.currentTime = 0; } catch(e){}
+    }
     updateSeekControlsState();
     if (wasPlaying) video.play().catch(e => {
-      if (e.name === 'NotAllowedError') {
-        console.log('Autoplay prevented - user interaction required');
-      } else {
-        console.warn('Play error:', e);
-      }
+      if (e.name !== 'NotAllowedError') console.warn('Play error:', e);
     });
     if (onReady) onReady();
   };
+  const onTimeUpdate = () => finish(true);
   video.addEventListener('timeupdate', onTimeUpdate);
+  // Страховка: если timeupdate так и не пришёл (битый контейнер), не зависаем на чёрном кадре
+  watchdog = setTimeout(() => finish(false), 3000);
   try { video.currentTime = 1e101; } catch(e){ /* браузер сам ужмёт значение */ }
 }
 
@@ -674,12 +680,6 @@ function wireTimingGroups(fromHH, fromMM, fromSS, toHH, toMM, toSS){
     }
   });
 
-  // Стрелка вправо на последнем сегменте конца переходит дальше (кнопка сохранения)
-  toSS.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' && toSS.selectionStart === toSS.value.length){
-      // Можно добавить переход к кнопке сохранения если нужно
-    }
-  });
 }
 
 wireTimingGroups(timingFromHH, timingFromMM, timingFromSS, timingToHH, timingToMM, timingToSS);
@@ -774,6 +774,27 @@ function parseTimeToSeconds(str){
   return seconds >= 0 ? seconds : null;
 }
 
+// Схлопывает элемент и резолвится по завершении transition ИЛИ по таймауту,
+// если transitionend не пришёл (throttled-вкладка, prefers-reduced-motion, rAF-голод)
+function collapseElement(el){
+  el.classList.add('collapsed');
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      el.removeEventListener('transitionend', onEnd);
+      resolve();
+    };
+    const onEnd = (ev) => {
+      if (ev.target === el && ev.propertyName === 'max-height') finish();
+    };
+    el.addEventListener('transitionend', onEnd);
+    const t = setTimeout(finish, 400);
+  });
+}
+
 function renderBlurRanges(newIndex){
   if (isEditing) stopEditingSession();
   timingList.innerHTML = '';
@@ -801,19 +822,11 @@ function renderBlurRanges(newIndex){
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       stopEditingSession();
-      item.classList.add('collapsed');
-      // Слушаем именно max-height и именно на самом item: клик по кнопке
-      // запускает её собственный transform-transition (тап-фидбек), который
-      // всплывает раньше и обрывал бы анимацию схлопывания на середине
-      const onCollapseEnd = (ev) => {
-        if (ev.target !== item || ev.propertyName !== 'max-height') return;
-        item.removeEventListener('transitionend', onCollapseEnd);
-        blurRanges.splice(idx, 1);
-        renderBlurRanges();
-        updateVideoFilter();
-        saveSettings();
-      };
-      item.addEventListener('transitionend', onCollapseEnd);
+      // Удаляем из модели сразу, дальше — только анимация исчезновения строки
+      blurRanges.splice(idx, 1);
+      updateVideoFilter();
+      saveSettings();
+      collapseElement(item).then(() => renderBlurRanges());
     });
     
     item.appendChild(rangeText);
@@ -1287,9 +1300,18 @@ function cleanupStorageNow(prefix){
   const limit = STORAGE_LIMITS[prefix] || DEFAULT_STORAGE_LIMIT;
   if (items.length > limit){
     for (let i = limit; i < items.length; i++){
+      const key = items[i].key;
       try{
-        localStorage.removeItem(items[i].key);
+        localStorage.removeItem(key);
       } catch(e){ /* игнорируем ошибки при удалении */ }
+      // Синхронно подчищаем связанные записи в IndexedDB, иначе хендлы файлов
+      // и данные субтитров накапливаются там без предела
+      if (prefix === PROGRESS_PREFIX){
+        idbDelete(key).catch(() => {});
+        idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)).catch(() => {});
+      } else if (prefix === SUBS_PREFIX){
+        idbDelete(SUBS_PREFIX + 'data:' + key.slice(SUBS_PREFIX.length)).catch(() => {});
+      }
     }
   }
 }
@@ -1348,10 +1370,7 @@ function saveProgress(){
       progressData.folderId = currentFolderId;
     }
     localStorage.setItem(currentFileKey, JSON.stringify(progressData));
-    
-    // Удаляем дубликаты записей локальных файлов.
-    removeDuplicateProgress(currentFileKey);
-    
+    // Дедупликация выполняется один раз при открытии файла (loadFile), а не на каждом тике
     // Очищаем старые записи прогресса.
     cleanupStorage(PROGRESS_PREFIX);
     markStorageOk();
@@ -1859,28 +1878,16 @@ resumeList.addEventListener('click', async (e) => {
     const key = btn.dataset.key;
     const item = btn.closest('.resume-item');
 
-    if (item){
-      item.classList.add('collapsed');
-      await new Promise(resolve => {
-        const onDone = (ev) => {
-          if (ev.target !== item || ev.propertyName !== 'max-height') return;
-          item.removeEventListener('transitionend', onDone);
-          resolve();
-        };
-        item.addEventListener('transitionend', onDone);
-      });
-    }
-
+    // Удаляем сразу, чтобы перезагрузка во время анимации не воскресила запись
     try{
-      // Удаляем прогресс
       localStorage.removeItem(key);
-      // Удаляем связанные настройки
       localStorage.removeItem(settingsKey(key));
-      // Удаляем связанные субтитры
       localStorage.removeItem(subsKey(key));
     } catch(err){}
-    try{ await idbDelete(key); } catch(err){}
-    try{ await idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)); } catch(err){}
+    idbDelete(key).catch(() => {});
+    idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)).catch(() => {});
+
+    if (item) await collapseElement(item);
     renderResumeList();
     return;
   }
@@ -2099,6 +2106,31 @@ async function idbDelete(key){
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(new Error('Transaction aborted'));
   });
+}
+async function idbKeys(){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAllKeys();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Разовая чистка «осиротевших» записей IndexedDB: их localStorage-запись прогресса
+// уже удалена cleanup'ом, а хендл файла / данные субтитров остались
+async function idbSweepOrphans(){
+  try{
+    const keys = await idbKeys();
+    const subsDataPrefix = SUBS_PREFIX + 'data:';
+    for (const k of keys){
+      if (typeof k !== 'string') continue;
+      let progressKey = null;
+      if (k.startsWith(subsDataPrefix)) progressKey = PROGRESS_PREFIX + k.slice(subsDataPrefix.length);
+      else if (k.startsWith(PROGRESS_PREFIX)) progressKey = k;
+      else continue;
+      if (!localStorage.getItem(progressKey)) idbDelete(k).catch(() => {});
+    }
+  } catch(e){ /* некритично */ }
 }
 
 
@@ -2418,6 +2450,9 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', preInitMediaInfo);
 }
 
+// Одноразовая фоновая чистка осиротевших записей IndexedDB, не мешая старту
+setTimeout(() => { idbSweepOrphans(); }, 5000);
+
 // Читает файл через mediainfo.js кусками и превращает найденные главы 
 async function parseChaptersFromFile(file, token){
   try {
@@ -2456,7 +2491,7 @@ async function parseChaptersFromUrl(url, token){
 
     // Пробуем HEAD-запрос для получения размера файла
     try {
-      const head = await fetch(url, { method: 'HEAD' });
+      const head = await headRequest(url);
       if (head.ok) {
         headOk = true;
         size = Number(head.headers.get('Content-Length'));
@@ -4026,12 +4061,11 @@ video.addEventListener('pause', () => {
   showCenterIcon(false);
 });
 video.addEventListener('ratechange', () => {
-  // Синхронизируем ползунок скорости с реальным значением
-  const rate = video.playbackRate;
-  if (rate >= 0.25 && rate <= 4) {
-    drSpeed.value = rate;
-    drSpeedVal.textContent = formatSpeedLabel(rate);
-  }
+  // Синхронизируем ползунок скорости с реальным значением, зажимая в диапазон слайдера,
+  // чтобы подпись и положение бегунка не расходились при скорости, заданной извне
+  const min = parseFloat(drSpeed.min), max = parseFloat(drSpeed.max);
+  drSpeed.value = Math.min(max, Math.max(min, video.playbackRate));
+  drSpeedVal.textContent = formatSpeedLabel(parseFloat(drSpeed.value));
 });
 video.addEventListener('ended', () => {
   markProgressCompleted();
@@ -4574,6 +4608,16 @@ function armDirectLoadWatchdog(thisLoadToken){
   }, 20000);
 }
 
+// Один HEAD-запрос на ссылку, переиспользуется всеми, кому нужны только заголовки
+// (имя файла, размер для чтения глав). Сбрасывается в начале каждого loadUrl().
+let _headCache = new Map();
+function headRequest(url){
+  if (_headCache.has(url)) return _headCache.get(url);
+  const p = fetch(url, { method: 'HEAD' }).catch(err => { _headCache.delete(url); throw err; });
+  _headCache.set(url, p);
+  return p;
+}
+
 async function diagnoseVideoLoadError(url, fallbackMessage){
   try {
     const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
@@ -4676,6 +4720,7 @@ async function fetchManifestHead(url, useRange){
 
 async function loadUrl(url){
   cancelPendingUrlLoad();
+  _headCache = new Map();
   const thisLoadToken = urlLoadToken;
 
 
@@ -4773,22 +4818,26 @@ async function loadUrl(url){
   let videoInitialized = false;
 
   if (isM3U8 && typeof Hls === 'undefined'){
-    // hls.js не загружен (CDN недоступен)
+    // hls.js не подгрузился (повреждённый деплой). Пробуем нативный HLS.
     if (video.canPlayType('application/vnd.apple.mpegurl')){
-      // Попробуем native HLS
       video.src = url;
       videoInitialized = true;
+      const directLoadTimeout = armDirectLoadWatchdog(thisLoadToken);
       video.addEventListener('loadedmetadata', urlLoadedHandler = function(){
+        clearTimeout(directLoadTimeout);
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
         initAudioGraphForCurrentSource();
-        restoreProgress();
+        showPlayer();
+        video.play().catch(e => { if (e.name !== 'NotAllowedError') console.warn('Play error:', e); });
       }, { once: true });
       video.addEventListener('error', urlErrorHandler = function(){
+        clearTimeout(directLoadTimeout);
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
         showUrlError('Браузер не поддерживает m3u8 без hls.js библиотеки');
       }, { once: true });
+      loadUrlCommonInit();
     } else {
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
@@ -5211,9 +5260,9 @@ function getFileNameFromUrl(url){
 // Извлекает оригинальное имя файла из заголовка Content-Disposition
 async function getOriginalFileNameFromUrl(url){
   try {
-    const response = await fetch(url, { method: 'HEAD' });
+    const response = await headRequest(url);
     if (!response.ok) return null;
-    
+
     const contentDisposition = response.headers.get('Content-Disposition');
     if (!contentDisposition) return null;
     

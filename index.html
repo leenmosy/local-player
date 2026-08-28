@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src * blob:; connect-src *; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>Локальный плеер</title>
 <meta name="description" content="Локальные видеофайлы, папки с сериями или HLS-ссылки. Всё воспроизводится прямо в браузере, без сервера и загрузки файлов куда-либо.">
 <meta property="og:type" content="website">
@@ -18,7 +19,6 @@
 <link rel="stylesheet" href="style.css">
 <script src="vendor/hlsjs/hls.min.js"></script>
 <script src="vendor/mediainfo/mediainfo.min.js"></script>
-<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8761c677dded4e0d84ef28f2d0a1c020"}'></script>
 </head>
 <body>
 
