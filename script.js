@@ -4744,6 +4744,13 @@ async function loadUrl(url){
   // как только понятно, что это не m3u8-поток).
   resetMediaChapters();
 
+  // Если аудиограф ещё не создан, «испорченность» от предыдущей ссылки не действует:
+  // эту ссылку проверим заново, а не наследуем отключённые аудио-фичи
+  if (!sourceNode){
+    audioSourceTainted = false;
+    setAudioFeaturesAvailable(true);
+  }
+
   // Проверяем валидность URL и сохраняем результат для дальнейшего использования
   let parsedUrl;
   try {
@@ -4801,6 +4808,8 @@ async function loadUrl(url){
   // Это нужно для корректной работы Web Audio API и избежания гонки условий
   if (!isM3U8) {
     video.crossOrigin = 'anonymous';
+  } else {
+    video.removeAttribute('crossOrigin');
   }
 
   let videoInitialized = false;
