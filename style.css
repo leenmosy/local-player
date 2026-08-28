@@ -130,6 +130,7 @@ html, body{
 }
 #drop-view h1{
   font-size: 46px; font-weight: 400; margin: 0 0 26px; text-align:center;
+  color: var(--text);
 }
 
 .dropzone-group{
