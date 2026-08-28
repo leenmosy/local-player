@@ -505,9 +505,7 @@ function fixInfiniteDuration(onReady){
       try { video.currentTime = 0; } catch(e){}
     }
     updateSeekControlsState();
-    if (wasPlaying) video.play().catch(e => {
-      if (e.name !== 'NotAllowedError') console.warn('Play error:', e);
-    });
+    if (wasPlaying) safePlay();
     if (onReady) onReady();
   };
   const onTimeUpdate = () => finish(true);
@@ -1447,8 +1445,6 @@ function saveTitleToProgress(){
   } catch(e){ notifyStorageIssue(); }
 }
 
-// (дублирующий saveSettings удалён, актуальная версия, выше, с дебаунсом)
-
 function loadSettings(){
   if (!currentFileKey) {
     return false;
@@ -1625,7 +1621,7 @@ function loadSettings(){
         if (subsData.content){
           // Поддерживаем старый формат субтитров и переносим их в IndexedDB
           subtitlesData = JSON.parse(subsData.content);
-          if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+          resetSubtitleRenderState();
           savedSubsContent = subsData.content;
           const migrateKey = subsKey(currentFileKey);
           const migratePayload = subsData.content;
@@ -1641,12 +1637,12 @@ function loadSettings(){
           const keyForCues = SUBS_PREFIX + 'data:' + stripProgressPrefix(currentFileKey);
           const keyAtLoad = currentFileKey;
           subtitlesData = [];
-          if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+          resetSubtitleRenderState();
           idbGet(keyForCues).then(raw => {
             if (!raw || keyAtLoad !== currentFileKey) return;
             try{
               subtitlesData = JSON.parse(raw);
-              if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+              resetSubtitleRenderState();
               savedSubsContent = raw;
               updateSubtitles();
             } catch(e){}
@@ -1660,7 +1656,7 @@ function loadSettings(){
         subsRemoveBtn.style.display = 'flex';
       } catch(e) {
         subtitlesData = [];
-        if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+        resetSubtitleRenderState();
         savedSubsContent = null;
         isSubtitlesLoaded = false;
       }
@@ -1668,7 +1664,7 @@ function loadSettings(){
       savedSubsContent = null;
       isSubtitlesLoaded = false;
       subtitlesData = [];
-      if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+      resetSubtitleRenderState();
       subtitles.innerHTML = '';
       setSubsFileNameDisplay('Файл не выбран');
       subsFile.value = '';
@@ -1761,20 +1757,14 @@ function stopProgressTracking(){
   saveProgress();
 }
 
+// Экранирует & < > " ' безопасно и для текста, и для значения атрибута
 function escapeHtml(str){
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function escapeHtmlAttr(str){
-  // Экранируем символы для использования в HTML атрибутах
-  return str
+  return String(str)
     .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // разрешает анимацию панели начиная со второго рендера
@@ -1816,7 +1806,7 @@ function renderResumeList(){
       }
     } catch(e){ /* пропускаем битую запись */ }
   }
-  // Удаляем только записи без действующего handle, сохраняя реальные файлы
+  // Показываем три самые свежие незавершённые записи
   items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
   const shown = items.slice(0, 3);
 
@@ -1837,7 +1827,7 @@ function renderResumeList(){
       typeBadge = '<span class="ri-type-badge ri-type-file">Файл</span>';
     }
     return `
-    <div class="resume-item" data-key="${escapeHtmlAttr(item.key)}">
+    <div class="resume-item" data-key="${escapeHtml(item.key)}">
       <div class="ri-info">
         <div class="ri-name">${escapeHtml(displayName)}</div>
         <div class="ri-time">
@@ -1848,9 +1838,9 @@ function renderResumeList(){
       </div>
       <div class="ri-actions">
         ${item.url
-          ? `<button type="button" class="ri-continue" data-url="${escapeHtmlAttr(item.url)}">Продолжить</button>`
-          : `<button type="button" class="ri-continue" data-key="${escapeHtmlAttr(item.key)}">Продолжить</button>`}
-        <button type="button" class="ri-clear" data-key="${escapeHtmlAttr(item.key)}" aria-label="Удалить «${escapeHtmlAttr(displayName)}» из списка">✕</button>
+          ? `<button type="button" class="ri-continue" data-url="${escapeHtml(item.url)}">Продолжить</button>`
+          : `<button type="button" class="ri-continue" data-key="${escapeHtml(item.key)}">Продолжить</button>`}
+        <button type="button" class="ri-clear" data-key="${escapeHtml(item.key)}" aria-label="Удалить «${escapeHtml(displayName)}» из списка">✕</button>
       </div>
     </div>
   `;
@@ -2178,7 +2168,7 @@ function applyDefaultSettingsForNewSource(){
   
   // Субтитры (контент и стиль) всегда сбрасываются для файла без настроек
   subtitlesData = [];
-  if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+  resetSubtitleRenderState();
   savedSubsContent = null;
   isSubtitlesLoaded = false;
   subtitles.innerHTML = '';
@@ -2321,13 +2311,7 @@ function loadFile(file, handle, meta){
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
   // Запускаем воспроизведение
-  video.play().catch(e => {
-    if (e.name === 'NotAllowedError') {
-      console.log('Autoplay prevented - user interaction required');
-    } else {
-      console.warn('Play error:', e);
-    }
-  });
+  safePlay();
 }
 
 // Проверяет, является ли файл видеофайлом
@@ -3581,7 +3565,7 @@ function processSubtitlesContent(content, file, previousName){
 // --- Удаление субтитров ---
 subsRemoveBtn.addEventListener('click', () => {
   subtitlesData = [];
-  if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+  resetSubtitleRenderState();
   savedSubsContent = null;
   isSubtitlesLoaded = false;
   subtitles.innerHTML = '';
@@ -3635,7 +3619,7 @@ function detectSubtitleFormat(content, fileName){
 
 function parseSubtitles(content, format) {
   subtitlesData = [];
-  if (typeof resetSubtitleRenderState === "function") resetSubtitleRenderState();
+  resetSubtitleRenderState();
   let skippedCount = 0;
   const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   let i = 0;
@@ -3912,11 +3896,16 @@ function resetMirror(){
   saveSettings();
 }
 
+// Запускает воспроизведение, глуша штатные отказы (автоплей заблокирован, прервано новой загрузкой)
+function safePlay(){
+  return video.play().catch(e => {
+    if (e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') console.warn('Play error:', e);
+  });
+}
+
 function togglePlay(){
   if (video.paused) {
-    video.play().catch(e => {
-      if (e.name !== 'AbortError') console.warn('Play error:', e);
-    });
+    safePlay();
   } else {
     video.pause();
   }
@@ -4283,7 +4272,6 @@ function updateSubtitles() {
   }
 }
 
-// Удалён глобальный дубликат loadedmetadata - логика интегрирована в loadedMetadataHandler
 seek.addEventListener('mousedown', () => isSeeking = true);
 seek.addEventListener('touchstart', () => isSeeking = true);
 seek.addEventListener('input', () => {
@@ -4829,7 +4817,7 @@ async function loadUrl(url){
         urlLoadBtn.disabled = false;
         initAudioGraphForCurrentSource();
         showPlayer();
-        video.play().catch(e => { if (e.name !== 'NotAllowedError') console.warn('Play error:', e); });
+        safePlay();
       }, { once: true });
       video.addEventListener('error', urlErrorHandler = function(){
         clearTimeout(directLoadTimeout);
@@ -4889,13 +4877,7 @@ async function loadUrl(url){
 
         // Показываем подсказку о стабилизации звука для HLS
         showAudioHint();
-        video.play().catch(e => {
-          if (e.name === 'NotAllowedError') {
-            console.log('Autoplay prevented - user interaction required');
-          } else {
-            console.warn('Play error:', e);
-          }
-        });
+        safePlay();
       });
 
       hls.on(Hls.Events.ERROR, function(event, data){
@@ -5043,13 +5025,7 @@ async function loadUrl(url){
       urlLoadBtn.disabled = false;
       initAudioGraphForCurrentSource();
       showPlayer();
-      video.play().catch(e => {
-        if (e.name === 'NotAllowedError') {
-          console.log('Autoplay prevented - user interaction required');
-        } else {
-          console.warn('Play error:', e);
-        }
-      });
+      safePlay();
     }, { once: true });
 
     // Для m3u8 crossOrigin не выставляется, поэтому ретрай без него здесь не нужен
@@ -5079,26 +5055,14 @@ async function loadUrl(url){
       urlLoadBtn.disabled = false;
       initAudioGraphForCurrentSource();
       showPlayer();
-      video.play().catch(e => {
-        if (e.name === 'NotAllowedError') {
-          console.log('Autoplay prevented - user interaction required');
-        } else {
-          console.warn('Play error:', e);
-        }
-      });
+      safePlay();
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
       clearTimeout(directLoadTimeout);
       if (retryWithoutCrossOriginOnError(url, thisLoadToken, () => {
         showPlayer();
-        video.play().catch(e => {
-          if (e.name === 'NotAllowedError') {
-            console.log('Autoplay prevented - user interaction required');
-          } else {
-            console.warn('Play error:', e);
-          }
-        });
+        safePlay();
       })) return;
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
@@ -5123,26 +5087,14 @@ async function loadUrl(url){
       urlLoadBtn.disabled = false;
       initAudioGraphForCurrentSource();
       showPlayer();
-      video.play().catch(e => {
-        if (e.name === 'NotAllowedError') {
-          console.log('Autoplay prevented - user interaction required');
-        } else {
-          console.warn('Play error:', e);
-        }
-      });
+      safePlay();
     }, { once: true });
 
     video.addEventListener('error', urlErrorHandler = function(){
       clearTimeout(directLoadTimeout);
       if (!isM3U8 && retryWithoutCrossOriginOnError(url, thisLoadToken, () => {
         showPlayer();
-        video.play().catch(e => {
-          if (e.name === 'NotAllowedError') {
-            console.log('Autoplay prevented - user interaction required');
-          } else {
-            console.warn('Play error:', e);
-          }
-        });
+        safePlay();
       })) return;
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
