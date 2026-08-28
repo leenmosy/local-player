@@ -822,7 +822,7 @@ function renderBlurRanges(newIndex){
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       stopEditingSession();
-      // Удаляем из модели сразу, дальше — только анимация исчезновения строки
+      // Удаляем из модели сразу, дальше только анимация исчезновения строки
       blurRanges.splice(idx, 1);
       updateVideoFilter();
       saveSettings();
