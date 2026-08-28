@@ -820,8 +820,9 @@ function renderBlurRanges(newIndex){
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       stopEditingSession();
-      // Удаляем из модели сразу, дальше только анимация исчезновения строки
-      blurRanges.splice(idx, 1);
+      // Удаляем по ссылке на объект, а не по индексу: другой параллельный
+      // remove мог уже сдвинуть массив за время анимации схлопывания
+      blurRanges = blurRanges.filter(r => r !== range);
       updateVideoFilter();
       saveSettings();
       collapseElement(item).then(() => renderBlurRanges());
@@ -912,7 +913,7 @@ function startEditingRange(idx, item, rangeText) {
       return;
     }
 
-    if (findOverlappingRange(from, to, idx)) {
+    if (findOverlappingRange(from, to, blurRanges.indexOf(range))) {
       fromGroup.container.classList.add('has-error');
       toGroup.container.classList.add('has-error');
       fromGroup.container.title = 'Этот диапазон пересекается с другим';
@@ -934,8 +935,9 @@ function startEditingRange(idx, item, rangeText) {
     fromGroup.container.title = '';
     toGroup.container.title = '';
     
-    // Обновляем диапазон
-    blurRanges[idx] = { from, to };
+    // Обновляем диапазон по ссылке на исходный объект, индекс мог устареть
+    const editIdx = blurRanges.indexOf(range);
+    if (editIdx !== -1) blurRanges[editIdx] = { from, to };
     blurRanges.sort((a, b) => a.from - b.from);
     stopEditingSession();
     renderBlurRanges();
@@ -3411,12 +3413,21 @@ function collapseCategoryContent(content){
 function expandCategoryContent(content){
   content.classList.remove('collapsed');
   content.style.maxHeight = content.scrollHeight + 'px';
-  const onDone = (ev) => {
-    if (ev.target !== content || ev.propertyName !== 'max-height') return;
+  // Снимаем фиксированную высоту по завершении анимации ИЛИ по таймауту,
+  // иначе список таймингов блюра позже упрётся в старое значение и обрежется
+  let done = false;
+  const clear = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(t);
     content.removeEventListener('transitionend', onDone);
     if (!content.classList.contains('collapsed')) content.style.maxHeight = 'none';
   };
+  const onDone = (ev) => {
+    if (ev.target === content && ev.propertyName === 'max-height') clear();
+  };
   content.addEventListener('transitionend', onDone);
+  const t = setTimeout(clear, 400);
 }
 
 function collapseCategoriesIn(panelEl){
@@ -3989,8 +4000,6 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
-
-let isUpdatingPlayState = false;
 
 function syncPlayStateUI(){
   const isPlaying = !video.paused;
