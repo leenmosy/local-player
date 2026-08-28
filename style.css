@@ -1005,7 +1005,7 @@ input[type=range]::-moz-range-thumb{
   pointer-events: none;
   box-shadow: 0 8px 24px rgba(0,0,0,.35);
   transition: opacity .3s ease, transform .3s ease;
-  max-height: calc(100% - 76px);
+  max-height: min(calc(100% - 76px), 50vh);
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #3a3f46 transparent;
