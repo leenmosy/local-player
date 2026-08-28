@@ -35,9 +35,11 @@
   <h1 class="title-font">Локальный плеер</h1>
 
   <div class="resume-panel" id="resume-panel">
-    <div class="os-title">Найден сохранённый прогресс</div>
+    <div class="resume-panel-inner">
+      <div class="os-title">Найден сохранённый прогресс</div>
 
-    <div id="resume-list"></div>
+      <div id="resume-list"></div>
+    </div>
   </div>
 
   <div class="dropzone-group" id="dropzone-group">
@@ -260,6 +262,11 @@
             <span class="dr-val" id="ov-bg-opacity-val">0%</span>
           </div>
           <div class="dr-row">
+            <label for="ov-shadow">Тень</label>
+            <input type="range" id="ov-shadow" min="0" max="100" step="5" value="0" aria-label="Тень оверлея">
+            <span class="dr-val" id="ov-shadow-val">0%</span>
+          </div>
+          <div class="dr-row">
             <label id="align-label">Выравнивание</label>
             <div class="align-grid" role="group" aria-labelledby="align-label">
               <button type="button" class="align-btn" data-align="left" aria-label="Прибить слева" aria-pressed="false">
@@ -277,6 +284,7 @@
             <div class="pos-pad" id="pos-pad" tabindex="0" aria-label="Расположение оверлея, стрелками можно двигать">
               <div class="pos-pad-grid"></div>
               <div class="pos-pad-safe"></div>
+              <div class="pos-pad-hint">Перетащите точку, чтобы разместить оверлей</div>
               <div class="pos-pad-handle" id="pos-handle"></div>
             </div>
             <div class="preset-grid" role="group" aria-label="Быстрые позиции">
@@ -357,7 +365,7 @@
           </div>
           <div class="dr-row">
             <label for="subs-color">Цвет</label>
-            <input type="color" id="subs-color" value="#fffdeb" aria-label="Цвет субтитров">
+            <input type="color" id="subs-color" value="#fffef5" aria-label="Цвет субтитров">
             <input type="range" id="subs-opacity" min="0" max="100" step="5" value="100" aria-label="Прозрачность субтитров">
             <span class="dr-val" id="subs-opacity-val">100%</span>
           </div>
@@ -365,6 +373,11 @@
             <label for="subs-bg-opacity">Фон</label>
             <input type="range" id="subs-bg-opacity" min="0" max="100" step="5" value="85" aria-label="Прозрачность подложки субтитров">
             <span class="dr-val" id="subs-bg-opacity-val">85%</span>
+          </div>
+          <div class="dr-row">
+            <label for="subs-shadow">Тень</label>
+            <input type="range" id="subs-shadow" min="0" max="100" step="5" value="50" aria-label="Тень субтитров">
+            <span class="dr-val" id="subs-shadow-val">50%</span>
           </div>
           <div class="dr-row">
             <label for="subs-position">Позиция</label>

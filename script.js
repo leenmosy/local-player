@@ -132,6 +132,8 @@ const ovOpacity = document.getElementById('ov-opacity');
 const ovOpacityVal = document.getElementById('ov-opacity-val');
 const ovBgOpacity = document.getElementById('ov-bg-opacity');
 const ovBgOpacityVal = document.getElementById('ov-bg-opacity-val');
+const ovShadow = document.getElementById('ov-shadow');
+const ovShadowVal = document.getElementById('ov-shadow-val');
 const posPad = document.getElementById('pos-pad');
 const posHandle = document.getElementById('pos-handle');
 const alignButtons = document.querySelectorAll('.align-btn');
@@ -144,6 +146,7 @@ const OV_DEFAULT_SIZE = 17;
 const OV_DEFAULT_COLOR = '#ffffff';
 const OV_DEFAULT_OPACITY = 50;
 const OV_DEFAULT_BG_OPACITY = 0;
+const OV_DEFAULT_SHADOW = 0;
 const OV_DEFAULT_POS_X = OV_POS_MAX;
 const OV_DEFAULT_POS_Y = OV_POS_MAX;
 const OV_DEFAULT_ALIGN = 'right';
@@ -160,6 +163,7 @@ ovSize.addEventListener('input', () => { ovSizeVal.textContent = ovSize.value + 
 ovColor.addEventListener('input', () => { applyOverlaySettings(); saveSettings(); });
 ovOpacity.addEventListener('input', () => { ovOpacityVal.textContent = ovOpacity.value + '%'; applyOverlaySettings(); saveSettings(); });
 ovBgOpacity.addEventListener('input', () => { ovBgOpacityVal.textContent = ovBgOpacity.value + '%'; applyOverlaySettings(); saveSettings(); });
+ovShadow.addEventListener('input', () => { ovShadowVal.textContent = ovShadow.value + '%'; applyOverlaySettings(); saveSettings(); });
 titleInput.addEventListener('input', () => {
   ovTitle.textContent = titleInput.value;
   saveSettings();
@@ -309,14 +313,27 @@ function hexToRgba(hex, alpha){
 }
 
 
+// Собирает CSS text-shadow из значения 0..100 в мягкую тень
+function textShadowFromPercent(pct){
+  const f = Math.max(0, Math.min(100, parseFloat(pct) || 0)) / 100;
+  if (f <= 0) return 'none';
+  const alpha = (0.15 + f * 0.75).toFixed(3);
+  const blur = (1 + f * 5).toFixed(1);
+  const spread = (f * 3).toFixed(1);
+  return `0 0 ${blur}px rgba(0,0,0,${alpha}), 0 ${spread}px ${blur}px rgba(0,0,0,${alpha})`;
+}
+
 // Настройки сохраняются отдельно для каждого видео и не переносятся между файлами
 function applyOverlaySettings(){
   const size = ovSize.value + 'px';
   const color = hexToRgba(ovColor.value, ovOpacity.value / 100);
+  const shadow = textShadowFromPercent(ovShadow.value);
   ovTitle.style.fontSize = size;
   ovTime.style.fontSize = size;
   ovTitle.style.color = color;
   ovTime.style.color = color;
+  ovTitle.style.textShadow = shadow;
+  ovTime.style.textShadow = shadow;
 
   overlayEl.style.left = ovPosX + '%';
   overlayEl.style.top = ovPosY + '%';
@@ -345,10 +362,12 @@ function showStorageToast(msg){
   storageToastTimeout = setTimeout(() => storageToast.classList.remove('show'), TOAST_DURATION_MS);
 }
 
-document.getElementById('storage-toast-close').addEventListener('click', () => {
+function hideStorageToast(){
   clearTimeout(storageToastTimeout);
   storageToast.classList.remove('show');
-});
+}
+
+document.getElementById('storage-toast-close').addEventListener('click', hideStorageToast);
 
 const codecWarningToast = document.getElementById('codec-warning-toast');
 const codecWarningToastText = document.getElementById('codec-warning-toast-text');
@@ -410,6 +429,7 @@ function collectSettings(){
     ovColor: ovColor.value,
     ovOpacity: parseFloat(ovOpacity.value),
     ovBgOpacity: parseFloat(ovBgOpacity.value),
+    ovShadow: parseFloat(ovShadow.value),
     ovPosX: ovPosX,
     ovPosY: ovPosY,
     ovAlign: ovAlign,
@@ -422,6 +442,7 @@ function collectSettings(){
     subsOpacity: parseFloat(subsOpacity.value),
     subsPosition: parseFloat(subsPosition.value),
     subsBgOpacity: parseFloat(subsBgOpacity.value),
+    subsShadow: parseFloat(subsShadow.value),
     ts: Date.now()
   };
 }
@@ -1454,12 +1475,14 @@ function loadSettings(){
     settings.ovSize = validateNumber(settings.ovSize, 10, 20, OV_DEFAULT_SIZE);
     settings.ovOpacity = validateNumber(settings.ovOpacity, 0, 100, OV_DEFAULT_OPACITY);
     settings.ovBgOpacity = validateNumber(settings.ovBgOpacity, 0, 100, OV_DEFAULT_BG_OPACITY);
+    settings.ovShadow = validateNumber(settings.ovShadow, 0, 100, OV_DEFAULT_SHADOW);
     
     // Валидация настроек субтитров
     settings.subsSize = validateNumber(settings.subsSize, 20, 30, 25);
     settings.subsOpacity = validateNumber(settings.subsOpacity, 0, 100, 100);
     settings.subsPosition = validateNumber(settings.subsPosition, 0, 20, 5);
     settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 85);
+    settings.subsShadow = validateNumber(settings.subsShadow, 0, 100, 50);
     
     // Валидация позиций оверлея
     if (settings.ovPosX !== undefined) {
@@ -1476,7 +1499,7 @@ function loadSettings(){
     
     // Валидация цветов субтитров
     if (typeof settings.subsColor !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(settings.subsColor)) {
-      settings.subsColor = '#fffdeb';
+      settings.subsColor = '#fffef5';
     }
     
     // Валидация boolean значений
@@ -1533,6 +1556,8 @@ function loadSettings(){
     ovOpacityVal.textContent = ovOpacity.value + '%';
     ovBgOpacity.value = settings.ovBgOpacity;
     ovBgOpacityVal.textContent = ovBgOpacity.value + '%';
+    ovShadow.value = settings.ovShadow;
+    ovShadowVal.textContent = ovShadow.value + '%';
     setOverlayAlign(settings.ovAlign);
 
     if (settings.ovPosX !== undefined && settings.ovPosY !== undefined){
@@ -1558,7 +1583,7 @@ function loadSettings(){
     subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 25;
     subsSizeVal.textContent = subsSize.value + 'px';
     
-    subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#fffdeb';
+    subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#fffef5';
     subsOpacity.value = settings.subsOpacity !== undefined ? settings.subsOpacity : 100;
     subsOpacityVal.textContent = subsOpacity.value + '%';
 
@@ -1567,6 +1592,9 @@ function loadSettings(){
 
     subsBgOpacity.value = settings.subsBgOpacity !== undefined ? settings.subsBgOpacity : 85;
     subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
+
+    subsShadow.value = settings.subsShadow !== undefined ? settings.subsShadow : 50;
+    subsShadowVal.textContent = subsShadow.value + '%';
 
     applySubtitlesStyle();
     
@@ -1736,26 +1764,16 @@ let resumePanelReady = false;
 function setResumePanelOpen(open, animate){
   const isOpen = resumePanel.classList.contains('show');
   if (isOpen === open) return;
+  // Раскрытие анимирует grid-template-rows (0fr/1fr), высота не измеряется
   if (!animate){
+    const prev = resumePanel.style.transition;
+    resumePanel.style.transition = 'none';
     resumePanel.classList.toggle('show', open);
-    resumePanel.style.maxHeight = open ? 'none' : '0px';
+    void resumePanel.offsetHeight;
+    resumePanel.style.transition = prev;
     return;
   }
-  if (open){
-    resumePanel.classList.add('show');
-    resumePanel.style.maxHeight = resumePanel.scrollHeight + 'px';
-    const onDone = (ev) => {
-      if (ev.target !== resumePanel || ev.propertyName !== 'max-height') return;
-      resumePanel.removeEventListener('transitionend', onDone);
-      if (resumePanel.classList.contains('show')) resumePanel.style.maxHeight = 'none';
-    };
-    resumePanel.addEventListener('transitionend', onDone);
-  } else {
-    resumePanel.style.maxHeight = resumePanel.scrollHeight + 'px';
-    void resumePanel.offsetHeight;
-    resumePanel.classList.remove('show');
-    resumePanel.style.maxHeight = '0px';
-  }
+  resumePanel.classList.toggle('show', open);
 }
 
 function updatePanelVisibility(){
@@ -2104,6 +2122,8 @@ function applyDefaultSettingsForNewSource(){
   ovOpacityVal.textContent = OV_DEFAULT_OPACITY + '%';
   ovBgOpacity.value = OV_DEFAULT_BG_OPACITY;
   ovBgOpacityVal.textContent = OV_DEFAULT_BG_OPACITY + '%';
+  ovShadow.value = OV_DEFAULT_SHADOW;
+  ovShadowVal.textContent = OV_DEFAULT_SHADOW + '%';
   setOverlayAlign(OV_DEFAULT_ALIGN);
   setOverlayPosition(OV_DEFAULT_POS_X, OV_DEFAULT_POS_Y);
   titleInput.value = currentFileName;
@@ -2139,13 +2159,15 @@ function applyDefaultSettingsForNewSource(){
   subtitles.style.display = 'block';
   subsSize.value = 25;
   subsSizeVal.textContent = '25px';
-  subsColor.value = '#fffdeb';
+  subsColor.value = '#fffef5';
   subsOpacity.value = 100;
   subsOpacityVal.textContent = '100%';
   subsPosition.value = 5;
   subsPositionVal.textContent = '5%';
   subsBgOpacity.value = 85;
   subsBgOpacityVal.textContent = '85%';
+  subsShadow.value = 50;
+  subsShadowVal.textContent = '50%';
   applySubtitlesStyle();
 
   // Громкость нового файла (без сохранённых настроек), фиксированные 20%,
@@ -2166,6 +2188,8 @@ function loadFile(file, handle, meta){
     return;
   }
   hideErrMsg();
+  hideStorageToast();
+  hideCodecWarningToast();
   videoErrorEl.style.display = 'none';
   hideBufferingIndicator();
   stopProgressTracking();
@@ -3193,6 +3217,8 @@ const subsPosition = document.getElementById('subs-position');
 const subsPositionVal = document.getElementById('subs-position-val');
 const subsBgOpacity = document.getElementById('subs-bg-opacity');
 const subsBgOpacityVal = document.getElementById('subs-bg-opacity-val');
+const subsShadow = document.getElementById('subs-shadow');
+const subsShadowVal = document.getElementById('subs-shadow-val');
 const drToggle = document.getElementById('dr-toggle');
 const drStrength = document.getElementById('dr-strength');
 const drStrengthVal = document.getElementById('dr-strength-val');
@@ -3657,11 +3683,14 @@ function applySubtitlesStyle() {
   const color = hexToRgba(subsColor.value, subsOpacity.value / 100);
   const bgColor = hexToRgba('#000000', subsBgOpacity.value / 100);
 
+  const textShadow = textShadowFromPercent(subsShadow.value);
+
   const span = subtitles.querySelector('span');
   if (span) {
     span.style.fontSize = size;
     span.style.color = color;
     span.style.background = bgColor;
+    span.style.textShadow = textShadow;
 
     const textLines = span.innerHTML.split('<br>').length;
     const fontSize = parseInt(subsSize.value);
@@ -3704,6 +3733,12 @@ subsPosition.addEventListener('input', () => {
 
 subsBgOpacity.addEventListener('input', () => {
   subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
+  applySubtitlesStyle();
+  saveSettings();
+});
+
+subsShadow.addEventListener('input', () => {
+  subsShadowVal.textContent = subsShadow.value + '%';
   applySubtitlesStyle();
   saveSettings();
 });
@@ -4494,6 +4529,8 @@ backBtn.addEventListener('click', () => {
   urlInput.value = '';
   urlInput.classList.remove('error');
   hideErrMsg();
+  hideStorageToast();
+  hideCodecWarningToast();
   playerView.classList.remove('active');
   dropView.style.display = 'flex';
   
@@ -4664,6 +4701,8 @@ async function loadUrl(url){
   // Очищаем предыдущие ошибки
   urlInput.classList.remove('error');
   hideErrMsg();
+  hideStorageToast();
+  hideCodecWarningToast();
   videoErrorEl.style.display = 'none';
   hideBufferingIndicator();
   stopProgressTracking();
