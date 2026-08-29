@@ -983,12 +983,15 @@ input[type=range]::-moz-range-thumb{
   opacity: 0;
   transform: translateY(8px);
   pointer-events: none;
-  transition: opacity .3s ease, transform .3s ease, background .15s ease;
+  visibility: hidden;
+  transition: opacity .3s ease, transform .3s ease, background .15s ease, visibility 0s .3s;
 }
 .quick-action-btn.show{
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+  visibility: visible;
+  transition: opacity .3s ease, transform .3s ease, background .15s ease, visibility 0s 0s;
 }
 .quick-action-btn:hover{ opacity: .9; }
 
@@ -1004,7 +1007,9 @@ input[type=range]::-moz-range-thumb{
   transform: translateY(8px);
   pointer-events: none;
   box-shadow: 0 8px 24px rgba(0,0,0,.35);
-  transition: opacity .3s ease, transform .3s ease;
+  /* visibility убирает контент из порядка Tab, задержка 0s .3s прячет после анимации исчезновения */
+  visibility: hidden;
+  transition: opacity .3s ease, transform .3s ease, visibility 0s .3s;
   max-height: min(calc(100% - 76px), 50vh);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -1026,7 +1031,7 @@ input[type=range]::-moz-range-thumb{
 .dr-panel::-webkit-scrollbar-thumb:hover{
   background-color: var(--accent-orange);
 }
-.dr-panel.open{ opacity: 1; transform: translateY(0); pointer-events: auto; }
+.dr-panel.open{ opacity: 1; transform: translateY(0); pointer-events: auto; visibility: visible; transition: opacity .3s ease, transform .3s ease, visibility 0s 0s; }
 .stage.controls-hidden .dr-panel:not(.open){ opacity:0; pointer-events:none; }
 .dr-row{
   display:flex; align-items:center; gap: 10px; margin-bottom: 13px;
@@ -1132,6 +1137,9 @@ input[type=range]::-moz-range-thumb{
   opacity: 0;
   padding-top: 0;
   padding-bottom: 0;
+  /* иначе поля свёрнутой категории остаются доступны с клавиатуры */
+  visibility: hidden;
+  transition: max-height .3s ease, opacity .2s ease, padding .2s ease, visibility 0s .3s;
 }
 .dr-text-input{
   background: var(--surface); border:1px solid #2a2f37; border-radius: 6px;
@@ -1326,7 +1334,9 @@ input[type=range]::-moz-range-thumb{
   transform: translateY(8px);
   pointer-events: none;
   box-shadow: 0 8px 24px rgba(0,0,0,.35);
-  transition: opacity .3s ease, transform .3s ease;
+  /* visibility убирает контент из порядка Tab, задержка 0s .3s прячет после анимации исчезновения */
+  visibility: hidden;
+  transition: opacity .3s ease, transform .3s ease, visibility 0s .3s;
   max-height: calc(100% - 76px);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -1348,7 +1358,7 @@ input[type=range]::-moz-range-thumb{
 #playlist-panel::-webkit-scrollbar-thumb:hover{
   background-color: var(--accent-orange);
 }
-#playlist-panel.open{ opacity: 1; transform: translateY(0); pointer-events: auto; }
+#playlist-panel.open{ opacity: 1; transform: translateY(0); pointer-events: auto; visibility: visible; transition: opacity .3s ease, transform .3s ease, visibility 0s 0s; }
 .playlist-panel-title{ margin-bottom: 10px; }
 .playlist-list{
   display: flex;
@@ -1475,7 +1485,8 @@ input[type=range]::-moz-range-thumb{
   .skip-group{ display: none; }
   .playback-group{ gap: 4px; }
   .extra-group{ gap: 3px; }
-  .time-display{ min-width: 0; font-size: 9px; }
+  /* сбрасываем фиксированные 150px из базового правила, иначе кнопки уезжают за край */
+  .time-display{ width: auto; min-width: 0; font-size: 9px; }
   #volume-range{ width: 35px; }
   .volume-group{ gap: 2px; }
   .ctrl-btn{
@@ -1527,12 +1538,15 @@ input[type=range]::-moz-range-thumb{
   z-index: 50;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .25s ease, transform .25s ease;
+  visibility: hidden;
+  transition: opacity .25s ease, transform .25s ease, visibility 0s .25s;
 }
 .toast.show{
   opacity: 1;
   transform: translate(-50%, 0);
   pointer-events: auto;
+  visibility: visible;
+  transition: opacity .25s ease, transform .25s ease, visibility 0s 0s;
 }
 .toast-close{
   position: absolute;

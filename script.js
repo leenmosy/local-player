@@ -1250,6 +1250,18 @@ function subsKey(key){
   return SUBS_PREFIX + stripProgressPrefix(key);
 }
 
+// Возвращает пользовательское название источника, если оно отличается от автоматического
+function storedCustomTitle(key, autoName){
+  if (!key) return null;
+  try{
+    const s = JSON.parse(localStorage.getItem(settingsKey(key)) || 'null');
+    if (s && typeof s.titleInput === 'string' && s.titleInput && s.titleInput !== autoName) return s.titleInput;
+    const p = JSON.parse(localStorage.getItem(key) || 'null');
+    if (p && typeof p.displayName === 'string' && p.displayName && p.displayName !== autoName) return p.displayName;
+  } catch(e){ /* повреждённая запись, считаем, что своего названия нет */ }
+  return null;
+}
+
 const PROGRESS_DURATION_TOLERANCE = 2;
 // Ключ ссылки не учитывает query, поэтому разные видео одного пути могут совпасть,
 // сверяем длительность, прежде чем применять найденную запись
@@ -1414,11 +1426,26 @@ function removeDuplicateProgress(currentKey){
   }
   if (!candidates.length) return;
 
-// Удаляем только записи без действующего handle в IndexedDB
+  // Имя стоит в ключе перед двумя последними сегментами (размер и дата)
+  const currentName = currentKey.slice(0, currentKey.length - (':' + size + ':' + lastModified).length).split(':').pop();
+
+  // Удаляем дубль, только если это доказуемо тот же файл: совпало имя или handle ведёт на текущий файл
   candidates.forEach(key => {
+    const keyName = key.slice(0, key.length - (':' + size + ':' + lastModified).length).split(':').pop();
+    if (keyName === currentName){
+      try { localStorage.removeItem(key); } catch(e){}
+      return;
+    }
     idbGet(key)
-      .then(handle => { if (!handle) localStorage.removeItem(key); })
-      .catch(() => { localStorage.removeItem(key); });
+      .then(async handle => {
+        if (!handle) return; // нет доказательств, запись не трогаем
+        const f = await handle.getFile();
+        const sameFile = f && f.name === currentName
+          && String(f.size) === size
+          && String(f.lastModified || 0) === lastModified;
+        if (sameFile) localStorage.removeItem(key); // та же запись под прежним именем
+      })
+      .catch(() => { /* файл недоступен или нет разрешения, оставляем запись */ });
   });
 }
 
@@ -1532,8 +1559,10 @@ function loadSettings(){
       settings.ovAlign = OV_DEFAULT_ALIGN;
     }
     
-    // Нормализуем громкость, чтобы video.volume всегда получал корректное значение
-    settings.volume = validateNumber(settings.volume, 0, 1, DEFAULT_VOLUME);
+    // Громкость вне диапазона 0..1 откатываем к дефолту, а не зажимаем к 1.0
+    settings.volume = (typeof settings.volume === 'number' && settings.volume >= 0 && settings.volume <= 1)
+      ? settings.volume
+      : DEFAULT_VOLUME;
   } catch(e){
     /* повреждённая запись, считаем, что настроек нет */
     return false;
@@ -2402,6 +2431,14 @@ function buildSkipLabel(rest){
 let mediaInfoPromise = null;
 const MEDIAINFO_LOCAL_BASE = 'vendor/mediainfo/';
 const MEDIAINFO_CDN_BASE = 'https://cdn.jsdelivr.net/npm/mediainfo.js@0.3.7/dist/';
+// Один инстанс MediaInfo не умеет параллельный разбор, прогоняем анализы по очереди
+let mediaInfoQueue = Promise.resolve();
+function runMediaInfoAnalysis(task){
+  const run = mediaInfoQueue.then(task, task);
+  mediaInfoQueue = run.catch(() => {});
+  return run;
+}
+
 function getMediaInfoInstance(){
   if (mediaInfoPromise) return mediaInfoPromise;
   const factory = window.MediaInfo && (window.MediaInfo.default || window.MediaInfo.mediaInfoFactory);
@@ -2456,8 +2493,12 @@ async function parseChaptersFromFile(file, token){
       reader.readAsArrayBuffer(file.slice(offset, offset + chunkSize));
     });
 
-    const result = await mediainfo.analyzeData(getSize, readChunk);
-    if (token !== chapterParseToken) return;
+    // Ждём очередь и повторно сверяем токен на случай смены источника
+    const result = await runMediaInfoAnalysis(() => {
+      if (token !== chapterParseToken) return null;
+      return mediainfo.analyzeData(getSize, readChunk);
+    });
+    if (!result || token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
     checkCodecWarning(result, token);
   } catch (err){
@@ -2572,8 +2613,12 @@ async function parseChaptersFromUrl(url, token){
       return new Uint8Array(buf);
     };
 
-    const result = await mediainfo.analyzeData(getSize, readChunk);
-    if (token !== chapterParseToken) return;
+    // Ждём очередь и повторно сверяем токен на случай смены источника
+    const result = await runMediaInfoAnalysis(() => {
+      if (token !== chapterParseToken) return null;
+      return mediainfo.analyzeData(getSize, readChunk);
+    });
+    if (!result || token !== chapterParseToken) return;
     applyChaptersFromMediaInfoResult(result, token);
     checkCodecWarning(result, token);
   } catch (err){
@@ -2905,13 +2950,15 @@ function findMatchingFolderId(files, folderName){
     try{
       const m = JSON.parse(localStorage.getItem(key));
       if (!m || !Array.isArray(m.files) || !m.files.length) continue;
-      // Имя папки должно совпадать точно
-      if ((folderName || null) !== (m.folderName || null)) continue;
       const saved = m.files.map(sigOf);
       const common = saved.filter(s => sigs.has(s)).length;
       const score = common / Math.max(saved.length, sigs.size);
-      if (score >= 0.6 && score > bestScore){
-        bestScore = score;
+      if (score < 0.6) continue;
+      // Имя папки не жёсткое условие, а бонус к рангу: набор файлов опознаёт папку и после переименования
+      const nameMatches = (folderName || null) === (m.folderName || null);
+      const rank = score + (nameMatches ? 1 : 0);
+      if (rank > bestScore){
+        bestScore = rank;
         best = key.slice(PLAYLIST_MANIFEST_PREFIX.length);
       }
     } catch(e){}
@@ -3276,7 +3323,8 @@ function updateCompressor(){
 }
 
 function connectGraph(){
-  if (!audioCtx) return;
+  // Проверяем все узлы, а не только контекст: граф мог оборваться на полпути и оставить контекст без узлов
+  if (!audioCtx || !sourceNode || !boostGain || !compressorNode) return;
   sourceNode.disconnect();
   boostGain.disconnect();
   compressorNode.disconnect();
@@ -3305,10 +3353,15 @@ function ensureAudioGraph(){
     // crossOrigin теперь устанавливается заранее при загрузке URL в loadUrl()
     // поэтому здесь просто создаём аудио-граф без дополнительной настройки CORS
     
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    sourceNode = audioCtx.createMediaElementSource(video);
-    compressorNode = audioCtx.createDynamicsCompressor();
-    boostGain = audioCtx.createGain();
+    // Присваиваем глобальные узлы только когда собраны все, иначе при исключении останется контекст без узлов
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaElementSource(video);
+    const comp = ctx.createDynamicsCompressor();
+    const gain = ctx.createGain();
+    audioCtx = ctx;
+    sourceNode = src;
+    compressorNode = comp;
+    boostGain = gain;
     boostGain.gain.value = drBoost.value / 100;
     updateCompressor();
     connectGraph();
@@ -4256,6 +4309,8 @@ function findSubtitleAt(t){
 }
 
 function resetSubtitleRenderState(){
+  // Чистим узел: updateSubtitles() при null === null выйдет раньше и оставит на экране старую реплику
+  subtitles.innerHTML = '';
   renderedSub = null;
   subSearchIdx = 0;
 }
@@ -4755,12 +4810,9 @@ async function loadUrl(url){
   // как только понятно, что это не m3u8-поток).
   resetMediaChapters();
 
-  // Если аудиограф ещё не создан, «испорченность» от предыдущей ссылки не действует:
-  // эту ссылку проверим заново, а не наследуем отключённые аудио-фичи
-  if (!sourceNode){
-    audioSourceTainted = false;
-    setAudioFeaturesAvailable(true);
-  }
+  // Испорченность относится к источнику, а не к сессии, сбрасываем всегда: retryWithoutCrossOriginOnError() вернёт флаг если CORS правда нет
+  audioSourceTainted = false;
+  setAudioFeaturesAvailable(true);
 
   // Проверяем валидность URL и сохраняем результат для дальнейшего использования
   let parsedUrl;
@@ -4768,6 +4820,13 @@ async function loadUrl(url){
     parsedUrl = new URL(url);
   } catch (e){
     showUrlError('Некорректная ссылка');
+    return;
+  }
+
+  // Пускаем только сетевые схемы, javascript:/data:/file: в src ни к чему
+  const ALLOWED_URL_PROTOCOLS = ['http:', 'https:', 'blob:'];
+  if (!ALLOWED_URL_PROTOCOLS.includes(parsedUrl.protocol)){
+    showUrlError('Поддерживаются только ссылки http и https');
     return;
   }
 
@@ -4798,19 +4857,28 @@ async function loadUrl(url){
 
   migrateLegacyUrlKey(url);
   currentFileKey = urlKey(url);
+  // Сбрасываем folder-поля, иначе они попадут от прошлого плейлиста в запись прогресса ссылки
+  currentFileIsFolder = false;
+  currentFolderName = null;
+  currentFolderId = null;
   originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя из URL
   currentFileName = niceTitleFromFilename(getFileNameFromUrl(url)); // Отображаемое имя без расширения
   
-  // Пытаемся получить оригинальное имя файла из Content-Disposition заголовка
+  // Имя из Content-Disposition приходит асинхронно, запоминаем загрузку чтобы ответ не переименовал уже другой источник
+  const titleLoadToken = thisLoadToken;
+  const titleKey = currentFileKey;
+  const titleAutoName = currentFileName;
   getOriginalFileNameFromUrl(url).then(originalName => {
-    if (originalName && originalName !== originalFileName) {
-      originalFileName = originalName;
-      currentFileName = niceTitleFromFilename(originalName);
-      // Обновляем отображение имени в UI
-      fnameEl.textContent = currentFileName;
-      ovTitle.textContent = currentFileName;
-      titleInput.value = currentFileName;
-    }
+    if (titleLoadToken !== urlLoadToken || titleKey !== currentFileKey) return; // открыт уже другой источник
+    if (!originalName || originalName === originalFileName) return;
+    // Имя, заданное пользователем, важнее серверного
+    if (storedCustomTitle(titleKey, titleAutoName)) return;
+    originalFileName = originalName;
+    currentFileName = niceTitleFromFilename(originalName);
+    // Обновляем отображение имени в UI
+    fnameEl.textContent = currentFileName;
+    ovTitle.textContent = currentFileName;
+    titleInput.value = currentFileName;
   }).catch(() => {
     // Если не удалось получить оригинальное имя, используем имя из URL
   });
@@ -4871,6 +4939,13 @@ async function loadUrl(url){
       let retryCount = 0;
       const MAX_RETRIES = 3;
 
+      // Предел для recoverMediaError(), иначе крутится вечно на чёрном экране без сообщения
+      // Счётчик сбрасывается, если прошлый сбой был давно, чтобы одиночные глюки не копились
+      let mediaRecoverCount = 0;
+      let lastMediaErrorAt = 0;
+      const MAX_MEDIA_RECOVERIES = 3;
+      const MEDIA_ERROR_RESET_MS = 30000;
+
       hls.loadSource(url);
       hls.attachMedia(video);
 
@@ -4906,6 +4981,17 @@ async function loadUrl(url){
         // таймаут и не должны прятать спиннер загрузки.
         if (!data.fatal) return;
 
+        // Несовместимые кодеки hls.js помечает типом mediaError, ловим по details до switch чтобы не уйти в бесполезное восстановление
+        if (data.details === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR){
+          clearTimeout(loadTimeout);
+          urlLoadingSpinner.style.display = 'none';
+          urlLoadBtn.disabled = false;
+          hlsInstance.destroy();
+          hls = null;
+          showPlaybackError('Видео использует кодеки, которые не поддерживает браузер. Обычно это HEVC или AC-3, попробуйте другое качество или источник');
+          return;
+        }
+
         switch (data.type){
           case Hls.ErrorTypes.NETWORK_ERROR:
             // Более детальные сообщения на основе data.details
@@ -4923,6 +5009,11 @@ async function loadUrl(url){
               } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
                 errorMessage = 'Не удалось загрузить сегмент видео';
               }
+
+              // Недоступный ключ сервер отдаёт тем же 404, что и мёртвую ссылку, для KEY_LOAD_ERROR оставляем точный текст
+              const deadLinkMessage = data.details === Hls.ErrorDetails.KEY_LOAD_ERROR
+                ? errorMessage
+                : 'Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера';
 
               // Если это CORS ошибка (смотрим в response текст или проверяем origin)
               if (data.response && data.response.code === 0) {
@@ -4943,7 +5034,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showPlaybackError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера');
+                showPlaybackError(deadLinkMessage);
                 return;
               }
 
@@ -4954,7 +5045,7 @@ async function loadUrl(url){
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showPlaybackError('Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера');
+                showPlaybackError(deadLinkMessage);
                 return;
               }
 
@@ -4993,19 +5084,39 @@ async function loadUrl(url){
             }
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
-            setTimeout(() => {
-              if (hls !== hlsInstance) return;
-              try {
-                hlsInstance.recoverMediaError();
-              } catch (e) {
+            {
+              const nowMs = Date.now();
+              // Давняя прошлая ошибка не считается частью текущей серии сбоев
+              if (nowMs - lastMediaErrorAt > MEDIA_ERROR_RESET_MS) mediaRecoverCount = 0;
+              lastMediaErrorAt = nowMs;
+
+              if (mediaRecoverCount >= MAX_MEDIA_RECOVERIES){
                 clearTimeout(loadTimeout);
                 urlLoadingSpinner.style.display = 'none';
                 urlLoadBtn.disabled = false;
                 hlsInstance.destroy();
                 hls = null;
-                showPlaybackError('Не удалось восстановить воспроизведение');
+                showPlaybackError('Не удалось восстановить воспроизведение: поток повреждён или использует неподдерживаемый кодек');
+                break;
               }
-            }, 1000);
+              mediaRecoverCount++;
+              const attempt = mediaRecoverCount;
+              setTimeout(() => {
+                if (hls !== hlsInstance) return;
+                try {
+                  // Со второй попытки пробуем ещё и сменить аудиокодек, как советует hls.js
+                  if (attempt >= 2 && typeof hlsInstance.swapAudioCodec === 'function') hlsInstance.swapAudioCodec();
+                  hlsInstance.recoverMediaError();
+                } catch (e) {
+                  clearTimeout(loadTimeout);
+                  urlLoadingSpinner.style.display = 'none';
+                  urlLoadBtn.disabled = false;
+                  hlsInstance.destroy();
+                  hls = null;
+                  showPlaybackError('Не удалось восстановить воспроизведение');
+                }
+              }, 1000);
+            }
             break;
           default:
             // Более детальные сообщения для default-ветки
