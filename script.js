@@ -2158,12 +2158,12 @@ async function idbSweepOrphans(){
 // Единая инициализация настроек для новых источников, чтобы одинаково обрабатывать файлы и URL
 function applyDefaultSettingsForNewSource(){
   // Если нет настроек, сбрасываем настройки до дефолтных
+  blurRanges = []; // чистим первыми, иначе resetBrightness() размоет новый файл по старым
+  renderBlurRanges();
   resetSpeed();
   resetBrightness();
   resetZoom();
   resetMirror();
-  blurRanges = [];
-  renderBlurRanges();
   clearTimingError();
   
   // Сбрасываем оверлей настройки
