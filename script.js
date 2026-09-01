@@ -434,8 +434,6 @@ function collectSettings(){
     ovPosY: ovPosY,
     ovAlign: ovAlign,
     titleInput: titleInput.value,
-    volume: video.volume,
-    muted: video.muted,
     subsToggle: subsToggle.checked,
     subsSize: parseFloat(subsSize.value),
     subsColor: subsColor.value,
@@ -1169,6 +1167,7 @@ const FOLDER_PROGRESS_PREFIX = PROGRESS_PREFIX + 'folder:';
 const PLAYLIST_MANIFEST_PREFIX = 'lp_playlist:';
 const SETTINGS_PREFIX = 'lp_settings:';
 const SUBS_PREFIX = 'lp_subs:';
+const VOLUME_KEY = 'lp_volume';
 // Ограничиваем объём записей прогресса с учётом лимита localStorage
 const STORAGE_LIMITS = {
   [PROGRESS_PREFIX]: 400,          // прогресс: файлы + серии папок + ссылки
@@ -1558,11 +1557,6 @@ function loadSettings(){
     if (!validAligns.includes(settings.ovAlign)) {
       settings.ovAlign = OV_DEFAULT_ALIGN;
     }
-    
-    // Громкость вне диапазона 0..1 откатываем к дефолту, а не зажимаем к 1.0
-    settings.volume = (typeof settings.volume === 'number' && settings.volume >= 0 && settings.volume <= 1)
-      ? settings.volume
-      : DEFAULT_VOLUME;
   } catch(e){
     /* повреждённая запись, считаем, что настроек нет */
     return false;
@@ -1709,16 +1703,7 @@ function loadSettings(){
       applySubtitlesStyle();
     }
     
-    // Восстанавливаем громкость
-    video.volume = settings.volume;
-    if (video.volume > 0) lastVolume = video.volume;
-    
-    // Восстанавливаем состояние мута
-    video.muted = settings.muted;
-    
-    // Шкала громкости должна показывать 0 если звук замучен
-    volumeRange.value = video.muted ? 0 : video.volume;
-    updateVolumeIcon();
+    applyGlobalVolume();
 
     // Обновляем аудио-граф
     drEnabled = drToggle.checked;
@@ -2223,12 +2208,7 @@ function applyDefaultSettingsForNewSource(){
   subsShadowVal.textContent = '50%';
   applySubtitlesStyle();
 
-  // Громкость нового файла (без сохранённых настроек), фиксированные 20%,
-  // а не громкость, оставшаяся от предыдущего файла в этой сессии.
-  video.volume = DEFAULT_VOLUME;
-  volumeRange.value = video.volume;
-  video.muted = false;
-  updateVolumeIcon();
+  applyGlobalVolume();
 }
 
 function loadFile(file, handle, meta){
@@ -4369,12 +4349,38 @@ function updateVolumeIcon(){
 
 let lastVolume = DEFAULT_VOLUME;
 
+// Громкость одна на весь плеер, а не пофайловая, иначе следующая серия открывается с дефолтной
+function saveGlobalVolume(){
+  try{
+    localStorage.setItem(VOLUME_KEY, JSON.stringify({ volume: video.volume, muted: video.muted }));
+    markStorageOk();
+  } catch(e){ notifyStorageIssue(); }
+}
+
+function readGlobalVolume(){
+  try{
+    const d = JSON.parse(localStorage.getItem(VOLUME_KEY) || 'null');
+    if (!d) return { volume: DEFAULT_VOLUME, muted: false };
+    const v = (typeof d.volume === 'number' && d.volume >= 0 && d.volume <= 1) ? d.volume : DEFAULT_VOLUME;
+    return { volume: v, muted: d.muted === true };
+  } catch(e){ return { volume: DEFAULT_VOLUME, muted: false }; }
+}
+
+function applyGlobalVolume(){
+  const { volume, muted } = readGlobalVolume();
+  video.volume = volume;
+  video.muted = muted;
+  if (volume > 0) lastVolume = volume;
+  volumeRange.value = muted ? 0 : volume;
+  updateVolumeIcon();
+}
+
 volumeRange.addEventListener('input', () => {
   video.volume = volumeRange.value;
   video.muted = Number(volumeRange.value) === 0;
   if (video.volume > 0) lastVolume = video.volume;
   updateVolumeIcon();
-  saveSettings();
+  saveGlobalVolume();
 });
 function toggleMute(){
   video.muted = !video.muted;
@@ -4386,7 +4392,7 @@ function toggleMute(){
     volumeRange.value = video.volume;
   }
   updateVolumeIcon();
-  saveSettings();
+  saveGlobalVolume();
 }
 
 muteBtn.addEventListener('click', toggleMute);
@@ -4479,7 +4485,7 @@ function adjustVolume(delta){
   volumeRange.value = v;
   if (v > 0) lastVolume = v;
   updateVolumeIcon();
-  saveSettings();
+  saveGlobalVolume();
 }
 document.querySelectorAll('input[type="range"]').forEach(r => {
   // Снимаем фокус только после mouseup (перетаскивания мышью), не при клавиатурном управлении
