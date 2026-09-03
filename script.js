@@ -4148,9 +4148,9 @@ function syncBlurFilter(){
 let frameSyncHandle = null;
 function frameSyncLoop(){
   frameSyncHandle = null;
+  scheduleFrameSync(); // планируем следующий кадр первым, чтобы сбой ниже не оборвал цикл
   syncBlurFilter();
   updateSubtitles();
-  scheduleFrameSync();
 }
 function scheduleFrameSync(){
   if (frameSyncHandle !== null || video.paused || video.ended) return;
