@@ -4517,8 +4517,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowLeft' && e.shiftKey){ e.preventDefault(); seekBy(-1); showControls(); }
   else if (e.code === 'ArrowRight'){ e.preventDefault(); seekBy(5); showControls(); }
   else if (e.code === 'ArrowLeft'){ e.preventDefault(); seekBy(-5); showControls(); }
-  else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.05); showControls(); }
-  else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.05); showControls(); }
+  else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.02); showControls(); }
+  else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.02); showControls(); }
 });
 
 const ERROR_MESSAGES = {
