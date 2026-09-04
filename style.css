@@ -915,8 +915,41 @@ input[type=range]:disabled{
   opacity: .4;
   cursor: default;
 }
-#seek{ flex: 1 1 140px; min-width: 60px; }
 #volume-range{ width: 80px; }
+
+/* Таймлайн: своя заливка вместо accent-color, чтобы показать буфер */
+#seek{
+  flex: 1 1 140px;
+  min-width: 60px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  background: transparent;
+  --seek-played: 0%;
+  --seek-buffered: 0%;
+}
+/* Три слоя: сыгранное сверху, буфер под ним, дальше пустой трек */
+#seek::-webkit-slider-runnable-track{
+  height: 4px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.14);
+  background-image:
+    linear-gradient(var(--accent), var(--accent)),
+    linear-gradient(rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.32));
+  background-repeat: no-repeat;
+  background-size: var(--seek-played) 100%, var(--seek-buffered) 100%;
+  background-position: left center;
+}
+#seek::-webkit-slider-thumb{
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
 
 /* Ползунок не перехватывает клики по треку */
 input[type=range]::-webkit-slider-thumb{

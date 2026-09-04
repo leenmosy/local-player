@@ -4145,7 +4145,31 @@ let lastConfirmedTime = 0;
 video.addEventListener('loadedmetadata', () => {
   lastConfirmedTime = 0;
   lastBlurActive = false;
+  updateSeekFill();
 });
+
+// Заливка таймлайна: сыгранная часть белым, загруженный буфер полупрозрачным
+function updateSeekFill(){
+  const dur = isDurationUsable() ? video.duration : 0;
+  if (!dur){
+    seek.style.setProperty('--seek-played', '0%');
+    seek.style.setProperty('--seek-buffered', '0%');
+    return;
+  }
+  const played = (video.currentTime / dur) * 100;
+  let bufferedEnd = video.currentTime;
+  for (let i = 0; i < video.buffered.length; i++){
+    // Берём диапазон, внутри которого сейчас playhead, небольшой допуск на стыке
+    if (video.buffered.start(i) - 0.25 <= video.currentTime && video.buffered.end(i) >= video.currentTime){
+      bufferedEnd = video.buffered.end(i);
+      break;
+    }
+  }
+  seek.style.setProperty('--seek-played', played.toFixed(2) + '%');
+  seek.style.setProperty('--seek-buffered', Math.min(100, (bufferedEnd / dur) * 100).toFixed(2) + '%');
+}
+video.addEventListener('progress', updateSeekFill);
+video.addEventListener('seeked', updateSeekFill);
 
 // Проверяет, задевает ли отрезок [from, to] хотя бы один диапазон блюра
 function rangeTouchesBlur(from, to){
@@ -4210,7 +4234,8 @@ video.addEventListener('timeupdate', () => {
   if (!isSeeking && isDurationUsable()){
     seek.value = (video.currentTime / video.duration) * 1000;
   }
-  
+  updateSeekFill();
+
   // Обновление блюра
   syncBlurFilter();
   
@@ -4354,6 +4379,7 @@ seek.addEventListener('input', () => {
     const t = (seek.value / 1000) * video.duration;
     video.currentTime = t;
     timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
+    updateSeekFill();
 
     // Форсируем пересчёт blur-фильтра сразу, не дожидаясь timeupdate/seeked,
     // иначе при быстром драге фильтр может "залипнуть" на старом состоянии.
@@ -4968,9 +4994,9 @@ async function loadUrl(url){
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false, // это VOD, режим низкой задержки только сокращает буфер
-        maxBufferLength: 30,
-        maxMaxBufferLength: 300, // при хорошей сети держим вперёд до 5 минут
-        maxBufferSize: 140 * 1000 * 1000, // верхний предел буфера по памяти, близко к лимиту браузера на медиа
+        maxBufferLength: 180, // целимся держать впереди 3 минуты как запас на просадки сети
+        maxMaxBufferLength: 600, // при нехватке позволяем hls.js растянуть буфер сильнее
+        maxBufferSize: 150 * 1000 * 1000, // верхний предел буфера по памяти, близко к лимиту браузера на медиа
         backBufferLength: 90 // просмотренный хвост храним только 90 секунд
       });
       // Локальная ссылка на именно этот экземпляр, нужна, чтобы отложенные
@@ -5017,6 +5043,9 @@ async function loadUrl(url){
         showAudioHint();
         safePlay();
       });
+
+      // Событие progress у media element с MSE ненадёжно, обновляем заливку буфера здесь
+      hls.on(Hls.Events.BUFFER_APPENDED, updateSeekFill);
 
       hls.on(Hls.Events.ERROR, function(event, data){
         // Нефатальные ошибки (обычные для HLS-потоков, отдельный битый сегмент
