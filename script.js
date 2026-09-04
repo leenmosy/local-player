@@ -2607,6 +2607,29 @@ async function parseChaptersFromUrl(url, token){
   }
 }
 
+// Для HLS главы лежат в соседнем chapters.vtt, каждая реплика это одна глава
+async function parseChaptersFromVtt(url, token){
+  try {
+    const res = await fetch(url);
+    if (!res.ok || token !== chapterParseToken) return;
+    const lines = (await res.text()).replace(/\r\n?/g, '\n').split('\n');
+    const raw = [];
+    for (let i = 0; i < lines.length; i++){
+      const m = lines[i].match(TIME_RANGE_RE);
+      if (!m) continue;
+      const start = parseSubtitleTime(m[1]);
+      let title = '';
+      for (let j = i + 1; j < lines.length && lines[j].trim() !== ''; j++){
+        title += (title ? ' ' : '') + lines[j].trim();
+      }
+      if (isFinite(start) && title) raw.push({ time: start, title });
+    }
+    if (raw.length) applyChapterList(raw, token);
+  } catch (err){
+    console.warn('Главы HLS (chapters.vtt) не прочитаны:', err && err.message ? err.message : err);
+  }
+}
+
 function applyChaptersFromMediaInfoResult(result, token){
   if (token !== chapterParseToken) return;
   mediaChapters = [];
@@ -2633,26 +2656,33 @@ function applyChaptersFromMediaInfoResult(result, token){
     if (raw.length) break;
   }
   if (raw.length === 0) return;
+  applyChapterList(raw, token);
+}
+
+// Превращает список глав [{time, title}] в отрезки для кнопки пропуска заставки и титров
+function applyChapterList(raw, token){
+  if (token !== chapterParseToken) return;
+  mediaChapters = [];
 
   raw.sort((a, b) => a.time - b.time);
-  // Убираем возможные дубликаты по времени (например, если совпало между источниками)
+  // Убираем дубликаты по времени, если один тайм-код пришёл из нескольких источников
   const dedup = [];
   for (const item of raw){
     if (dedup.length && Math.abs(dedup[dedup.length - 1].time - item.time) < 0.01) continue;
     dedup.push(item);
   }
 
+  // credits оставляем без ограничения, титры идут до конца файла
   const SKIP_KIND_MAX_DURATION = {
     intro: 15 * 60,
     recap: 15 * 60,
     custom: 20 * 60
-    // credits: без ограничения
   };
 
   const segments = [];
   for (let i = 0; i < dedup.length; i++){
     const info = classifySkippableChapter(dedup[i].title);
-    if (!info) continue; // обычная (не заставка/титры) глава, пропускаем
+    if (!info) continue; // обычная глава, для кнопки пропуска не нужна
     const start = dedup[i].time;
     let end = i + 1 < dedup.length ? dedup[i + 1].time : Infinity; // Infinity значит "до конца видео"
     const cap = SKIP_KIND_MAX_DURATION[info.kind];
@@ -2666,9 +2696,8 @@ function applyChaptersFromMediaInfoResult(result, token){
     });
   }
   mediaChapters = segments;
-  
-  // Сразу показываем кнопку "Пропустить заставку", если chapters загружены и видео уже воспроизводится
-  // Не ждём следующего timeupdate, чтобы избежать задержки 9-10 секунд
+
+  // Показываем кнопку сразу, не дожидаясь следующего timeupdate с его задержкой
   if (mediaChapters.length > 0 && !video.paused) {
     updateSkipSegmentOverlay(false);
   }
@@ -4843,8 +4872,7 @@ async function loadUrl(url){
   const NON_VIDEO_EXTENSION = /\.(html?|json|xml|txt|jpe?g|png|gif|webp|svg|css|js|php|aspx?)$/i;
   const isFileLike = !isM3U8 && !isDirectVideo && !NON_VIDEO_EXTENSION.test(parsedUrl.pathname);
 
-  // Главы читаем только для того, что реально окажется прямым видеофайлом
-  // Запускаем параллельно с sniffHlsManifest, чтобы не ждать её завершения
+  // Для прямого видеофайла главы читаем сразу, параллельно со sniffHlsManifest
   if (isDirectVideo || isFileLike){
     parseChaptersFromUrl(url, chapterParseToken);
   }
@@ -4853,6 +4881,12 @@ async function loadUrl(url){
     const sniffed = await sniffHlsManifest(url);
     if (thisLoadToken !== urlLoadToken) return;   // пользователь уже открыл другой источник
     if (sniffed) isM3U8 = true;
+  }
+
+  // В сегментах HLS глав нет, читаем их из chapters.vtt рядом с плейлистом
+  if (isM3U8){
+    const chaptersUrl = url.split(/[?#]/)[0].replace(/[^/]+$/, 'chapters.vtt');
+    parseChaptersFromVtt(chaptersUrl, chapterParseToken);
   }
 
   // Останавливаем предыдущий HLS экземпляр
@@ -4933,8 +4967,11 @@ async function loadUrl(url){
     try {
       hls = new Hls({
         enableWorker: true,
+        lowLatencyMode: false, // это VOD, режим низкой задержки только сокращает буфер
         maxBufferLength: 30,
-        maxMaxBufferLength: 60
+        maxMaxBufferLength: 300, // при хорошей сети держим вперёд до 5 минут
+        maxBufferSize: 140 * 1000 * 1000, // верхний предел буфера по памяти, близко к лимиту браузера на медиа
+        backBufferLength: 90 // просмотренный хвост храним только 90 секунд
       });
       // Локальная ссылка на именно этот экземпляр, нужна, чтобы отложенные
       // ретраи ниже не трогали чужой/уже уничтоженный hls, если пользователь
