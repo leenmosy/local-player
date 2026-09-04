@@ -4400,6 +4400,8 @@ function updateVolumeIcon(){
   muteBtn.setAttribute('aria-pressed', String(isOff));
   muteBtn.setAttribute('aria-label', isOff ? 'Включить звук' : 'Выключить звук');
   muteBtn.setAttribute('data-tooltip', isOff ? 'Включить звук' : 'Выключить звук');
+  // Заливка ползунка громкости до бегунка, при min 0 max 1 value это уже доля
+  volumeRange.style.setProperty('--vol-level', (volumeRange.value * 100) + '%');
 }
 
 let lastVolume = DEFAULT_VOLUME;
