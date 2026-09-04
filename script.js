@@ -3270,6 +3270,7 @@ const muteBtn = document.getElementById('mute-btn');
 const iconVolOn = document.getElementById('icon-vol-on');
 const iconVolOff = document.getElementById('icon-vol-off');
 const volumeRange = document.getElementById('volume-range');
+const volumeSliderWrap = document.querySelector('.volume-slider-wrap');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const iconFsOpen = document.getElementById('icon-fs-open');
 const iconFsClose = document.getElementById('icon-fs-close');
@@ -4432,11 +4433,24 @@ function applyGlobalVolume(){
   updateVolumeIcon();
 }
 
+let volumeTooltipTimer = null;
+// Пока крутят громкость, показываем над ползунком процент, потом возвращаем обычную подсказку
+function flashVolumeTooltip(){
+  volumeSliderWrap.dataset.tooltip = 'Громкость ' + Math.round(volumeRange.value * 100) + '%';
+  volumeSliderWrap.classList.add('show-tooltip');
+  clearTimeout(volumeTooltipTimer);
+  volumeTooltipTimer = setTimeout(() => {
+    volumeSliderWrap.classList.remove('show-tooltip');
+    volumeSliderWrap.dataset.tooltip = 'Изменить громкость';
+  }, 1000);
+}
+
 volumeRange.addEventListener('input', () => {
   video.volume = volumeRange.value;
   video.muted = Number(volumeRange.value) === 0;
   if (video.volume > 0) lastVolume = video.volume;
   updateVolumeIcon();
+  flashVolumeTooltip();
   saveGlobalVolume();
 });
 function toggleMute(){
@@ -4542,6 +4556,7 @@ function adjustVolume(delta){
   volumeRange.value = v;
   if (v > 0) lastVolume = v;
   updateVolumeIcon();
+  flashVolumeTooltip();
   saveGlobalVolume();
 }
 document.querySelectorAll('input[type="range"]').forEach(r => {
