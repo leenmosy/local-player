@@ -1160,7 +1160,8 @@ const STORAGE_LIMITS = {
 };
 const DEFAULT_STORAGE_LIMIT = 100;
 let currentFileKey = null;
-let currentFileName = null; 
+let currentSourceUrl = null; // ссылка текущего источника, нужна чтобы найти файл субтитров рядом с плейлистом
+let currentFileName = null;
 let originalFileName = null; 
 let currentFileIsFolder = false; 
 let currentFolderName = null; 
@@ -2215,6 +2216,7 @@ function loadFile(file, handle, meta){
   currentFolderName = (meta && meta.folderName) || null;
   currentFolderId = (meta && meta.folderId) || null;
   currentFileKey = fileKey(file, currentFileIsFolder, currentFolderId);
+  currentSourceUrl = null;
   // Записи, сохранённые до появления folderId в ключе, переносим на новый ключ
   if (currentFileIsFolder) migrateLegacyFolderKey(file, currentFileKey);
   nextEpisodePromptDismissed = false;
@@ -3618,6 +3620,27 @@ function processSubtitlesContent(content, file, previousName){
   subsRemoveBtn.style.display = 'flex';
 }
 
+// Для HLS субтитры лежат рядом с плейлистом, пробуем subs.srt, затем subs.vtt
+async function autoLoadHlsSubtitles(){
+  if (!currentSourceUrl || !/\.m3u8($|[?#])/i.test(currentSourceUrl)) return;
+  if (localStorage.getItem(subsKey(currentFileKey))) return; // для этой ссылки субтитры уже выбраны
+  const keyAtStart = currentFileKey;
+  const base = currentSourceUrl.split(/[?#]/)[0].replace(/[^/]+$/, '');
+  for (const name of ['subs.srt', 'subs.vtt']){
+    try {
+      const res = await fetch(base + name);
+      if (keyAtStart !== currentFileKey) return; // открыли другой источник
+      if (!res.ok) continue;
+      const display = 'Субтитры.' + name.split('.').pop();
+      setSubsFileNameDisplay(display);
+      processSubtitlesContent(await res.text(), { name: display }, 'Файл не выбран');
+      if (subtitlesData.length) return; // разобралось, второй вариант не нужен
+    } catch (e) {
+      console.warn('Субтитры HLS (' + name + ') не подгрузились:', e && e.message ? e.message : e);
+    }
+  }
+}
+
 // --- Удаление субтитров ---
 subsRemoveBtn.addEventListener('click', () => {
   subtitlesData = [];
@@ -4921,6 +4944,7 @@ async function loadUrl(url){
 
   migrateLegacyUrlKey(url);
   currentFileKey = urlKey(url);
+  currentSourceUrl = url;
   // Сбрасываем folder-поля, иначе они попадут от прошлого плейлиста в запись прогресса ссылки
   currentFileIsFolder = false;
   currentFolderName = null;
@@ -5362,6 +5386,7 @@ function loadUrlCommonInit(){
   video.addEventListener('durationchange', durationChangeHandler, { once: true });
 
   destroyAudioGraph();
+  autoLoadHlsSubtitles();
 }
 
 // Сообщение об ошибке потока: #err-msg лежит на стартовом экране и в плеере не виден
