@@ -4080,13 +4080,13 @@ function syncPlayStateUI(){
     iconPause.style.display = '';
     playBtn.setAttribute('aria-pressed', 'true');
     playBtn.setAttribute('aria-label', 'Пауза');
-    playBtn.setAttribute('data-tooltip', 'Пауза');
+    playBtn.setAttribute('data-tooltip', 'Пауза (space)');
   } else {
     iconPlay.style.display = '';
     iconPause.style.display = 'none';
     playBtn.setAttribute('aria-pressed', 'false');
     playBtn.setAttribute('aria-label', 'Воспроизвести');
-    playBtn.setAttribute('data-tooltip', 'Воспроизвести');
+    playBtn.setAttribute('data-tooltip', 'Воспроизвести (space)');
   }
 }
 
@@ -4152,6 +4152,8 @@ let lastConfirmedTime = 0;
 video.addEventListener('loadedmetadata', () => {
   lastConfirmedTime = 0;
   lastBlurActive = false;
+  detectedFps = 0;
+  lastFrameMeta = null;
   updateSeekFill();
 });
 
@@ -4218,9 +4220,41 @@ function syncBlurFilter(){
 // Событие timeupdate спецификация разрешает слать не чаще раза в 250 мс, и на этой
 // частоте блюр опаздывал включиться на начало интервала, а субтитры, на реплику
 let frameSyncHandle = null;
-function frameSyncLoop(){
+// Частоту кадров берём из метаданных requestVideoFrameCallback, она нужна для покадровой перемотки
+let detectedFps = 0;
+let lastFrameMeta = null;
+
+function noteFrameMetadata(metadata){
+  if (!metadata || typeof metadata.mediaTime !== 'number' || typeof metadata.presentedFrames !== 'number') return;
+  const prev = lastFrameMeta;
+  lastFrameMeta = { mediaTime: metadata.mediaTime, presentedFrames: metadata.presentedFrames };
+  if (!prev) return;
+  const dt = metadata.mediaTime - prev.mediaTime;
+  const df = metadata.presentedFrames - prev.presentedFrames;
+  if (dt <= 0 || df <= 0) return;
+  const fps = df / dt;
+  // Отсекаем выбросы после перемотки, когда счётчики скачут
+  if (fps >= 5 && fps <= 240) detectedFps = fps;
+}
+
+// Пока частота не измерена, шагаем как при 25 кадрах в секунду
+function frameDuration(){
+  return 1 / (detectedFps || 25);
+}
+
+// Покадровая перемотка: ставим на паузу и сдвигаем время ровно на один кадр
+function stepFrame(dir){
+  if (!isDurationUsable()) return;
+  if (!video.paused) video.pause();
+  const t = video.currentTime + dir * frameDuration();
+  video.currentTime = Math.max(0, Math.min(video.duration, t));
+  showControls();
+}
+
+function frameSyncLoop(now, metadata){
   frameSyncHandle = null;
   scheduleFrameSync(); // планируем следующий кадр первым, чтобы сбой ниже не оборвал цикл
+  noteFrameMetadata(metadata);
   syncBlurFilter();
   updateSubtitles();
 }
@@ -4418,7 +4452,7 @@ function updateVolumeIcon(){
   iconVolOff.style.display = isOff ? '' : 'none';
   muteBtn.setAttribute('aria-pressed', String(isOff));
   muteBtn.setAttribute('aria-label', isOff ? 'Включить звук' : 'Выключить звук');
-  muteBtn.setAttribute('data-tooltip', isOff ? 'Включить звук' : 'Выключить звук');
+  muteBtn.setAttribute('data-tooltip', isOff ? 'Включить звук (m)' : 'Выключить звук (m)');
   // Заливка ползунка громкости до бегунка, при min 0 max 1 value это уже доля
   volumeRange.style.setProperty('--fill', (volumeRange.value * 100) + '%');
 }
@@ -4545,7 +4579,7 @@ fullscreenBtn.addEventListener('click', () => {
     iconFsClose.style.display = isFs ? '' : 'none';
     fullscreenBtn.setAttribute('aria-pressed', String(isFs));
     fullscreenBtn.setAttribute('aria-label', isFs ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим');
-    fullscreenBtn.setAttribute('data-tooltip', isFs ? 'Выйти из полного экрана' : 'Полный экран');
+    fullscreenBtn.setAttribute('data-tooltip', isFs ? 'Выйти из полного экрана (f)' : 'Полный экран (f)');
   });
 });
 
@@ -4609,6 +4643,8 @@ document.addEventListener('keydown', (e) => {
   }
   else if (e.code === 'ArrowRight' && e.shiftKey){ e.preventDefault(); seekBy(1); showControls(); }
   else if (e.code === 'ArrowLeft' && e.shiftKey){ e.preventDefault(); seekBy(-1); showControls(); }
+  else if (e.code === 'Comma'){ e.preventDefault(); stepFrame(-1); }
+  else if (e.code === 'Period'){ e.preventDefault(); stepFrame(1); }
   else if (e.code === 'ArrowRight'){ e.preventDefault(); seekBy(5); showControls(); }
   else if (e.code === 'ArrowLeft'){ e.preventDefault(); seekBy(-5); showControls(); }
   else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.02); showControls(); }
