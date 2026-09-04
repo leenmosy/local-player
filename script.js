@@ -106,23 +106,6 @@ const subsRemoveBtn = document.getElementById('subs-remove-btn');
 const urlLoadingSpinner = document.getElementById('url-loading-spinner');
 const TOAST_DURATION_MS = 8000;
 
-const audioHint = document.getElementById('audio-hint');
-const audioHintClose = document.getElementById('audio-hint-close');
-let audioHintTimeout = null;
-
-function hideAudioHint(){
-  clearTimeout(audioHintTimeout);
-  audioHint.classList.remove('show');
-}
-
-audioHintClose.addEventListener('click', hideAudioHint);
-
-function showAudioHint(){
-  audioHint.classList.add('show');
-  clearTimeout(audioHintTimeout);
-  audioHintTimeout = setTimeout(hideAudioHint, TOAST_DURATION_MS);
-}
-
 // --- элементы управления оверлеем ---
 const ovToggle = document.getElementById('ov-toggle');
 const ovSize = document.getElementById('ov-size');
@@ -2317,7 +2300,6 @@ function loadFile(file, handle, meta){
   audioSourceTainted = false;
   setAudioFeaturesAvailable(true);
   destroyAudioGraph();
-  hideAudioHint();
   if (drToggle.checked || parseFloat(drBoost.value) > 100) ensureAudioGraph();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
@@ -5055,9 +5037,6 @@ async function loadUrl(url){
         urlLoadBtn.disabled = false;
         initAudioGraphForCurrentSource();
         showPlayer();
-
-        // Показываем подсказку о стабилизации звука для HLS
-        showAudioHint();
         safePlay();
       });
 
