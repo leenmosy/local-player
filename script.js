@@ -3511,6 +3511,7 @@ function setDrPanelOpen(open){
   drPanel.classList.toggle('open', open);
   drBtn.setAttribute('aria-expanded', String(open));
   drBtn.classList.toggle('active-panel', open);
+  if (open) refreshPanelRangeFills();
 
   // Сворачиваем категории при переключении панели и закрываем плейлист, чтобы панели не перекрывались
   if (open) {
@@ -4158,7 +4159,7 @@ video.addEventListener('loadedmetadata', () => {
 function updateSeekFill(){
   const dur = isDurationUsable() ? video.duration : 0;
   if (!dur){
-    seek.style.setProperty('--seek-played', '0%');
+    seek.style.setProperty('--fill', '0%');
     seek.style.setProperty('--seek-buffered', '0%');
     return;
   }
@@ -4171,11 +4172,23 @@ function updateSeekFill(){
       break;
     }
   }
-  seek.style.setProperty('--seek-played', played.toFixed(2) + '%');
+  seek.style.setProperty('--fill', played.toFixed(2) + '%');
   seek.style.setProperty('--seek-buffered', Math.min(100, (bufferedEnd / dur) * 100).toFixed(2) + '%');
 }
 video.addEventListener('progress', updateSeekFill);
 video.addEventListener('seeked', updateSeekFill);
+
+// Заливка любого обычного ползунка до бегунка по его value/min/max
+function updateRangeFill(el){
+  const min = parseFloat(el.min) || 0;
+  const max = isFinite(parseFloat(el.max)) ? parseFloat(el.max) : 100;
+  const pct = max > min ? ((parseFloat(el.value) - min) / (max - min)) * 100 : 0;
+  el.style.setProperty('--fill', Math.max(0, Math.min(100, pct)).toFixed(2) + '%');
+}
+// У ползунков в панели настроек value ставится из сохранённых настроек без события input
+function refreshPanelRangeFills(){
+  drPanel.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
+}
 
 // Проверяет, задевает ли отрезок [from, to] хотя бы один диапазон блюра
 function rangeTouchesBlur(from, to){
@@ -4407,7 +4420,7 @@ function updateVolumeIcon(){
   muteBtn.setAttribute('aria-label', isOff ? 'Включить звук' : 'Выключить звук');
   muteBtn.setAttribute('data-tooltip', isOff ? 'Включить звук' : 'Выключить звук');
   // Заливка ползунка громкости до бегунка, при min 0 max 1 value это уже доля
-  volumeRange.style.setProperty('--vol-level', (volumeRange.value * 100) + '%');
+  volumeRange.style.setProperty('--fill', (volumeRange.value * 100) + '%');
 }
 
 let lastVolume = DEFAULT_VOLUME;
@@ -4567,6 +4580,11 @@ document.querySelectorAll('input[type="range"]').forEach(r => {
   // Снимаем фокус только после mouseup (перетаскивания мышью), не при клавиатурном управлении
   r.addEventListener('mouseup', () => r.blur());
   r.addEventListener('touchend', () => r.blur());
+  // Таймлайн и громкость красят заливку своими функциями, остальным хватает общего обработчика
+  if (r.id !== 'seek' && r.id !== 'volume-range'){
+    r.addEventListener('input', () => updateRangeFill(r));
+    updateRangeFill(r);
+  }
 });
 document.addEventListener('keydown', (e) => {
   if (!playerView.classList.contains('active')) return;
