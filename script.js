@@ -4416,14 +4416,13 @@ function applyGlobalVolume(){
 }
 
 let volumeTooltipTimer = null;
-// Пока крутят громкость, показываем над ползунком процент, потом возвращаем обычную подсказку
+// Пока крутят громкость, показываем над ползунком процент, через секунду прячем
 function flashVolumeTooltip(){
-  volumeSliderWrap.dataset.tooltip = 'Громкость ' + Math.round(volumeRange.value * 100) + '%';
+  volumeSliderWrap.dataset.tooltip = Math.round(volumeRange.value * 100) + '%';
   volumeSliderWrap.classList.add('show-tooltip');
   clearTimeout(volumeTooltipTimer);
   volumeTooltipTimer = setTimeout(() => {
     volumeSliderWrap.classList.remove('show-tooltip');
-    volumeSliderWrap.dataset.tooltip = 'Изменить громкость';
   }, 1000);
 }
 
