@@ -2342,6 +2342,8 @@ let nextEpisodePromptDismissed = false;
 
 
 let mediaChapters = [];
+// Окно показа кнопки "Следующая серия", если оно размечено главой
+let nextEpisodeSegment = null;
 let dismissedChapterSegments = new Set();
 let chapterParseToken = 0;
 let activeSkipSegment = null;
@@ -2379,7 +2381,10 @@ const CANONICAL_SKIP_CHAPTERS = {
   'recap': { kind: 'recap', label: 'Пропустить повтор' },
   'preview': { kind: 'recap', label: 'Пропустить повтор' },
   'рекап': { kind: 'recap', label: 'Пропустить повтор' },
-  'повтор': { kind: 'recap', label: 'Пропустить повтор' }
+  'повтор': { kind: 'recap', label: 'Пропустить повтор' },
+  'следующая серия': { kind: 'next' },
+  'next episode': { kind: 'next' },
+  'дальше': { kind: 'next' }
 };
 
 function classifySkippableChapter(rawTitle){
@@ -2659,6 +2664,7 @@ function applyChaptersFromMediaInfoResult(result, token){
 function applyChapterList(raw, token){
   if (token !== chapterParseToken) return;
   mediaChapters = [];
+  nextEpisodeSegment = null;
 
   raw.sort((a, b) => a.time - b.time);
   // Убираем дубликаты по времени, если один тайм-код пришёл из нескольких источников
@@ -2684,6 +2690,11 @@ function applyChapterList(raw, token){
     const cap = SKIP_KIND_MAX_DURATION[info.kind];
     if (cap !== undefined) end = Math.min(end, start + cap);
     if (end <= start) continue;
+    // Метка перехода задаёт окно показа кнопки "Следующая серия", кнопкой пропуска она не становится
+    if (info.kind === 'next'){
+      if (!nextEpisodeSegment) nextEpisodeSegment = { start, end };
+      continue;
+    }
     segments.push({
       id: 'ch' + i + '_' + Math.round(start * 1000),
       start,
@@ -2709,6 +2720,7 @@ function skipSegmentEffectiveEnd(seg){
 function resetMediaChapters(){
   chapterParseToken += 1;
   mediaChapters = [];
+  nextEpisodeSegment = null;
   dismissedChapterSegments = new Set();
   hideSkipSegmentOverlay();
   hideCodecWarningToast();
@@ -4391,8 +4403,14 @@ video.addEventListener('timeupdate', () => {
   const hasNextEpisode = playlistFiles.length > 1 && playlistIndex > -1 && playlistIndex < playlistFiles.length - 1;
   let showNextEpisode = false;
   if (hasNextEpisode && isDurationUsable() && !nextEpisodePromptDismissed && !anyPanelOpen()){
-    const remaining = video.duration - video.currentTime;
-    showNextEpisode = remaining <= nextEpisodeThreshold(video.duration) && remaining > 0.05;
+    if (nextEpisodeSegment){
+      // Размеченное окно точнее порога по длительности, поэтому оно его перебивает
+      const end = nextEpisodeSegment.end === Infinity ? video.duration : nextEpisodeSegment.end;
+      showNextEpisode = video.currentTime >= nextEpisodeSegment.start && video.currentTime < end;
+    } else {
+      const remaining = video.duration - video.currentTime;
+      showNextEpisode = remaining <= nextEpisodeThreshold(video.duration) && remaining > 0.05;
+    }
   }
   if (showNextEpisode){
     nextEpOverlay.classList.add('show');
