@@ -1355,6 +1355,8 @@ function saveProgress(){
     // Сохраняем URL для источников, открытых по ссылке.
     if (currentFileKey.startsWith(URL_KEY_PREFIX)){
       progressData.url = currentFileKey.slice(URL_KEY_PREFIX.length);
+      // У серии запоминаем и манифест, чтобы "Продолжить" вернуло весь сериал, а не одну серию
+      if (playlistSeriesUrl) progressData.seriesUrl = playlistSeriesUrl;
     }
     // Сохраняем имя папки для отображения в списке прогресса.
     if (currentFileIsFolder && currentFolderName){
@@ -1820,7 +1822,7 @@ function renderResumeList(){
       : '';
     let typeBadge;
     if (item.url) {
-      typeBadge = '<span class="ri-type-badge ri-type-url">Ссылка</span>';
+      typeBadge = `<span class="ri-type-badge ri-type-url">${item.seriesUrl ? 'Сериал' : 'Ссылка'}</span>`;
     } else if (isFolderItem) {
       typeBadge = `<span class="ri-type-badge ri-type-folder">${folderLabel}</span>`;
     } else {
@@ -1838,7 +1840,7 @@ function renderResumeList(){
       </div>
       <div class="ri-actions">
         ${item.url
-          ? `<button type="button" class="ri-continue" data-url="${escapeHtml(item.url)}">Продолжить</button>`
+          ? `<button type="button" class="ri-continue" data-url="${escapeHtml(item.url)}"${item.seriesUrl ? ` data-series-url="${escapeHtml(item.seriesUrl)}"` : ''}>Продолжить</button>`
           : `<button type="button" class="ri-continue" data-key="${escapeHtml(item.key)}">Продолжить</button>`}
         <button type="button" class="ri-clear" data-key="${escapeHtml(item.key)}" aria-label="Удалить «${escapeHtml(displayName)}» из списка">✕</button>
       </div>
@@ -1884,6 +1886,14 @@ resumeList.addEventListener('click', async (e) => {
   
   const continueBtn = e.target.closest('.ri-continue');
   if (!continueBtn) return;
+
+  // Серию продолжаем через её сериал, тогда вернутся плейлист и переключение серий
+  if (continueBtn.dataset.seriesUrl) {
+    const seriesUrl = continueBtn.dataset.seriesUrl;
+    urlInput.value = seriesUrl;
+    loadUrl(seriesUrl);
+    return;
+  }
 
   // Продолжить видео по ссылке (m3u8/mp4-URL)
   if (continueBtn.dataset.url) {
@@ -2324,6 +2334,8 @@ function looksLikeFolderDrop(file){
 // --- Плейлист (загрузка папки) ---
 let playlistFiles = [];
 let playlistIndex = -1;
+// Ссылка на манифест сериала, непусто только когда плейлист собран из series.json
+let playlistSeriesUrl = null;
 let playlistFolderName = null; 
 let playlistFolderId = null; 
 let nextEpisodePromptDismissed = false; 
@@ -2708,8 +2720,7 @@ function advanceToNextPlaylistItem(){
   if (!(playlistFiles.length > 1 && playlistIndex > -1 && playlistIndex < playlistFiles.length - 1)) return;
   playlistIndex += 1;
   renderPlaylist();
-  const next = playlistFiles[playlistIndex];
-  loadFile(next.file, next.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
+  openPlaylistEntry(playlistFiles[playlistIndex]);
 }
 
 // Переход к предыдущему видео в плейлисте
@@ -2717,8 +2728,7 @@ function advanceToPrevPlaylistItem(){
   if (!(playlistFiles.length > 1 && playlistIndex > 0)) return;
   playlistIndex -= 1;
   renderPlaylist();
-  const prev = playlistFiles[playlistIndex];
-  loadFile(prev.file, prev.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
+  openPlaylistEntry(playlistFiles[playlistIndex]);
 }
 
 function hideNextEpisodeOverlay(){
@@ -2838,6 +2848,7 @@ function resetPlaylist(){
   playlistIndex = -1;
   playlistFolderName = null;
   playlistFolderId = null;
+  playlistSeriesUrl = null;
   playlistBtn.style.display = 'none';
   playlistBtn.setAttribute('aria-expanded', 'false');
   playlistPanel.classList.remove('open');
@@ -2863,14 +2874,14 @@ function renderPlaylist(){
       : (state === 'in-progress' ? '<span class="playlist-item-badge" title="Начато">•</span>' : '');
     item.innerHTML = `
       <span class="playlist-item-index">${idx + 1}</span>
-      <span class="playlist-item-name">${escapeHtml(niceTitleFromFilename(entry.file.name))}</span>
+      <span class="playlist-item-name">${escapeHtml(playlistEntryTitle(entry, playlistFolderId))}</span>
       ${badge}
     `;
     item.addEventListener('click', () => {
       if (idx === playlistIndex) return;
       playlistIndex = idx;
       renderPlaylist();
-      loadFile(entry.file, entry.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
+      openPlaylistEntry(entry);
     });
     playlistList.appendChild(item);
   });
@@ -2928,8 +2939,59 @@ function openFolderPlaylist(items, folderName){
       idbSet(fileKey(entry.file, true, playlistFolderId), entry.handle).catch(() => {});
     }
   });
-  const first = playlistFiles[playlistIndex] || playlistFiles[0];
-  loadFile(first.file, first.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
+  openPlaylistEntry(playlistFiles[playlistIndex] || playlistFiles[0]);
+}
+
+// Разворачивает series.json в плейлист, чтобы на сериал была одна ссылка вместо ссылки на серию
+async function openSeriesPlaylist(manifestUrl, loadToken){
+  let manifest = null;
+  try{
+    const res = await fetch(manifestUrl);
+    if (!res.ok){
+      showUrlError('Не удалось загрузить список серий, сервер ответил ' + res.status);
+      return;
+    }
+    manifest = await res.json();
+  } catch(e){
+    showUrlError('Не удалось прочитать список серий. Проверьте формат файла и CORS');
+    return;
+  }
+  if (loadToken !== urlLoadToken) return; // пользователь уже открыл другой источник
+
+  const rawEpisodes = manifest && Array.isArray(manifest.episodes) ? manifest.episodes : null;
+  if (!rawEpisodes || !rawEpisodes.length){
+    showUrlError('В файле сериала нет ни одной серии');
+    return;
+  }
+
+  // Ссылки серий разрешаем относительно манифеста, чтобы внутри можно было писать короткие пути
+  const entries = [];
+  rawEpisodes.forEach((ep, idx) => {
+    const raw = typeof ep === 'string' ? ep : (ep && ep.url);
+    if (!raw) return;
+    let parsed = null;
+    try{ parsed = new URL(String(raw), manifestUrl); } catch(e){ return; }
+    // Манифест это внешний файл, в src пускаем только сетевые схемы
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+    const rawTitle = (ep && ep.title) ? String(ep.title).trim() : '';
+    entries.push({ url: parsed.href, title: (rawTitle || 'Серия ' + (idx + 1)).slice(0, MAX_TITLE_LEN) });
+  });
+  if (!entries.length){
+    showUrlError('В файле сериала нет корректных ссылок на серии');
+    return;
+  }
+
+  // Прошлый плейлист гасим только здесь, при переключении серий внутри сериала он должен жить
+  resetPlaylist();
+  playlistFiles = entries;
+  playlistSeriesUrl = manifestUrl;
+  playlistFolderName = (manifest.title ? String(manifest.title).trim() : '').slice(0, MAX_TITLE_LEN) || null;
+  // Открываем серию, на которой пользователь остановился
+  playlistIndex = findLastWatchedIndex(playlistFiles, null);
+  playlistBtn.style.display = playlistFiles.length > 1 ? '' : 'none';
+  renderPlaylist();
+  updatePlaylistNavButtons();
+  openPlaylistEntry(playlistFiles[playlistIndex] || playlistFiles[0]);
 }
 
 // Ищет сохранённый манифест той же папки по имени папки и сигнатуре файлов (имя+размер+дата)
@@ -2964,12 +3026,7 @@ function findMatchingFolderId(files, folderName){
 function findLastWatchedIndex(files, folderId){
   let startedIdx = -1, startedTs = -1, firstUntouched = -1;
   files.forEach((entry, idx) => {
-    let data = null;
-    try{
-      const raw = localStorage.getItem(fileKey(entry.file, true, folderId))
-               || localStorage.getItem(legacyFolderKey(entry.file));
-      data = raw ? JSON.parse(raw) : null;
-    } catch(e){ data = null; }
+    const data = readPlaylistEntryProgress(entry, folderId);
     if (!data || data.completed){
       if (!data && firstUntouched === -1) firstUntouched = idx;
       return;
@@ -2983,18 +3040,53 @@ function findLastWatchedIndex(files, folderId){
   return 0;
 }
 
+// Запись плейлиста это либо локальный файл { file, handle }, либо серия по ссылке { url, title }
+function isUrlPlaylistEntry(entry){
+  return !!(entry && entry.url);
+}
+
+// Запись прогресса для элемента плейлиста, у файлов читаем и старый формат ключа
+function readPlaylistEntryProgress(entry, folderId){
+  try{
+    const raw = isUrlPlaylistEntry(entry)
+      ? localStorage.getItem(urlKey(entry.url))
+      : (localStorage.getItem(fileKey(entry.file, true, folderId))
+         || localStorage.getItem(legacyFolderKey(entry.file)));
+    return raw ? JSON.parse(raw) : null;
+  } catch(e){ return null; }
+}
+
+// Название записи для панели плейлиста
+function playlistEntryTitle(entry, folderId){
+  // Имя, заданное пользователем, важнее автоматического, так же ведёт себя шапка плеера
+  if (isUrlPlaylistEntry(entry)){
+    const auto = entry.title || niceTitleFromFilename(getFileNameFromUrl(entry.url));
+    return storedCustomTitle(urlKey(entry.url), auto) || auto;
+  }
+  const auto = niceTitleFromFilename(entry.file.name);
+  // У файлов читаем и старый формат ключа, как это делает чтение прогресса
+  return storedCustomTitle(fileKey(entry.file, true, folderId), auto)
+      || storedCustomTitle(legacyFolderKey(entry.file), auto)
+      || auto;
+}
+
+// Открывает запись плейлиста тем загрузчиком, который ей подходит
+function openPlaylistEntry(entry){
+  if (!entry) return;
+  if (isUrlPlaylistEntry(entry)){
+    loadUrl(entry.url, { title: entry.title || null });
+    return;
+  }
+  loadFile(entry.file, entry.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
+}
+
 // Состояние серии для отметок в плейлисте: 'watched' | 'in-progress' | null
 function playlistEntryState(entry, folderId){
-  try{
-    const raw = localStorage.getItem(fileKey(entry.file, true, folderId))
-             || localStorage.getItem(legacyFolderKey(entry.file));
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (!data) return null;
-    if (data.completed) return 'watched';
-    if (typeof data.t !== 'number' || data.t <= 0) return null;
-    return 'in-progress';
-  } catch(e){ return null; }
+  const data = readPlaylistEntryProgress(entry, folderId);
+  if (!data) return null;
+  if (data.completed) return 'watched';
+  if (typeof data.t !== 'number' || data.t <= 0) return null;
+  return 'in-progress';
 }
 
 // Дропзоны, это div с role="button", Enter/Space нужно вешать вручную
@@ -4908,7 +5000,7 @@ async function fetchManifestHead(url, useRange){
   }
 }
 
-async function loadUrl(url){
+async function loadUrl(url, meta){
   cancelPendingUrlLoad();
   _headCache = new Map();
   const thisLoadToken = urlLoadToken;
@@ -4966,6 +5058,12 @@ async function loadUrl(url){
     return;
   }
 
+  // Манифест сериала разворачиваем в плейлист, дальше грузится уже конкретная серия
+  if (/\.json$/i.test(parsedUrl.pathname)){
+    await openSeriesPlaylist(url, thisLoadToken);
+    return;
+  }
+
   // Определяем тип видео по расширения (используем pathname, чтобы query-параметры не мешали)
   let isM3U8 = /\.m3u8$/i.test(parsedUrl.pathname);
   const isDirectVideo = /\.(mp4|webm|mov)$/i.test(parsedUrl.pathname);
@@ -5005,25 +5103,31 @@ async function loadUrl(url){
   currentFolderId = null;
   originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя из URL
   currentFileName = niceTitleFromFilename(getFileNameFromUrl(url)); // Отображаемое имя без расширения
-  
+  // Название серии знает только манифест сериала, из имени файла его не вывести
+  const seriesTitle = meta && meta.title ? String(meta.title).trim() : '';
+  if (seriesTitle) currentFileName = seriesTitle;
+
   // Имя из Content-Disposition приходит асинхронно, запоминаем загрузку чтобы ответ не переименовал уже другой источник
   const titleLoadToken = thisLoadToken;
   const titleKey = currentFileKey;
   const titleAutoName = currentFileName;
-  getOriginalFileNameFromUrl(url).then(originalName => {
-    if (titleLoadToken !== urlLoadToken || titleKey !== currentFileKey) return; // открыт уже другой источник
-    if (!originalName || originalName === originalFileName) return;
-    // Имя, заданное пользователем, важнее серверного
-    if (storedCustomTitle(titleKey, titleAutoName)) return;
-    originalFileName = originalName;
-    currentFileName = niceTitleFromFilename(originalName);
-    // Обновляем отображение имени в UI
-    fnameEl.textContent = currentFileName;
-    ovTitle.textContent = currentFileName;
-    titleInput.value = currentFileName;
-  }).catch(() => {
-    // Если не удалось получить оригинальное имя, используем имя из URL
-  });
+  // У серии название уже есть, серверное имя запрашивать незачем
+  if (!seriesTitle){
+    getOriginalFileNameFromUrl(url).then(originalName => {
+      if (titleLoadToken !== urlLoadToken || titleKey !== currentFileKey) return; // открыт уже другой источник
+      if (!originalName || originalName === originalFileName) return;
+      // Имя, заданное пользователем, важнее серверного
+      if (storedCustomTitle(titleKey, titleAutoName)) return;
+      originalFileName = originalName;
+      currentFileName = niceTitleFromFilename(originalName);
+      // Обновляем отображение имени в UI
+      fnameEl.textContent = currentFileName;
+      ovTitle.textContent = currentFileName;
+      titleInput.value = currentFileName;
+    }).catch(() => {
+      // Если не удалось получить оригинальное имя, используем имя из URL
+    });
+  }
 
   // Устанавливаем crossOrigin ДО установки src для HTTPS-ссылок
   // Это нужно для корректной работы Web Audio API и избежания гонки условий
@@ -5556,6 +5660,8 @@ const saveTitle = () => {
   // Сохраняем настройки и обновляем название в прогрессе
   saveSettings();
   saveTitleToProgress();
+  // Новое имя должно сразу попасть и в панель плейлиста
+  if (playlistFiles.length) renderPlaylist();
   
   isEditingTitle = false;
 };
