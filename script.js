@@ -1759,6 +1759,11 @@ function stopProgressTracking(){
   saveProgress();
 }
 
+// Позицию пишем и по событиям, иначе после неудачной загрузки ссылки интервал остаётся выключенным
+video.addEventListener('pause', saveProgress);
+video.addEventListener('seeked', saveProgress);
+video.addEventListener('play', startProgressTracking);
+
 // Экранирует & < > " ' безопасно и для текста, и для значения атрибута
 function escapeHtml(str){
   return String(str)
@@ -1891,7 +1896,8 @@ resumeList.addEventListener('click', async (e) => {
   if (continueBtn.dataset.seriesUrl) {
     const seriesUrl = continueBtn.dataset.seriesUrl;
     urlInput.value = seriesUrl;
-    loadUrl(seriesUrl);
+    // Открыть надо именно ту серию, чью карточку нажали, а не последнюю просмотренную
+    loadUrl(seriesUrl, { startUrl: continueBtn.dataset.url || null });
     return;
   }
 
@@ -2955,7 +2961,7 @@ function openFolderPlaylist(items, folderName){
 }
 
 // Разворачивает series.json в плейлист, чтобы на сериал была одна ссылка вместо ссылки на серию
-async function openSeriesPlaylist(manifestUrl, loadToken){
+async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
   let manifest = null;
   try{
     const res = await fetch(manifestUrl);
@@ -2998,8 +3004,13 @@ async function openSeriesPlaylist(manifestUrl, loadToken){
   playlistFiles = entries;
   playlistSeriesUrl = manifestUrl;
   playlistFolderName = (manifest.title ? String(manifest.title).trim() : '').slice(0, MAX_TITLE_LEN) || null;
-  // Открываем серию, на которой пользователь остановился
-  playlistIndex = findLastWatchedIndex(playlistFiles, null);
+  // Если серию назвали явно, открываем её, иначе ту, на которой остановились
+  let startIndex = -1;
+  if (startUrl){
+    const нужная = normalizeUrlForKey(startUrl);
+    startIndex = playlistFiles.findIndex(e => normalizeUrlForKey(e.url) === нужная);
+  }
+  playlistIndex = startIndex > -1 ? startIndex : findLastWatchedIndex(playlistFiles, null);
   playlistBtn.style.display = playlistFiles.length > 1 ? '' : 'none';
   renderPlaylist();
   updatePlaylistNavButtons();
@@ -5078,7 +5089,7 @@ async function loadUrl(url, meta){
 
   // Манифест сериала разворачиваем в плейлист, дальше грузится уже конкретная серия
   if (/\.json$/i.test(parsedUrl.pathname)){
-    await openSeriesPlaylist(url, thisLoadToken);
+    await openSeriesPlaylist(url, thisLoadToken, meta && meta.startUrl);
     return;
   }
 
