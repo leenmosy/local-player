@@ -1599,6 +1599,8 @@ function loadSettings(){
     
     titleInput.value = String(settings.titleInput !== undefined ? settings.titleInput : currentFileName).slice(0, MAX_TITLE_LEN);
     ovTitle.textContent = titleInput.value;
+    // Шапка и запись в истории берут имя отсюда, иначе оверлей помнит своё, а они автоматическое
+    currentFileName = titleInput.value;
     
     applyOverlaySettings();
     
@@ -1883,6 +1885,13 @@ resumeList.addEventListener('click', async (e) => {
     } catch(err){}
     idbDelete(key).catch(() => {});
     idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)).catch(() => {});
+
+    // Источник удалён и больше не текущий, иначе flushPendingSave запишет его настройки обратно
+    if (key === currentFileKey){
+      clearTimeout(saveSettingsTimeout);
+      saveSettingsTimeout = null;
+      currentFileKey = null;
+    }
 
     if (item) await collapseElement(item);
     renderResumeList();
