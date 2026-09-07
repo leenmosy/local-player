@@ -4012,13 +4012,6 @@ drToggle.addEventListener('change', () => {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   drEnabled = drToggle.checked;
   
-  // Ограничиваем буст до 200% без компрессора для защиты от клиппинга
-  if (!drEnabled && drBoost.value > 200){
-    drBoost.value = 200;
-    drBoostVal.textContent = '200%';
-    if (boostGain) boostGain.gain.setTargetAtTime(2, audioCtx.currentTime, 0.01);
-  }
-  
   connectGraph();
   saveSettings();
 });
@@ -4050,6 +4043,7 @@ function resetSpeed(){
   video.playbackRate = 1;
   drSpeed.value = 1;
   drSpeedVal.textContent = formatSpeedLabel(1);
+  updateRangeFill(drSpeed);
 }
 
 // --- яркость видео ---
@@ -4061,6 +4055,7 @@ drBrightness.addEventListener('input', () => {
 function resetBrightness(){
   drBrightness.value = 100;
   drBrightnessVal.textContent = '100%';
+  updateRangeFill(drBrightness);
   updateVideoFilter();
 }
 
@@ -4087,6 +4082,7 @@ drZoom.addEventListener('input', () => {
 function resetZoom(){
   zoomLevel = 100;
   drZoom.value = 100;
+  updateRangeFill(drZoom);
   applyZoom();
 }
 
@@ -4259,6 +4255,7 @@ video.addEventListener('ratechange', () => {
   const min = parseFloat(drSpeed.min), max = parseFloat(drSpeed.max);
   drSpeed.value = Math.min(max, Math.max(min, video.playbackRate));
   drSpeedVal.textContent = formatSpeedLabel(parseFloat(drSpeed.value));
+  updateRangeFill(drSpeed);
 });
 video.addEventListener('ended', () => {
   markProgressCompleted();
