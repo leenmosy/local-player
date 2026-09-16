@@ -2969,6 +2969,25 @@ function openFolderPlaylist(items, folderName){
   openPlaylistEntry(playlistFiles[playlistIndex] || playlistFiles[0]);
 }
 
+// Ищет series.json на уровень выше серии и отдаёт его адрес, если эта серия там перечислена
+async function findSeriesManifestFor(episodeUrl){
+  let manifestUrl = null;
+  try{ manifestUrl = new URL('../series.json', episodeUrl.split(/[?#]/)[0]).href; } catch(e){ return null; }
+  try{
+    const res = await fetch(manifestUrl);
+    if (!res.ok) return null;
+    const manifest = await res.json();
+    const episodes = manifest && Array.isArray(manifest.episodes) ? manifest.episodes : [];
+    const нужная = normalizeUrlForKey(episodeUrl);
+    const перечислена = episodes.some(ep => {
+      const raw = typeof ep === 'string' ? ep : (ep && ep.url);
+      if (!raw) return false;
+      try{ return normalizeUrlForKey(new URL(String(raw), manifestUrl).href) === нужная; } catch(e){ return false; }
+    });
+    return перечислена ? manifestUrl : null;
+  } catch(e){ return null; }
+}
+
 // Разворачивает series.json в плейлист, чтобы на сериал была одна ссылка вместо ссылки на серию
 async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
   let manifest = null;
@@ -5097,6 +5116,16 @@ async function loadUrl(url, meta){
   if (/\.json$/i.test(parsedUrl.pathname)){
     await openSeriesPlaylist(url, thisLoadToken, meta && meta.startUrl);
     return;
+  }
+
+  // Прямая ссылка на серию тоже разворачивается в сериал, если её папка лежит рядом с series.json
+  if (!playlistSeriesUrl && /\.m3u8$/i.test(parsedUrl.pathname)){
+    const manifestUrl = await findSeriesManifestFor(url);
+    if (thisLoadToken !== urlLoadToken) return;   // пользователь уже открыл другой источник
+    if (manifestUrl){
+      await openSeriesPlaylist(manifestUrl, thisLoadToken, url);
+      return;
+    }
   }
 
   // Определяем тип видео по расширения (используем pathname, чтобы query-параметры не мешали)
