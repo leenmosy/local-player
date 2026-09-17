@@ -2322,6 +2322,7 @@ function loadFile(file, handle, meta){
 
   dropView.style.display = 'none';
   playerView.classList.add('active');
+  pushPlayerHistory();
 
   // Локальный файл читается через blob-URL, ограничений CORS у него нет
   audioSourceTainted = false;
@@ -4892,7 +4893,26 @@ video.addEventListener('error', hideBufferingIndicator);
 video.addEventListener('emptied', hideBufferingIndicator);
 
 // --- возврат к выбору файла ---
+// Плеер это запись в истории браузера, поэтому стрелка «назад» возвращает на главную, как кнопка «Назад»
+function pushPlayerHistory(){
+  if (history.state && history.state.player) return;
+  try { history.pushState({ player: true }, ''); } catch(e){}
+}
+window.addEventListener('popstate', () => {
+  if (playerView.classList.contains('active')) closePlayer();
+});
+// После перезагрузки страницы плеер закрыт, а запись могла остаться, иначе первая «назад» уйдёт в никуда
+if (history.state && history.state.player){
+  try { history.replaceState(null, ''); } catch(e){}
+}
+
 backBtn.addEventListener('click', () => {
+  // Уходим через историю, иначе запись плеера останется и следующая «назад» в браузере уйдёт в никуда
+  if (history.state && history.state.player){ history.back(); return; }
+  closePlayer();
+});
+
+function closePlayer(){
   if (isSwitching) return;
   isSwitching = true;
   cancelPendingUrlLoad();
@@ -4932,7 +4952,7 @@ backBtn.addEventListener('click', () => {
 
   renderResumeList();
   isSwitching = false;
-});
+}
 
 // --- Загрузка видео по URL (m3u8 и обычные ссылки) ---
 let hls = null;
@@ -5713,6 +5733,7 @@ function showPlayer(){
   // и форматирование теряются сразу после загрузки видео по ссылке.
   dropView.style.display = 'none';
   playerView.classList.add('active');
+  pushPlayerHistory();
   startProgressTracking();
   // Не создаём аудио-граф автоматически - только при включении аудио-фич пользователем
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
