@@ -4170,23 +4170,15 @@ function updateSeekControlsState(){
 
 let centerIconTimeout = null;
 
+// Иконка по центру это короткое подтверждение клика, на паузе она тоже гаснет, чтобы не закрывать кадр
 function showCenterIcon(isPlaying){
   centerIconPlay.style.display = isPlaying ? 'none' : '';
   centerIconPause.style.display = isPlaying ? '' : 'none';
   centerPlayIcon.classList.add('show');
-  
-  // Отменяем все предыдущие таймеры
   clearTimeout(centerIconTimeout);
-  
-  if (isPlaying){
-    // При воспроизведении скрываем иконку через 600мс
-    centerIconTimeout = setTimeout(() => {
-      centerPlayIcon.classList.remove('show');
-    }, 600);
-  } else {
-    // При паузе НЕ скрываем иконку автоматически - она должна оставаться видимой
-    // Иконка скрывается только при следующем воспроизведении
-  }
+  centerIconTimeout = setTimeout(() => {
+    centerPlayIcon.classList.remove('show');
+  }, 600);
 }
 playBtn.addEventListener('click', togglePlay);
 stage.addEventListener('contextmenu', (e) => e.preventDefault());
