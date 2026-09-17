@@ -1148,6 +1148,8 @@ const PROGRESS_PREFIX = 'lp_progress:';
 const URL_KEY_PREFIX = PROGRESS_PREFIX + 'url:';
 const FOLDER_PROGRESS_PREFIX = PROGRESS_PREFIX + 'folder:';
 const PLAYLIST_MANIFEST_PREFIX = 'lp_playlist:';
+// Handle самой папки, по нему плейлист восстанавливается одним запросом доступа вместо запроса на каждый файл
+const DIR_HANDLE_PREFIX = 'lp_dir:';
 const SETTINGS_PREFIX = 'lp_settings:';
 const SUBS_PREFIX = 'lp_subs:';
 const VOLUME_KEY = 'lp_volume';
@@ -1938,6 +1940,12 @@ resumeList.addEventListener('click', async (e) => {
       }
     } catch(err){}
     const loadMeta = isFolderKey ? { isFolder: true, folderName: savedFolderName, folderId: savedFolderId } : undefined;
+    // Папку восстанавливаем через её handle: один запрос доступа на всё, и новые серии сразу в плейлисте
+    if (isFolderKey && savedFolderId){
+      const viaDir = await restoreFolderFromDirectory(savedFolderId, key, savedFolderName);
+      if (viaDir === 'opened') return;
+      if (viaDir === 'denied'){ showErrMsg('Доступ к папке не разрешён'); return; }
+    }
     try{
       const handle = await idbGet(key);
       if (!handle){
@@ -1995,6 +2003,36 @@ resumeList.addEventListener('click', async (e) => {
     }
   }
 });
+
+// Восстанавливает плейлист по handle папки: 'opened', 'denied' или 'none', когда handle нет или файла в папке уже нет
+async function restoreFolderFromDirectory(folderId, key, savedFolderName){
+  let dir = null;
+  try{ dir = await idbGet(DIR_HANDLE_PREFIX + folderId); } catch(err){ return 'none'; }
+  if (!dir || dir.kind !== 'directory') return 'none';
+  try{
+    let perm = await dir.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') perm = await dir.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') return 'denied';
+    const files = [];
+    await collectFilesFromDirectoryHandle(dir, files, dir.name);
+    const videos = sortVideoFiles(files);
+    const idx = videos.findIndex(e => fileKey(e.file, true, folderId) === key || legacyFolderKey(e.file) === key);
+    if (idx === -1) return 'none';
+    playlistFiles = videos;
+    playlistIndex = idx;
+    playlistFolderName = savedFolderName || dir.name || null;
+    playlistFolderId = folderId;
+    playlistBtn.style.display = playlistFiles.length > 1 ? '' : 'none';
+    renderPlaylist();
+    updatePlaylistNavButtons();
+    savePlaylistManifest(folderId, playlistFolderName, playlistFiles);
+    playlistFiles.forEach(entry => { if (entry.handle) idbSet(fileKey(entry.file, true, folderId), entry.handle).catch(() => {}); });
+    loadFile(videos[idx].file, videos[idx].handle || null, { isFolder: true, folderName: playlistFolderName, folderId });
+    return 'opened';
+  } catch(err){
+    return 'none';
+  }
+}
 
 // Восстанавливает весь плейлист папки по манифесту, используя сохранённые handle остальных файлов
 // Если восстановление плейлиста не удалось, открывает только текущий файл
@@ -2832,7 +2870,7 @@ async function collectFilesFromDataTransferItems(items){
       if (handle && handle.kind === 'directory'){
         const out = [];
         await collectFilesFromDirectoryHandle(handle, out, handle.name);
-        return { files: out, folderName: handle.name };
+        return { files: out, folderName: handle.name, dirHandle: handle };
       }
     } catch(err){ /* не получилось, пробуем резервный способ ниже */ }
   }
@@ -2961,7 +2999,7 @@ function savePlaylistManifest(folderId, folderName, items){
   } catch(err){ /* некритично, просто не сможем восстановить весь плейлист позже */ }
 }
 
-function openFolderPlaylist(items, folderName){
+function openFolderPlaylist(items, folderName, dirHandle){
   const videos = sortVideoFiles(items); // уже [{ file, handle }], отфильтровано и отсортировано
   if (!videos.length){
     showErrMsg('В выбранной папке не найдено поддерживаемых видеофайлов (.mp4, .webm, .mov)');
@@ -2984,6 +3022,7 @@ function openFolderPlaylist(items, folderName){
       idbSet(fileKey(entry.file, true, playlistFolderId), entry.handle).catch(() => {});
     }
   });
+  if (dirHandle) idbSet(DIR_HANDLE_PREFIX + playlistFolderId, dirHandle).catch(() => {});
   openPlaylistEntry(playlistFiles[playlistIndex] || playlistFiles[0]);
 }
 
@@ -3255,10 +3294,12 @@ dropzoneFolder.addEventListener('drop', async e => {
 
   let files = [];
   let folderName = null;
+  let dirHandle = null;
   if (items && items.length && (typeof items[0].getAsFileSystemHandle === 'function' || typeof items[0].webkitGetAsEntry === 'function')){
     const collected = await collectFilesFromDataTransferItems(Array.from(items));
     files = collected.files;
     folderName = collected.folderName;
+    dirHandle = collected.dirHandle || null;
   } else if (e.dataTransfer.files && e.dataTransfer.files.length){
     files = Array.from(e.dataTransfer.files).map(f => ({ file: f, handle: null }));
   }
@@ -3267,7 +3308,7 @@ dropzoneFolder.addEventListener('drop', async e => {
     showErrMsg('Не удалось прочитать содержимое папки. Попробуйте выбрать папку через диалог');
     return;
   }
-  openFolderPlaylist(files, folderName);
+  openFolderPlaylist(files, folderName, dirHandle);
 });
 dropzoneFolder.addEventListener('click', async () => {
   if (typeof window.showDirectoryPicker === 'function'){
@@ -3275,7 +3316,7 @@ dropzoneFolder.addEventListener('click', async () => {
       const dirHandle = await window.showDirectoryPicker();
       const files = [];
       await collectFilesFromDirectoryHandle(dirHandle, files, dirHandle.name);
-      openFolderPlaylist(files, dirHandle.name);
+      openFolderPlaylist(files, dirHandle.name, dirHandle);
     } catch(err){ /* пользователь закрыл диалог выбора папки */ }
     return;
   }
