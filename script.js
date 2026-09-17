@@ -4783,7 +4783,8 @@ document.querySelectorAll('input[type="range"]').forEach(r => {
 });
 document.addEventListener('keydown', (e) => {
   if (!playerView.classList.contains('active')) return;
-  const activeEl = document.activeElement;
+  // Цель события это и есть элемент с фокусом, activeElement остаётся запасным путём для событий на документе
+  const activeEl = (e.target && e.target !== document && e.target.tagName) ? e.target : document.activeElement;
   const isTextLike = activeEl && (
     (activeEl.tagName === 'INPUT' && ['text','range','color'].includes(activeEl.type)) ||
     activeEl.tagName === 'TEXTAREA' ||
@@ -4796,21 +4797,33 @@ document.addEventListener('keydown', (e) => {
   );
   if (isFormControl && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')) return;
   if (isEditingTitle) return; // Блокируем хоткеи при редактировании названия
-  if (e.code === 'Space'){ e.preventDefault(); togglePlay(); showControls(); }
-  else if (e.code === 'KeyF'){ fullscreenBtn.click(); }
-  else if (e.code === 'KeyM'){ 
-    toggleMute();
-    showControls(); 
-  }
-  else if (e.code === 'ArrowRight' && e.shiftKey){ e.preventDefault(); seekBy(1); showControls(); }
-  else if (e.code === 'ArrowLeft' && e.shiftKey){ e.preventDefault(); seekBy(-1); showControls(); }
-  else if (e.code === 'Comma'){ e.preventDefault(); stepFrame(-1); }
-  else if (e.code === 'Period'){ e.preventDefault(); stepFrame(1); }
-  else if (e.code === 'ArrowRight'){ e.preventDefault(); seekBy(5); showControls(); }
-  else if (e.code === 'ArrowLeft'){ e.preventDefault(); seekBy(-5); showControls(); }
-  else if (e.code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.02); showControls(); }
-  else if (e.code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.02); showControls(); }
+  // Сочетания с Ctrl, Alt и Win принадлежат браузеру: Ctrl+F это поиск, Alt+Left это назад, а не перемотка
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const code = hotkeyCode(e);
+  // Переключатели не должны дребезжать при зажатой клавише, перемотка и громкость при автоповторе как раз удобны
+  const isToggle = code === 'Space' || code === 'KeyF' || code === 'KeyM';
+  if (isToggle && e.repeat) return;
+  if (code === 'Space'){ e.preventDefault(); togglePlay(); showControls(); }
+  else if (code === 'KeyF'){ e.preventDefault(); fullscreenBtn.click(); }
+  else if (code === 'KeyM'){ e.preventDefault(); toggleMute(); showControls(); }
+  else if (code === 'ArrowRight' && e.shiftKey){ e.preventDefault(); seekBy(1); showControls(); }
+  else if (code === 'ArrowLeft' && e.shiftKey){ e.preventDefault(); seekBy(-1); showControls(); }
+  else if (code === 'Comma'){ e.preventDefault(); stepFrame(-1); }
+  else if (code === 'Period'){ e.preventDefault(); stepFrame(1); }
+  else if (code === 'ArrowRight'){ e.preventDefault(); seekBy(5); showControls(); }
+  else if (code === 'ArrowLeft'){ e.preventDefault(); seekBy(-5); showControls(); }
+  else if (code === 'ArrowUp'){ e.preventDefault(); adjustVolume(0.02); showControls(); }
+  else if (code === 'ArrowDown'){ e.preventDefault(); adjustVolume(-0.02); showControls(); }
 });
+
+// Код клавиши с запасным путём через key: экранные клавиатуры и часть автоматизации присылают пустой code
+function hotkeyCode(e){
+  if (e.code) return e.code;
+  const byKey = { ' ': 'Space', 'f': 'KeyF', 'F': 'KeyF', 'а': 'KeyF', 'А': 'KeyF', 'm': 'KeyM', 'M': 'KeyM', 'ь': 'KeyM', 'Ь': 'KeyM',
+    ',': 'Comma', 'б': 'Comma', 'Б': 'Comma', '.': 'Period', 'ю': 'Period', 'Ю': 'Period',
+    'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight', 'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown' };
+  return byKey[e.key] || '';
+}
 
 const ERROR_MESSAGES = {
   1: 'Загрузка была прервана.',
