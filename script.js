@@ -2242,6 +2242,7 @@ function loadFile(file, handle, meta){
   currentFolderId = (meta && meta.folderId) || null;
   currentFileKey = fileKey(file, currentFileIsFolder, currentFolderId);
   currentSourceUrl = null;
+  if (!currentFileIsFolder) lastOpenedFile = { file, handle: handle || null };
   // Записи, сохранённые до появления folderId в ключе, переносим на новый ключ
   if (currentFileIsFolder) migrateLegacyFolderKey(file, currentFileKey);
   nextEpisodePromptDismissed = false;
@@ -4898,8 +4899,33 @@ function pushPlayerHistory(){
   if (history.state && history.state.player) return;
   try { history.pushState({ player: true }, ''); } catch(e){}
 }
+// Последний одиночный локальный файл, чтобы стрелка «вперёд» могла открыть его заново
+let lastOpenedFile = null;
+// Что открыть заново по стрелке «вперёд», запоминается в момент закрытия плеера
+let reopenSource = null;
+function rememberSourceForForward(){
+  if (currentSourceUrl){
+    const url = currentSourceUrl, series = playlistSeriesUrl;
+    reopenSource = () => series ? loadUrl(series, { startUrl: url }) : loadUrl(url);
+  } else if (playlistFiles.length && !isUrlPlaylistEntry(playlistFiles[0])){
+    const items = playlistFiles.slice(), name = playlistFolderName;
+    reopenSource = () => openFolderPlaylist(items, name);
+  } else if (lastOpenedFile){
+    const { file, handle } = lastOpenedFile;
+    reopenSource = () => loadFile(file, handle, {});
+  } else {
+    reopenSource = null;
+  }
+}
 window.addEventListener('popstate', () => {
-  if (playerView.classList.contains('active')) closePlayer();
+  const open = playerView.classList.contains('active');
+  const wantPlayer = !!(history.state && history.state.player);
+  if (open && !wantPlayer){
+    closePlayer();
+  } else if (!open && wantPlayer){
+    if (reopenSource) reopenSource();
+    else { try { history.replaceState(null, ''); } catch(e){} }
+  }
 });
 // После перезагрузки страницы плеер закрыт, а запись могла остаться, иначе первая «назад» уйдёт в никуда
 if (history.state && history.state.player){
@@ -4915,6 +4941,7 @@ backBtn.addEventListener('click', () => {
 function closePlayer(){
   if (isSwitching) return;
   isSwitching = true;
+  rememberSourceForForward();
   cancelPendingUrlLoad();
   
   // Выходим из полноэкранного режима перед скрытием плеера
