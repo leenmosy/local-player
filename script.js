@@ -5922,6 +5922,17 @@ if (!FS_ACCESS_SUPPORTED){
   showErrMsg('В этом браузере не работает продолжение просмотра без повторного выбора файла. Открывать видео и папки можно как обычно; для полной функциональности используйте Chrome или Edge', { persistent: true });
 }
 
+// Открытие по адресу /?src=<url>&title=<название> с сайта библиотеки, параметры сразу убираются, чтобы перезагрузка не запускала видео повторно
+(() => {
+  const params = new URLSearchParams(location.search);
+  const src = (params.get('src') || '').trim();
+  if (!src) return;
+  const title = (params.get('title') || '').trim();
+  try { history.replaceState(null, '', location.pathname + location.hash); } catch(e){}
+  urlInput.value = src;
+  loadUrl(src, title ? { title } : undefined);
+})();
+
 // Докручиваем сразу до конца, чтобы фокус на инпуте/кнопке не вызывал прыжок
 document.documentElement.scrollTop = document.documentElement.scrollHeight;
 document.body.scrollTop = document.body.scrollHeight;
