@@ -3665,6 +3665,9 @@ function setDrPanelOpen(open){
     setPlaylistPanelOpen(false);
     hideNextEpisodeOverlay();
     hideSkipSegmentOverlay();
+  } else if (wasOpen) {
+    // Панель закрывала подсказку, на паузе timeupdate её не вернёт
+    refreshQuickActions();
   }
 }
 drBtn.addEventListener('click', () => {
@@ -3673,6 +3676,7 @@ drBtn.addEventListener('click', () => {
 
 // --- Панель плейлиста ---
 function setPlaylistPanelOpen(open){
+  const wasOpen = playlistPanel.classList.contains('open');
   playlistPanel.classList.toggle('open', open);
   playlistBtn.setAttribute('aria-expanded', String(open));
   playlistBtn.classList.toggle('active-panel', open);
@@ -3681,6 +3685,9 @@ function setPlaylistPanelOpen(open){
     setDrPanelOpen(false);
     hideNextEpisodeOverlay();
     hideSkipSegmentOverlay();
+  } else if (wasOpen) {
+    // Панель закрывала подсказку, на паузе timeupdate её не вернёт
+    refreshQuickActions();
   }
 }
 playlistBtn.addEventListener('click', () => {
@@ -4435,6 +4442,11 @@ video.addEventListener('timeupdate', () => {
   // Обновление субтитров
   updateSubtitles();
 
+  refreshQuickActions();
+});
+
+// Подсказки "Следующая серия" и "Пропустить" считаются от текущего момента, зовём и по времени, и при закрытии панелей
+function refreshQuickActions(){
   // Подсказка "Следующая серия", показываем ближе к концу текущего эпизода
   const hasNextEpisode = playlistFiles.length > 1 && playlistIndex > -1 && playlistIndex < playlistFiles.length - 1;
   let showNextEpisode = false;
@@ -4455,7 +4467,7 @@ video.addEventListener('timeupdate', () => {
   }
 
   updateSkipSegmentOverlay(showNextEpisode);
-});
+}
 
 nextEpOverlay.addEventListener('click', () => {
   hideNextEpisodeOverlay();
