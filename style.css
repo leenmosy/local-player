@@ -609,8 +609,8 @@ input[type=color]{
 }
 /* Серая кнопка собрана как жёлтая: та же накладка объёма и верхний блик, при наведении заливка темнее, блик ярче */
 .back-btn{
-  font-family: 'Inter-SemiBold', sans-serif; font-weight: 600; font-size: 13.5px; letter-spacing: 0.01em;
-  padding: 9px 15px; border-radius: 6px;
+  font-family: 'Inter-SemiBold', sans-serif; font-weight: 600; font-size: 12.5px; letter-spacing: 0.01em;
+  padding: 7px 12px; border-radius: 6px;
   background-color: #2b2f37; background-image: var(--btn-sheen);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
   color: var(--text);
@@ -1517,7 +1517,7 @@ input[type=range]::-moz-range-thumb{
   .stage{ margin: 0 10px 10px; }
   .toolbar{ padding: 16px 10px 12px; gap: 10px; }
   .player-title{ font-size: 20px; max-width: 55vw; }
-  .back-btn{ font-size: 12px; padding: 7px 12px; }
+  .back-btn{ font-size: 11.5px; padding: 6px 10px; }
   .center-play-icon{ width: 56px; height: 56px; }
   .center-play-icon svg{ width: 26px; height: 26px; }
 }
