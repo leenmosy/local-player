@@ -1079,7 +1079,7 @@ timingAddBtn.addEventListener('click', () => {
   const from = getSegmentedSeconds(timingFromHH, timingFromMM, timingFromSS);
   const to = getSegmentedSeconds(timingToHH, timingToMM, timingToSS);
   if (from === null || to === null){
-    showTimingError('Неверный формат времени. Используй чч:мм:сс');
+    showTimingError('Неверный формат времени. Используйте чч:мм:сс');
     return;
   }
   if (to <= from){
@@ -2226,7 +2226,7 @@ function loadFile(file, handle, meta){
   
   // Проверяем по MIME type или по расширению
   if (!isVideoFile(file)){
-    showErrMsg('Похоже, это не видеофайл. Попробуй другой файл');
+    showErrMsg('Похоже, это не видеофайл. Попробуйте другой файл');
     return;
   }
   hideErrMsg();
