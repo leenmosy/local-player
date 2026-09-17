@@ -460,6 +460,14 @@ function saveSettingsImmediate(){
   persistSettings();
 }
 
+// Перед сменой источника или выходом дописываем отложенные настройки, иначе правка последних 150 мс уйдёт не в тот ключ
+function flushPendingSettings(){
+  if (!saveSettingsTimeout || !currentFileKey) return;
+  clearTimeout(saveSettingsTimeout);
+  saveSettingsTimeout = null;
+  persistSettings();
+}
+
 
 
 function isDurationUsable(){
@@ -1304,6 +1312,10 @@ function cleanupStorageNow(prefix){
       // Синхронно подчищаем связанные записи в IndexedDB, иначе хендлы файлов
       // и данные субтитров накапливаются там без предела
       if (prefix === PROGRESS_PREFIX){
+        try{
+          localStorage.removeItem(settingsKey(key));
+          localStorage.removeItem(subsKey(key));
+        } catch(e){}
         idbDelete(key).catch(() => {});
         idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(key)).catch(() => {});
       } else if (prefix === SUBS_PREFIX){
@@ -2260,6 +2272,7 @@ function applyDefaultSettingsForNewSource(){
 
 function loadFile(file, handle, meta){
   if (!file){ return; }
+  flushPendingSettings();
   cancelPendingUrlLoad();
   
   // Проверяем по MIME type или по расширению
@@ -4987,6 +5000,7 @@ backBtn.addEventListener('click', () => {
 function closePlayer(){
   if (isSwitching) return;
   isSwitching = true;
+  flushPendingSettings();
   rememberSourceForForward();
   cancelPendingUrlLoad();
   
@@ -5024,6 +5038,9 @@ function closePlayer(){
   resetPlaylist();
 
   renderResumeList();
+  // Источника больше нет, иначе свёрнутая вкладка допишет его настройки и прогресс уже с главной
+  currentFileKey = null;
+  currentSourceUrl = null;
   isSwitching = false;
 }
 
@@ -5169,6 +5186,7 @@ async function fetchManifestHead(url, useRange){
 }
 
 async function loadUrl(url, meta){
+  flushPendingSettings();
   cancelPendingUrlLoad();
   _headCache = new Map();
   const thisLoadToken = urlLoadToken;
