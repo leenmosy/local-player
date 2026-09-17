@@ -2907,11 +2907,28 @@ function renderPlaylist(){
   updateEpisodeButtonLabel();
 }
 
-// Подпись кнопки выбора серии: номер текущей
+// Код серии из названия: S1E5, 1x05, «5 серия», «серия 5», «эпизод 5». Позиция в списке номером не считается
+function episodeCodeFromTitle(title){
+  const t = String(title || '');
+  let m = t.match(/\bS(\d{1,2})\s*E(\d{1,3})\b/i);
+  if (m) return `S${parseInt(m[1], 10)}E${parseInt(m[2], 10)}`;
+  m = t.match(/\b(\d{1,2})x(\d{1,3})\b/i);
+  if (m) return `S${parseInt(m[1], 10)}E${parseInt(m[2], 10)}`;
+  m = t.match(/(?:^|\s)(\d{1,3})\s*(?:серия|эпизод)(?=\s|$)/i) || t.match(/(?:^|\s)(?:серия|эпизод)\s*(\d{1,3})(?=\s|$)/i);
+  if (m) return `Серия ${parseInt(m[1], 10)}`;
+  return null;
+}
+
+// Подпись кнопки выбора серии: код серии, а без него само название, чтобы не выдумывать номер по позиции
 function updateEpisodeButtonLabel(){
   const label = document.getElementById('playlist-btn-label');
   if (!label) return;
-  label.textContent = playlistIndex > -1 ? `Серия ${playlistIndex + 1}` : 'Серия';
+  const entry = playlistFiles[playlistIndex];
+  if (!entry){ label.textContent = 'Серия'; label.title = ''; return; }
+  const title = playlistEntryTitle(entry, playlistFolderId);
+  const code = episodeCodeFromTitle(title);
+  label.textContent = code || title;
+  label.title = code ? title : '';
 }
 
 function updatePlaylistNavButtons(){
