@@ -2880,31 +2880,22 @@ function resetPlaylist(){
   playlistBtn.setAttribute('aria-expanded', 'false');
   playlistPanel.classList.remove('open');
   playlistList.innerHTML = '';
-  playlistTitle.textContent = 'Плейлист';
   playlistNav.style.display = 'none';
   hideNextEpisodeOverlay();
   hideSkipSegmentOverlay();
 }
 
 function renderPlaylist(){
-  playlistTitle.textContent = playlistFolderName ? `Плейлист: ${playlistFolderName}` : 'Плейлист';
   playlistList.innerHTML = '';
   playlistFiles.forEach((entry, idx) => {
     const item = document.createElement('div');
-    // Отмечаем в плейлисте серии, для которых сохранён прогресс просмотра
-    const state = playlistEntryState(entry, playlistFolderId);
-    item.className = 'playlist-item'
-      + (idx === playlistIndex ? ' active' : '')
-      + (state ? ' ' + state : '');
-    const badge = state === 'watched'
-      ? '<span class="playlist-item-badge" title="Просмотрено">✓</span>'
-      : (state === 'in-progress' ? '<span class="playlist-item-badge" title="Начато">•</span>' : '');
-    item.innerHTML = `
-      <span class="playlist-item-index">${idx + 1}</span>
-      <span class="playlist-item-name">${escapeHtml(playlistEntryTitle(entry, playlistFolderId))}</span>
-      ${badge}
-    `;
+    item.className = 'playlist-item' + (idx === playlistIndex ? ' active' : '');
+    // Длинное название режется многоточием, полное видно во всплывающей подсказке
+    const title = escapeHtml(playlistEntryTitle(entry, playlistFolderId));
+    item.innerHTML = `<span class="playlist-item-name" title="${title}">${title}</span>`;
     item.addEventListener('click', () => {
+      // Список сворачиваем в любом случае, как у выпадающего меню, а текущую серию не перезагружаем
+      setPlaylistPanelOpen(false);
       if (idx === playlistIndex) return;
       playlistIndex = idx;
       renderPlaylist();
@@ -2913,6 +2904,14 @@ function renderPlaylist(){
     playlistList.appendChild(item);
   });
   updatePlaylistNavButtons();
+  updateEpisodeButtonLabel();
+}
+
+// Подпись кнопки выбора серии: номер текущей
+function updateEpisodeButtonLabel(){
+  const label = document.getElementById('playlist-btn-label');
+  if (!label) return;
+  label.textContent = playlistIndex > -1 ? `Серия ${playlistIndex + 1}` : 'Серия';
 }
 
 function updatePlaylistNavButtons(){
@@ -3129,15 +3128,6 @@ function openPlaylistEntry(entry){
     return;
   }
   loadFile(entry.file, entry.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
-}
-
-// Состояние серии для отметок в плейлисте: 'watched' | 'in-progress' | null
-function playlistEntryState(entry, folderId){
-  const data = readPlaylistEntryProgress(entry, folderId);
-  if (!data) return null;
-  if (data.completed) return 'watched';
-  if (typeof data.t !== 'number' || data.t <= 0) return null;
-  return 'in-progress';
 }
 
 // Дропзоны, это div с role="button", Enter/Space нужно вешать вручную
@@ -3406,7 +3396,6 @@ const drPanel = document.getElementById('dr-panel');
 const playlistBtn = document.getElementById('playlist-btn');
 const playlistPanel = document.getElementById('playlist-panel');
 const playlistList = document.getElementById('playlist-list');
-const playlistTitle = document.getElementById('playlist-title');
 const nextEpOverlay = document.getElementById('next-ep-overlay');
 const skipSegmentOverlay = document.getElementById('skip-segment-overlay');
 const subtitles = document.getElementById('subtitles');
@@ -3685,6 +3674,9 @@ function setPlaylistPanelOpen(open){
     setDrPanelOpen(false);
     hideNextEpisodeOverlay();
     hideSkipSegmentOverlay();
+    // В длинном сезоне текущая серия должна быть на виду, а не где-то ниже прокрутки
+    const current = playlistList.querySelector('.playlist-item.active');
+    if (current) current.scrollIntoView({ block: 'nearest' });
   } else if (wasOpen) {
     // Панель закрывала подсказку, на паузе timeupdate её не вернёт
     refreshQuickActions();
