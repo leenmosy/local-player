@@ -540,6 +540,14 @@ function formatTime(sec){
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+// Текущее время и длительность одним форматом: при фильме длиннее часа текущее тоже с часами,
+// иначе на отметке 1:00:00 строка меняет ширину и кнопки рядом дёргаются
+function formatTimePair(t, duration){
+  const withHours = isFinite(duration) && duration >= 3600;
+  const cur = withHours && isFinite(t) && t < 3600 ? '0:' + formatTime(t) : formatTime(t);
+  return `${cur} / ${formatTime(duration)}`;
+}
+
 // --- тайминги: экран размывается в заданные промежутки ---
 const BLUR_AMOUNT_PX = 40;
 const timingFromHH = document.getElementById('timing-from-hh');
@@ -2412,7 +2420,7 @@ function loadFile(file, handle, meta){
   }
   loadedMetadataHandler = () => {
     // Обновляем время при загрузке метаданных
-    const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    const txt = formatTimePair(video.currentTime, video.duration);
     ovTime.textContent = txt;
     timeDisplay.textContent = txt;
 
@@ -4337,7 +4345,7 @@ function seekBy(deltaSeconds){
   if (!isDurationUsable()) return;
   const t = Math.max(0, Math.min(video.duration, video.currentTime + deltaSeconds));
   video.currentTime = t;
-  timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
+  timeDisplay.textContent = formatTimePair(t, video.duration);
   // Как и при перетаскивании ползунка, блюр ставим сразу, не дожидаясь события seeking
   syncBlurFilter();
 }
@@ -4612,7 +4620,7 @@ video.addEventListener('pause', stopFrameSync);
 video.addEventListener('emptied', stopFrameSync);
 
 video.addEventListener('timeupdate', () => {
-  const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+  const txt = formatTimePair(video.currentTime, video.duration);
   ovTime.textContent = txt;
   timeDisplay.textContent = txt;
   if (!isSeeking && isDurationUsable()){
@@ -4820,7 +4828,7 @@ seek.addEventListener('input', () => {
   if (isDurationUsable()){
     const t = (seek.value / 1000) * video.duration;
     video.currentTime = t;
-    timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
+    timeDisplay.textContent = formatTimePair(t, video.duration);
     updateSeekFill();
 
     // Форсируем пересчёт blur-фильтра сразу, не дожидаясь timeupdate/seeked,
@@ -5925,7 +5933,7 @@ function loadUrlCommonInit(){
   }
   loadedMetadataHandler = () => {
     // Обновляем время при загрузке метаданных
-    const txt = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    const txt = formatTimePair(video.currentTime, video.duration);
     ovTime.textContent = txt;
     timeDisplay.textContent = txt;
 
