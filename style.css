@@ -846,22 +846,22 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
 
 .controls-bar{
   position:absolute; left:0; right:0; bottom:0; z-index: 3;
-  display:flex; flex-wrap: wrap; align-items:center; gap: 14px; row-gap: 8px;
+  display:flex; flex-wrap: wrap; align-items:center; gap: 18px; row-gap: 8px;
   padding: 34px 18px 14px;
   background: linear-gradient(to top, rgba(0,0,0,.75), transparent);
   transition: opacity .25s ease;
 }
 
-/* Группы: между группами 14px, внутри группы кнопки стоят рядом с зазором 4px, у ползунка громкости 6px */
+/* Группы: между группами 18px, внутри группы зазор 4px, всё пропорционально с воздухом */
 /* У треугольника плея слева пустое поле внутри иконки, поэтому зазор до времени меньше, чем от времени до таймлайна: на глаз они равны */
 .playback-group{
-  display:flex; align-items:center; gap: 5px;
+  display:flex; align-items:center; gap: 8px;
   flex-shrink: 0;
 }
 .time-display{ margin-right: -1px; }
 /* Кнопки справа стоят вплотную квадратами, у иконок хватает своего поля; отступ слева выравнивает зазор от ползунка громкости с остальными */
 .extra-group{
-  display:flex; align-items:center; gap: 0;
+  display:flex; align-items:center; gap: 4px;
   flex-shrink: 0;
   margin-left: -10px;
 }
@@ -1081,7 +1081,7 @@ input[type=range]::-moz-range-thumb{
 
 /* Динамик и ползунок это одно целое: у иконки справа своё поле внутри квадрата кнопки, зазор почти не нужен.
    Отрицательный отступ слева компенсирует поле квадрата и пустоту внутри иконки: от дорожки до динамика те же 15px, что слева от неё */
-.volume-group{ display:flex; align-items:center; gap: 0; margin-left: -9px; }
+.volume-group{ display:flex; align-items:center; gap: 3px; margin-left: -9px; }
 
 /* ---------- Иконка плей/пауза по центру ---------- */
 .center-play-icon{
