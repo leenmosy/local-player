@@ -1825,7 +1825,9 @@ function renderResumeList(){
     try{
       const data = JSON.parse(localStorage.getItem(key));
       if (data && typeof data.t === 'number' && !data.completed){
-        items.push(Object.assign({ key }, data));
+        // Позицию в первых секундах плеер всё равно не восстановит, карточка «продолжить с 00:00» только мешает
+        const minT = typeof data.duration === 'number' && data.duration > 0 ? Math.min(3, data.duration * 0.1) : 0;
+        if (data.t > minT) items.push(Object.assign({ key }, data));
       }
     } catch(e){ /* пропускаем битую запись */ }
   }
