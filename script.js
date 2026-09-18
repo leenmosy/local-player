@@ -3566,36 +3566,57 @@ let isSeeking = false;
 let audioCtx = null;
 let sourceNode = null;
 let compressorNode = null;
+let limiterNode = null;
 let boostGain = null;
+// Громкость ползунка снимается перед компрессором и возвращается после него, иначе на тихой громкости он бездействует
+let preGain = null;
+let postGain = null;
 let drEnabled = true;
 let isSwitching = false;
 // Источник cross-origin без CORS: MediaElementAudioSourceNode отдаёт по нему тишину
 let audioSourceTainted = false;
 
+// Сила ползунка крутит порог и коэффициент: от 1:1 при −10 дБ до 16:1 при −50 дБ. Колено, атака и отпускание постоянные
 function updateCompressor(){
   if (!compressorNode) return;
   const s = drStrength.value / 100;
-  compressorNode.threshold.setTargetAtTime(-10 - s * 40, audioCtx.currentTime, 0.01);
-  compressorNode.ratio.setTargetAtTime(1 + s * 15, audioCtx.currentTime, 0.01);
-  compressorNode.knee.setTargetAtTime(6, audioCtx.currentTime, 0.01);
-  compressorNode.attack.setTargetAtTime(0.003, audioCtx.currentTime, 0.01);
-  compressorNode.release.setTargetAtTime(0.25, audioCtx.currentTime, 0.01);
+  const t = audioCtx.currentTime;
+  compressorNode.threshold.setTargetAtTime(-10 - s * 40, t, 0.01);
+  compressorNode.ratio.setTargetAtTime(1 + s * 15, t, 0.01);
 }
 
+// video.volume режет сигнал ещё до захвата в граф, и на тихой громкости диалог уходит под порог компрессора.
+// Компенсируем на входе и возвращаем ту же громкость на выходе: компрессор всегда видит полный сигнал
+function syncGraphVolume(){
+  if (!audioCtx || !preGain || !postGain) return;
+  const v = Math.max(video.volume, 0.001);
+  const t = audioCtx.currentTime;
+  preGain.gain.setTargetAtTime(1 / v, t, 0.01);
+  postGain.gain.setTargetAtTime(v, t, 0.01);
+}
+
+// Лимитер стоит в конце всегда: без компрессора усиление до 500% упиралось бы в цифровой перегруз и трещало
 function connectGraph(){
   // Проверяем все узлы, а не только контекст: граф мог оборваться на полпути и оставить контекст без узлов
-  if (!audioCtx || !sourceNode || !boostGain || !compressorNode) return;
+  if (!audioCtx || !sourceNode || !preGain || !boostGain || !compressorNode || !limiterNode || !postGain) return;
   sourceNode.disconnect();
+  preGain.disconnect();
   boostGain.disconnect();
   compressorNode.disconnect();
-  
-  sourceNode.connect(boostGain);
+  limiterNode.disconnect();
+  postGain.disconnect();
+
+  sourceNode.connect(preGain);
+  preGain.connect(boostGain);
   if (drEnabled){
     boostGain.connect(compressorNode);
-    compressorNode.connect(audioCtx.destination);
+    compressorNode.connect(limiterNode);
   } else {
-    boostGain.connect(audioCtx.destination);
+    boostGain.connect(limiterNode);
   }
+  limiterNode.connect(postGain);
+  postGain.connect(audioCtx.destination);
+  syncGraphVolume();
 }
 
 function ensureAudioGraph(){
@@ -3616,13 +3637,29 @@ function ensureAudioGraph(){
     // Присваиваем глобальные узлы только когда собраны все, иначе при исключении останется контекст без узлов
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const src = ctx.createMediaElementSource(video);
+    const pre = ctx.createGain();
     const comp = ctx.createDynamicsCompressor();
+    // Лимитер молчит, пока сигнал не упёрся в потолок, и срезает только пики. Порог с запасом: узел сам добавляет около +1 дБ подъёма
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -2;
+    lim.ratio.value = 20;
+    lim.knee.value = 0;
+    lim.attack.value = 0.001;
+    lim.release.value = 0.1;
     const gain = ctx.createGain();
+    const post = ctx.createGain();
     audioCtx = ctx;
     sourceNode = src;
+    preGain = pre;
     compressorNode = comp;
+    limiterNode = lim;
     boostGain = gain;
+    postGain = post;
     boostGain.gain.value = drBoost.value / 100;
+    // Колено, атака и отпускание не зависят от силы, ставим один раз
+    comp.knee.value = 6;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
     updateCompressor();
     connectGraph();
   } catch(e){
@@ -3652,14 +3689,8 @@ function reapplyCompressorState(){
   // Web Audio недоступен (например, нет CORS и граф не создался), применять нечего
   if (!audioCtx || !sourceNode || !compressorNode || !boostGain) return;
 
-  const savedState = drToggle.checked; // фактическое сохранённое состояние для этой ссылки
-
-  // 1. Переключаем в состояние, противоположное сохранённому
-  drEnabled = !savedState;
-  connectGraph();
-
-  // 2. И сразу возвращаем обратно в сохранённое состояние
-  drEnabled = savedState;
+  // connectGraph собирает цепочку с нуля, поэтому достаточно одного вызова с сохранённым состоянием
+  drEnabled = drToggle.checked;
   connectGraph();
 }
 
@@ -3668,8 +3699,11 @@ function reapplyCompressorState(){
 function bypassAudioGraph(){
   if (!audioCtx || !sourceNode) return;
   try { sourceNode.disconnect(); } catch(e) {}
+  try { if (preGain) preGain.disconnect(); } catch(e) {}
   try { if (compressorNode) compressorNode.disconnect(); } catch(e) {}
+  try { if (limiterNode) limiterNode.disconnect(); } catch(e) {}
   try { if (boostGain) boostGain.disconnect(); } catch(e) {}
+  try { if (postGain) postGain.disconnect(); } catch(e) {}
   try { sourceNode.connect(audioCtx.destination); } catch(e) {}
 }
 
@@ -3708,11 +3742,21 @@ function destroyAudioGraph(){
       // Игнорируем ошибки при отключении
     }
   }
+  if (limiterNode) {
+    try { limiterNode.disconnect(); } catch(e) {}
+  }
+  if (preGain) {
+    try { preGain.disconnect(); } catch(e) {}
+  }
+  if (postGain) {
+    try { postGain.disconnect(); } catch(e) {}
+  }
   // Возвращаем прямой вывод в динамики, чтобы отключение аудиографа не останавливало воспроизведение
   if (audioCtx && sourceNode){
     try { sourceNode.connect(audioCtx.destination); } catch(e) {}
   }
-  // Не закрываем audioContext и не обнуляем sourceNode
+  // Контекст не закрываем и не усыпляем здесь: второй MediaElementSourceNode для того же video браузер не даст,
+  // а через усыплённый контекст звук не идёт даже по прямому пути
 }
 
 // высота считается динамически через scrollHeight, а не фиксированным числом
@@ -4197,6 +4241,7 @@ drStrength.addEventListener('input', () => {
   saveSettings();
 });
 
+
 drBoost.addEventListener('input', () => {
   drBoostVal.textContent = drBoost.value + '%';
   ensureAudioGraph();
@@ -4394,6 +4439,8 @@ function stopUiSync(){
 }
 
 video.addEventListener('play', () => {
+  // Контекст усыплён при выходе из плеера, без пробуждения звук через него не пойдёт
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   syncPlayStateUI();
   startProgressTracking();
   startUiSync();
@@ -4825,6 +4872,7 @@ function applyGlobalVolume(){
   if (volume > 0) lastVolume = volume;
   volumeRange.value = muted ? 0 : volume;
   updateVolumeIcon();
+  syncGraphVolume();
 }
 
 let volumeTooltipTimer = null;
@@ -4853,6 +4901,7 @@ volumeRange.addEventListener('input', () => {
   video.muted = Number(volumeRange.value) === 0;
   if (video.volume > 0) lastVolume = video.volume;
   updateVolumeIcon();
+  syncGraphVolume();
   flashVolumeTooltip();
   saveGlobalVolume();
 });
@@ -4866,6 +4915,7 @@ function toggleMute(){
     volumeRange.value = video.volume;
   }
   updateVolumeIcon();
+  syncGraphVolume();
   saveGlobalVolume();
 }
 
@@ -4962,6 +5012,7 @@ function adjustVolume(delta){
   if (v > 0) lastVolume = v;
   updateVolumeIcon();
   flashVolumeTooltip();
+  syncGraphVolume();
   saveGlobalVolume();
 }
 document.querySelectorAll('input[type="range"]').forEach(r => {
@@ -5153,8 +5204,9 @@ function closePlayer(){
   hideBufferingIndicator();
   videoErrorEl.style.display = 'none';
 
-  // Очищаем аудио-граф при выходе из плеера
+  // Очищаем аудио-граф при выходе из плеера и усыпляем контекст, чтобы на главной он не держал аудиопоток
   destroyAudioGraph();
+  if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
   
   video.pause();
   if (currentObjectUrl && video.src === currentObjectUrl){
