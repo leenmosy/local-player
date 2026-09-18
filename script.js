@@ -4209,6 +4209,8 @@ function seekBy(deltaSeconds){
   const t = Math.max(0, Math.min(video.duration, video.currentTime + deltaSeconds));
   video.currentTime = t;
   timeDisplay.textContent = `${formatTime(t)} / ${formatTime(video.duration)}`;
+  // Как и при перетаскивании ползунка, блюр ставим сразу, не дожидаясь события seeking
+  syncBlurFilter();
 }
 skipBackBtn.addEventListener('click', () => seekBy(-5));
 skipForwardBtn.addEventListener('click', () => seekBy(5));
@@ -4452,6 +4454,7 @@ function stepFrame(dir){
   if (!video.paused) video.pause();
   const t = video.currentTime + dir * frameDuration();
   video.currentTime = Math.max(0, Math.min(video.duration, t));
+  syncBlurFilter();
   showControls();
 }
 
