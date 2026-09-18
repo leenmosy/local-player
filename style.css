@@ -143,6 +143,20 @@ html, body{
   font-size: 46px; font-weight: 400; margin: 0 0 26px; text-align:center;
   color: var(--text);
 }
+/* Элементы главной поднимаются один за другим при открытии страницы */
+@keyframes rise-in{
+  from{ opacity: 0; transform: translateY(10px); }
+  to{ opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference){
+  #drop-view > h1, #drop-view > .resume-panel, #drop-view > .dropzone-group, #drop-view > .url-input-container{
+    animation: rise-in .45s cubic-bezier(.2,.7,.2,1) both;
+  }
+  #drop-view > .resume-panel{ animation-delay: .05s; }
+  #drop-view > .dropzone-group{ animation-delay: .1s; }
+  #drop-view > .url-input-container{ animation-delay: .16s; }
+  .resume-panel:not(.show){ animation: none; }
+}
 
 .dropzone-group{
   width: min(640px, 90vw);
@@ -366,6 +380,37 @@ input[type=file]{ display:none; }
   .hls-info-panel{ flex-direction: column; }
   .hls-info-divider{ width: 100%; height: 1px; }
 }
+/* Справка про ссылки свёрнута под одну строку, раскрывается по клику */
+.help-toggle{
+  align-self: center;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: -4px;
+  padding: 4px 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  border-radius: 6px;
+  transition: color .15s ease, background-color .15s ease;
+}
+.help-toggle:hover{ color: var(--text); background-color: var(--surface); }
+.help-toggle svg{ width: 16px; height: 16px; transition: transform .2s ease; }
+.help-toggle[aria-expanded="true"] svg{ transform: rotate(180deg); }
+.hls-info-wrap{
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: -16px;
+  transition: grid-template-rows .3s ease, opacity .25s ease, margin-top .3s ease, visibility 0s .3s;
+  visibility: hidden;
+}
+.hls-info-wrap > .hls-info-panel{ min-height: 0; overflow: hidden; }
+.hls-info-wrap.open{
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: 0;
+  visibility: visible;
+  transition: grid-template-rows .3s ease, opacity .25s ease .05s, margin-top .3s ease, visibility 0s 0s;
+}
 
 .err-msg{
   color: var(--accent-red); font-size: 13px; margin-top: 10px; font-family:'JetBrains Mono', monospace;
@@ -575,7 +620,7 @@ input[type=color]{
 
 .toolbar{
   display:flex; align-items:center; justify-content: center; gap: 18px;
-  padding: 60px 24px 16px; position: relative;
+  padding: 40px 24px 16px; position: relative;
 }
 /* Серая кнопка собрана как жёлтая: та же накладка объёма и верхний блик, при наведении заливка темнее, блик ярче */
 .back-btn{
@@ -597,45 +642,35 @@ input[type=color]{
   padding-bottom: 2px;
   user-select: none;
   min-height: 32px;
-  min-width: 100px;
   transition: color .15s ease;
 }
+/* Пустому названию при редактировании нужна ширина под курсор и плейсхолдер */
+.player-title.editing{ min-width: 100px; }
 /* Обёртка вокруг заголовка: у него overflow:hidden ради многоточия, вложенный ::after обрезался бы */
 .player-title-box{
   position: relative;
   display: inline-flex;
   min-width: 0;
 }
-.player-title-box::after{
-  content: 'Нажмите чтобы изменить';
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  background: var(--surface);
-  border: 1px solid #23272e;
-  color: var(--text);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-family: 'Inter-Medium', sans-serif;
-  font-weight: 300;
-  white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity .2s ease, transform .2s ease, visibility .2s ease;
-  pointer-events: none;
-  z-index: 100;
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
-}
-.player-title-box:has(.player-title:not(.editing):hover)::after{
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
-}
 .player-title.editing{
   white-space: pre-wrap;
   overflow: visible;
+}
+/* Карандаш справа от названия появляется при наведении, пока имя не редактируется */
+.title-edit-icon{
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  width: 16px; height: 16px;
+  transform: translateY(-50%) translateX(-4px);
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.player-title-box:has(.player-title:not(.editing):hover) .title-edit-icon{
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 .player-title::before{
   content: '';
@@ -843,6 +878,7 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
 .ctrl-btn:hover{ color: var(--accent); }
 .ctrl-btn svg{ width: 24px; height: 24px; }
 #dr-btn svg{ width: 22px; height: 22px; }
+#hotkeys-btn svg{ width: 21px; height: 21px; }
 .ctrl-btn:disabled{ color: var(--muted); cursor: default; opacity: .5; }
 
 .ctrl-btn::after,
@@ -875,11 +911,15 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
   transform: translateX(-50%) translateY(0);
 }
 
-/* Обёртка нужна ради тултипа: у самого input псевдоэлементов нет */
+/* Обёртка нужна ради тултипа: у самого input псевдоэлементов нет. Подсказка стоит над бегунком, координату задаёт скрипт */
 .volume-slider-wrap{
   position: relative;
   display: flex;
   align-items: center;
+}
+.volume-slider-wrap::after{
+  left: var(--tip-x, 50%);
+  font-family:'JetBrains Mono', monospace;
 }
 
 /* Левая крайняя кнопка - tooltip уходит вправо */
@@ -906,14 +946,6 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
 }
 /* У значка полного экрана viewBox обрезан по полям, поэтому он меньше соседей в пикселях, но равен им на глаз */
 .ctrl-btn#fullscreen-btn svg{ width: 20px; height: 20px; }
-.skip-group{
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.skip-btn svg{ width: 18px; height: 18px; }
-.skip-btn{ color: var(--text); }
-.skip-btn:hover{ color: var(--accent); }
 
 .time-display{
   font-family:'JetBrains Mono', monospace; font-size: 12.5px; color: var(--text);
@@ -954,10 +986,56 @@ input[type=range]::-webkit-slider-thumb{
 }
 
 /* Таймлайн: поверх общей заливки ещё полупрозрачный слой буфера */
-#seek{
+/* Таймлайн живёт в обёртке: она занимает место в панели, ползунок растянут на неё, под ним отметки блюра */
+.seek-wrap{
+  position: relative;
   flex: 1 1 140px;
   min-width: 60px;
+  display: flex;
+  align-items: center;
+}
+#seek{
+  width: 100%;
+  position: relative;
+  z-index: 1;
   --seek-buffered: 0%;
+}
+.seek-marks{
+  position: absolute; left: 0; right: 0; top: 50%; height: 4px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.seek-marks span{
+  position: absolute; top: 0; bottom: 0;
+  background: var(--accent-orange);
+  opacity: .6;
+  border-radius: 2px;
+  min-width: 2px;
+}
+/* Время под курсором над таймлайном, того же вида, что подсказки кнопок */
+.seek-tip{
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--surface);
+  border: 1px solid #23272e;
+  color: var(--text);
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-family:'JetBrains Mono', monospace; font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  transition: opacity .2s ease, transform .2s ease, visibility .2s ease;
+}
+.seek-tip.show{
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 #seek::-webkit-slider-runnable-track{
   background-image:
@@ -1303,13 +1381,14 @@ input[type=range]::-moz-range-thumb{
   padding: 8px 0; border-bottom: 1px solid #20242b;
   max-height: 40px;
   opacity: 1;
-  overflow: hidden;
+  overflow: visible;
   transition: max-height .3s ease, opacity .3s ease, padding .3s ease, border-color .3s ease;
 }
 .timing-item:last-child{ border-bottom:none; }
 .timing-item.collapsed{
   max-height: 0;
   opacity: 0;
+  overflow: hidden;
   padding-top: 0;
   padding-bottom: 0;
   border-color: transparent;
@@ -1321,9 +1400,12 @@ input[type=range]::-moz-range-thumb{
   border-radius: 4px;
   position: relative;
   padding-bottom: 2px;
+  display: inline-flex; align-items: center; gap: 7px;
   transition: color .15s ease;
 }
-.timing-range::after{
+/* Подчёркивание только под текстом, как у названия в шапке */
+.timing-range-text{ position: relative; padding-bottom: 2px; }
+.timing-range-text::before{
   content: '';
   position: absolute;
   bottom: 0;
@@ -1337,8 +1419,19 @@ input[type=range]::-moz-range-thumb{
 .timing-range:hover{
   color: var(--muted);
 }
-.timing-range:hover::after{
+.timing-range:hover .timing-range-text::before{
   transform: scaleX(1);
+}
+.timing-edit-icon{
+  width: 13px; height: 13px; flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.timing-range:hover .timing-edit-icon{
+  opacity: 1;
+  transform: translateX(0);
 }
 .timing-remove-btn{
   background: transparent; padding: 4px 6px; font-size: 14px; line-height:1;
@@ -1532,6 +1625,13 @@ input[type=range]::-moz-range-thumb{
 
 
 /* ---------- Адаптивность/Мобильные ---------- */
+/* Панель управления остаётся одной строкой: вторая строка отнимает у видео высоту и двигает кнопки */
+@media (max-width: 1024px){
+  .controls-bar{ flex-wrap: nowrap; gap: 8px; }
+  .time-display{ width: auto; min-width: 0; }
+  #volume-range{ width: 64px; }
+}
+
 @media (max-width: 720px){
   .dropzone-group{ flex-direction: column; }
   .stage{ margin: 0 10px 10px; }
@@ -1549,8 +1649,6 @@ input[type=range]::-moz-range-thumb{
     row-gap: 4px;
     flex-wrap: nowrap;
   }
-  /* Скрываем кнопки перемотки на маленьких экранах */
-  .skip-group{ display: none; }
   .playback-group{ gap: 4px; }
   .extra-group{ gap: 3px; }
   /* сбрасываем фиксированные 150px из базового правила, иначе кнопки уезжают за край */
@@ -1575,11 +1673,9 @@ input[type=range]::-moz-range-thumb{
   .extra-group{ gap: 3px; }
   .ctrl-btn svg{ width: 18px; height: 18px; }
   .ctrl-btn#fullscreen-btn svg{ width: 16px; height: 16px; }
-  .skip-btn svg{ width: 14px; height: 14px; }
   .time-display{ font-size: 10.5px; }
   #volume-range{ width: 40px; }
   .volume-group{ gap: 3px; }
-  .skip-group{ gap: 2px; }
   .center-play-icon{ width: 42px; height: 42px; }
   .center-play-icon svg{ width: 18px; height: 18px; }
 }
@@ -1651,8 +1747,64 @@ input[type=range]::-moz-range-thumb{
   background: #2A2210;
   border: 1px solid var(--accent-orange);
 }
+/* Нейтральная справка: у неё нет красной рамки, красная только про сбой */
+.toast-info{
+  background: var(--surface);
+  border: 1px solid #2f343c;
+  color: var(--text);
+}
 .toast-text strong{
   color: var(--accent-orange);
   font-weight: 500;
   font-family: 'Inter-SemiBold', sans-serif;
+}
+
+/* ---------- Шпаргалка по клавишам ---------- */
+.hotkeys-help{
+  position: absolute; inset: 0; z-index: 7;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8,8,11,.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .25s ease, visibility 0s .25s;
+}
+.hotkeys-help.show{
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity .25s ease, visibility 0s 0s;
+}
+.hotkeys-card{
+  width: min(440px, calc(100% - 40px));
+  max-height: calc(100% - 40px);
+  overflow-y: auto;
+  padding: 18px 22px 20px;
+  background-color: var(--surface);
+  background-image: var(--panel-sheen);
+  border: 1px solid #23272e;
+  border-radius: var(--radius);
+  box-shadow: var(--panel-edge-light), 0 12px 32px rgba(0,0,0,.45);
+  transform: translateY(8px) scale(.98);
+  transition: transform .25s ease;
+}
+.hotkeys-help.show .hotkeys-card{ transform: translateY(0) scale(1); }
+.hotkeys-title{
+  font-family:'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+}
+.hotkeys-list{
+  display: grid; grid-template-columns: auto 1fr; column-gap: 16px; row-gap: 9px;
+  align-items: center; margin: 0;
+}
+.hotkeys-list dt{ white-space: nowrap; color: var(--muted); }
+.hotkeys-list dd{ margin: 0; font-size: 12.5px; color: var(--muted); }
+.hotkeys-list kbd{
+  display: inline-block; min-width: 22px; text-align: center;
+  padding: 2px 6px; border-radius: 5px;
+  font-family:'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text);
+  background-color: var(--surface-2); background-image: var(--panel-sheen);
+  box-shadow: var(--panel-edge-light), 0 1px 0 rgba(0,0,0,.4);
 }

@@ -68,6 +68,11 @@
       <button type="button" id="url-load-btn" class="url-load-btn">Открыть</button>
       <span class="url-loading-spinner" id="url-loading-spinner" style="display:none"></span>
     </div>
+    <button type="button" class="help-toggle" id="help-toggle" aria-expanded="false" aria-controls="hls-info-wrap">
+      <span>Откуда взять ссылку и что может не работать</span>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.4 9.3l4.6 4.6 4.6-4.6 1.4 1.4-6 6-6-6z"/></svg>
+    </button>
+    <div class="hls-info-wrap" id="hls-info-wrap">
     <div class="hls-info-panel">
       <div class="hls-info-col hls-info-ext">
         <div class="hls-info-header">
@@ -84,6 +89,7 @@
         <div class="url-hint">Не все HLS-ссылки хорошо воспроизводятся. Зависит от кодека, шифрования потока и настроек CORS на стороне сервера, который отдаёт m3u8</div>
       </div>
     </div>
+    </div>
   </div>
 
   <div class="err-msg" id="err-msg" role="alert" aria-live="polite"></div>
@@ -93,7 +99,8 @@
   <div class="toolbar">
     <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">Назад</button>
     <span class="player-title-box">
-      <h1 class="title-font player-title" id="fname" data-tooltip="Нажмите, чтобы изменить" tabindex="0" role="button" aria-label="Изменить название видео"></h1>
+      <h1 class="title-font player-title" id="fname" tabindex="0" role="button" aria-label="Изменить название видео"></h1>
+      <svg class="title-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
     </span>
   </div>
   <div class="stage" id="stage">
@@ -113,21 +120,17 @@
     </div>
     <div class="controls-bar" id="controls-bar">
       <div class="playback-group">
-        <button class="ctrl-btn left-edge" id="play-btn" data-tooltip="Воспроизведение / Пауза (пробел)" aria-label="Воспроизведение" aria-pressed="false">
+        <button class="ctrl-btn left-edge" id="play-btn" data-tooltip="Воспроизведение / Пауза (пробел, K)" aria-label="Воспроизведение" aria-pressed="false">
           <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
           <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
         </button>
         <span class="time-display" id="time-display">00:00 / 00:00</span>
-        <div class="skip-group">
-          <button class="ctrl-btn skip-btn" id="skip-back-btn" data-tooltip="&#8722;5 секунд (&#8592;)" aria-label="Назад на 5 секунд">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
-          </button>
-          <button class="ctrl-btn skip-btn" id="skip-forward-btn" data-tooltip="+5 секунд (&#8594;)" aria-label="Вперёд на 5 секунд">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-          </button>
-        </div>
       </div>
-      <input type="range" id="seek" min="0" max="1000" value="0" step="0.1" aria-label="Перемотка">
+      <div class="seek-wrap" id="seek-wrap">
+        <div class="seek-marks" id="seek-marks" aria-hidden="true"></div>
+        <input type="range" id="seek" min="0" max="1000" value="0" step="0.1" aria-label="Перемотка">
+        <span class="seek-tip" id="seek-tip" aria-hidden="true">00:00</span>
+      </div>
       <div class="playlist-nav" id="playlist-nav" style="display:none">
         <button class="ctrl-btn" id="prev-episode-btn" data-tooltip="Предыдущая серия" aria-label="Предыдущая серия">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
@@ -146,6 +149,9 @@
         </span>
       </div>
       <div class="extra-group">
+        <button class="ctrl-btn" id="hotkeys-btn" data-tooltip="Горячие клавиши" aria-label="Горячие клавиши" aria-expanded="false" aria-controls="hotkeys-help">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M10.5 10h.01M14 10h.01M17.5 10h.01M8 14h8"/></svg>
+        </button>
         <button class="ctrl-btn" id="dr-btn" data-tooltip="Настройки" aria-label="Настройки" aria-expanded="false" aria-controls="dr-panel">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
         </button>
@@ -158,6 +164,10 @@
     <div class="toast toast-error" id="storage-toast">
       <span class="toast-text" id="storage-toast-text" role="status" aria-live="polite"></span>
       <button type="button" class="toast-close" id="storage-toast-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    </div>
+    <div class="toast toast-info" id="info-toast">
+      <span class="toast-text" id="info-toast-text" role="status" aria-live="polite"></span>
+      <button type="button" class="toast-close" id="info-toast-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
     </div>
     <div class="toast toast-warning" id="codec-warning-toast">
       <span class="toast-text" id="codec-warning-toast-text" role="status" aria-live="polite"></span>
@@ -392,6 +402,20 @@
     <div class="center-play-icon" id="center-play-icon">
       <svg id="center-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
       <svg id="center-icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+    </div>
+    <div class="hotkeys-help" id="hotkeys-help" role="dialog" aria-label="Горячие клавиши" aria-hidden="true">
+      <div class="hotkeys-card">
+        <div class="hotkeys-title">Горячие клавиши</div>
+        <dl class="hotkeys-list">
+          <dt><kbd>Пробел</kbd> <kbd>K</kbd></dt><dd>Пауза и воспроизведение</dd>
+          <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>J</kbd> <kbd>L</kbd></dt><dd>Перемотка на 5 секунд</dd>
+          <dt><kbd>Shift</kbd> + <kbd>←</kbd> <kbd>→</kbd></dt><dd>Перемотка на секунду</dd>
+          <dt><kbd>,</kbd> <kbd>.</kbd></dt><dd>Кадр назад и вперёд</dd>
+          <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Громкость</dd>
+          <dt><kbd>M</kbd></dt><dd>Без звука</dd>
+          <dt><kbd>F</kbd></dt><dd>Полный экран</dd>
+        </dl>
+      </div>
     </div>
     <button type="button" class="quick-action-btn" id="next-ep-overlay">Следующая серия</button>
     <button type="button" class="quick-action-btn" id="skip-segment-overlay">Пропустить</button>

@@ -350,6 +350,22 @@ function hideStorageToast(){
   storageToast.classList.remove('show');
 }
 
+// Нейтральная справка зрителю: у тоста хранилища красная рамка, она означает сбой
+const infoToast = document.getElementById('info-toast');
+const infoToastText = document.getElementById('info-toast-text');
+let infoToastTimeout = null;
+function showInfoToast(msg){
+  infoToastText.textContent = msg;
+  infoToast.classList.add('show');
+  clearTimeout(infoToastTimeout);
+  infoToastTimeout = setTimeout(() => infoToast.classList.remove('show'), TOAST_DURATION_MS);
+}
+function hideInfoToast(){
+  clearTimeout(infoToastTimeout);
+  infoToast.classList.remove('show');
+}
+document.getElementById('info-toast-close').addEventListener('click', hideInfoToast);
+
 document.getElementById('storage-toast-close').addEventListener('click', hideStorageToast);
 
 const codecWarningToast = document.getElementById('codec-warning-toast');
@@ -791,8 +807,27 @@ function collapseElement(el){
   });
 }
 
+// Диапазоны блюра рисуются жёлтыми отрезками на дорожке таймлайна, вместе с включительной секундой
+const seekMarks = document.getElementById('seek-marks');
+function renderSeekMarks(){
+  seekMarks.innerHTML = '';
+  if (!isDurationUsable()) return;
+  const dur = video.duration;
+  for (const r of blurRanges){
+    const left = Math.max(0, Math.min(100, r.from / dur * 100));
+    const right = Math.max(0, Math.min(100, (r.to + 1) / dur * 100));
+    if (right <= left) continue;
+    const m = document.createElement('span');
+    m.style.left = left + '%';
+    m.style.width = (right - left) + '%';
+    seekMarks.appendChild(m);
+  }
+}
+video.addEventListener('durationchange', renderSeekMarks);
+
 function renderBlurRanges(newIndex){
   if (isEditing) stopEditingSession();
+  renderSeekMarks();
   timingList.innerHTML = '';
   blurRanges.forEach((range, idx) => {
     const item = document.createElement('div');
@@ -801,9 +836,12 @@ function renderBlurRanges(newIndex){
 
     const rangeText = document.createElement('span');
     rangeText.className = 'timing-range';
-    rangeText.textContent = `${formatTime(range.from)} – ${formatTime(range.to)}`;
-    rangeText.title = `Размывается до ${formatTime(range.to + 1)} включительно`;
-    rangeText.style.cursor = 'pointer';
+    // Карандаш при наведении показывает, что диапазон редактируется
+    const rangeLabel = document.createElement('span');
+    rangeLabel.className = 'timing-range-text';
+    rangeLabel.textContent = `${formatTime(range.from)} – ${formatTime(range.to)}`;
+    rangeText.appendChild(rangeLabel);
+    rangeText.insertAdjacentHTML('beforeend', '<svg class="timing-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>');
     
     rangeText.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2308,6 +2346,7 @@ function loadFile(file, handle, meta){
   }
   hideErrMsg();
   hideStorageToast();
+  hideInfoToast();
   hideCodecWarningToast();
   videoErrorEl.style.display = 'none';
   hideBufferingIndicator();
@@ -3292,7 +3331,7 @@ dropzone.addEventListener('drop', async e => {
   }
   loadFile(file, handle);
   // Строка ошибки живёт на главной и прячется при открытии, подсказку про остальные файлы показываем уже в плеере
-  if (files.length > 1) showStorageToast(`Перетащено файлов: ${files.length}. Открыт первый: «${file.name}». Для нескольких серий перетащите папку`);
+  if (files.length > 1) showInfoToast(`Перетащено файлов: ${files.length}. Открыт первый: «${file.name}». Для нескольких серий перетащите папку`);
 });
 
 // --- перетаскивание папки ---
@@ -3410,7 +3449,7 @@ document.body.addEventListener('drop', async e => {
   
   // Если drop view не показан, показываем уведомление
   if (dropView.style.display === 'none'){
-    showStorageToast('Сначала нажмите «Назад», чтобы открыть другой файл');
+    showInfoToast('Сначала нажмите «Назад», чтобы открыть другой файл');
     return;
   }
   
@@ -3477,8 +3516,6 @@ const playBtn = document.getElementById('play-btn');
 const iconPlay = document.getElementById('icon-play');
 const iconPause = document.getElementById('icon-pause');
 const timeDisplay = document.getElementById('time-display');
-const skipBackBtn = document.getElementById('skip-back-btn');
-const skipForwardBtn = document.getElementById('skip-forward-btn');
 const seek = document.getElementById('seek');
 const muteBtn = document.getElementById('mute-btn');
 const iconVolOn = document.getElementById('icon-vol-on');
@@ -3731,8 +3768,30 @@ const toggleDrPanel = makePanelToggler();
 const togglePlaylistPanel = makePanelToggler();
 
 // Не показываем подсказку «Следующая серия», пока открыты настройки, субтитры или плейлист
+// --- Шпаргалка по клавишам ---
+const hotkeysHelp = document.getElementById('hotkeys-help');
+const hotkeysBtn = document.getElementById('hotkeys-btn');
+function setHotkeysHelpOpen(open){
+  const wasOpen = hotkeysHelp.classList.contains('show');
+  hotkeysHelp.classList.toggle('show', open);
+  hotkeysHelp.setAttribute('aria-hidden', String(!open));
+  hotkeysBtn.setAttribute('aria-expanded', String(open));
+  hotkeysBtn.classList.toggle('active-panel', open);
+  if (open){
+    setDrPanelOpen(false);
+    setPlaylistPanelOpen(false);
+    hideNextEpisodeOverlay();
+    hideSkipSegmentOverlay();
+  } else if (wasOpen){
+    refreshQuickActions();
+  }
+}
+hotkeysBtn.addEventListener('click', () => setHotkeysHelpOpen(!hotkeysHelp.classList.contains('show')));
+// Клик по затемнению закрывает, клик по карточке нет
+hotkeysHelp.addEventListener('click', e => { if (e.target === hotkeysHelp) setHotkeysHelpOpen(false); });
+
 function anyPanelOpen(){
-  return drPanel.classList.contains('open') || playlistPanel.classList.contains('open');
+  return drPanel.classList.contains('open') || playlistPanel.classList.contains('open') || hotkeysHelp.classList.contains('show');
 }
 
 function setDrPanelOpen(open){
@@ -3812,7 +3871,7 @@ subsFile.addEventListener('change', (e) => {
       const reader1251 = new FileReader();
       reader1251.onload = (event1251) => {
         content = event1251.target.result;
-        showStorageToast('Субтитры прочитаны в кодировке Windows-1251');
+        showInfoToast('Субтитры прочитаны в кодировке Windows-1251');
         processSubtitlesContent(content, file, previousName);
       };
       reader1251.onerror = () => {
@@ -4236,16 +4295,9 @@ function seekBy(deltaSeconds){
   // Как и при перетаскивании ползунка, блюр ставим сразу, не дожидаясь события seeking
   syncBlurFilter();
 }
-skipBackBtn.addEventListener('click', () => seekBy(-5));
-skipForwardBtn.addEventListener('click', () => seekBy(5));
-
-// Дизейблим кнопки перемотки и сик-бар при недоступной длительности
+// Таймлайн недоступен, пока не известна длительность
 function updateSeekControlsState(){
-  const canSeek = isDurationUsable();
-  skipBackBtn.disabled = !canSeek;
-  skipForwardBtn.disabled = !canSeek;
-  seek.disabled = !canSeek;
-  
+  seek.disabled = !isDurationUsable();
 }
 
 let centerIconTimeout = null;
@@ -4671,6 +4723,49 @@ function updateSubtitles() {
   }
 }
 
+// --- Время под курсором над таймлайном ---
+const seekWrap = document.getElementById('seek-wrap');
+const seekTip = document.getElementById('seek-tip');
+const SEEK_THUMB_PX = 12;
+// Считаем позицию так же, как браузер для ползунка: центр бегунка ходит от половины его ширины до края минус половина,
+// и значение округляется до шага, иначе подсказка и клик разойдутся
+function rangeValueAtX(range, clientX){
+  const rect = range.getBoundingClientRect();
+  const usable = Math.max(1, rect.width - SEEK_THUMB_PX);
+  const frac = Math.max(0, Math.min(1, (clientX - rect.left - SEEK_THUMB_PX / 2) / usable));
+  const step = parseFloat(range.step) || 1;
+  const min = parseFloat(range.min) || 0;
+  const max = parseFloat(range.max) || 1;
+  return min + Math.round(frac * (max - min) / step) * step;
+}
+// Где стоит центр бегунка при данном значении, в пикселях от левого края ползунка
+function rangeThumbX(range, value){
+  const rect = range.getBoundingClientRect();
+  const min = parseFloat(range.min) || 0;
+  const max = parseFloat(range.max) || 1;
+  return SEEK_THUMB_PX / 2 + ((value - min) / (max - min)) * (rect.width - SEEK_THUMB_PX);
+}
+function seekValueAtX(clientX){ return rangeValueAtX(seek, clientX); }
+function showSeekTipAt(clientX){
+  if (!isDurationUsable()) return;
+  const value = seekValueAtX(clientX);
+  const t = (value / 1000) * video.duration;
+  seekTip.textContent = formatTime(t);
+  const rect = seek.getBoundingClientRect();
+  const wrapRect = seekWrap.getBoundingClientRect();
+  const thumbX = rangeThumbX(seek, value);
+  // Подсказка не должна вылезать за сцену, зажимаем её центр с запасом на половину ширины
+  const half = seekTip.offsetWidth / 2 || 30;
+  const stageRect = stage.getBoundingClientRect();
+  const minX = stageRect.left + half + 6 - wrapRect.left;
+  const maxX = stageRect.right - half - 6 - wrapRect.left;
+  seekTip.style.left = Math.max(minX, Math.min(maxX, rect.left - wrapRect.left + thumbX)) + 'px';
+  seekTip.classList.add('show');
+}
+seekWrap.addEventListener('mousemove', e => showSeekTipAt(e.clientX));
+seekWrap.addEventListener('mouseenter', e => showSeekTipAt(e.clientX));
+seekWrap.addEventListener('mouseleave', () => seekTip.classList.remove('show'));
+
 seek.addEventListener('mousedown', () => isSeeking = true);
 seek.addEventListener('touchstart', () => isSeeking = true);
 seek.addEventListener('input', () => {
@@ -4732,15 +4827,25 @@ function applyGlobalVolume(){
 }
 
 let volumeTooltipTimer = null;
-// Пока крутят громкость, показываем над ползунком процент, через секунду прячем
-function flashVolumeTooltip(){
-  volumeSliderWrap.dataset.tooltip = Math.round(volumeRange.value * 100) + '%';
+let volumeHovered = false;
+// Подсказка над громкостью показывает значение и стоит над бегунком, а не по центру
+function setVolumeTooltip(value){
+  volumeSliderWrap.dataset.tooltip = Math.round(value * 100) + '%';
+  volumeSliderWrap.style.setProperty('--tip-x', rangeThumbX(volumeRange, value) + 'px');
   volumeSliderWrap.classList.add('show-tooltip');
+}
+// Громкость с клавиатуры: показываем текущее значение и через секунду прячем, если мышь не на ползунке
+function flashVolumeTooltip(){
+  setVolumeTooltip(parseFloat(volumeRange.value));
   clearTimeout(volumeTooltipTimer);
   volumeTooltipTimer = setTimeout(() => {
-    volumeSliderWrap.classList.remove('show-tooltip');
+    if (!volumeHovered) volumeSliderWrap.classList.remove('show-tooltip');
   }, 1000);
 }
+// При наведении подсказка показывает громкость, которую поставит клик в этой точке, как время на таймлайне
+volumeSliderWrap.addEventListener('mousemove', e => { volumeHovered = true; setVolumeTooltip(rangeValueAtX(volumeRange, e.clientX)); });
+volumeSliderWrap.addEventListener('mouseenter', e => { volumeHovered = true; setVolumeTooltip(rangeValueAtX(volumeRange, e.clientX)); });
+volumeSliderWrap.addEventListener('mouseleave', () => { volumeHovered = false; clearTimeout(volumeTooltipTimer); volumeSliderWrap.classList.remove('show-tooltip'); });
 
 volumeRange.addEventListener('input', () => {
   video.volume = volumeRange.value;
@@ -4884,11 +4989,15 @@ document.addEventListener('keydown', (e) => {
   if (isEditingTitle) return; // Блокируем хоткеи при редактировании названия
   // Сочетания с Ctrl, Alt и Win принадлежат браузеру: Ctrl+F это поиск, Alt+Left это назад, а не перемотка
   if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.key === 'Escape' && hotkeysHelp.classList.contains('show')){ e.preventDefault(); setHotkeysHelpOpen(false); return; }
   const code = hotkeyCode(e);
   // Переключатели не должны дребезжать при зажатой клавише, перемотка и громкость при автоповторе как раз удобны
-  const isToggle = code === 'Space' || code === 'KeyF' || code === 'KeyM';
+  const isToggle = code === 'Space' || code === 'KeyK' || code === 'KeyF' || code === 'KeyM';
   if (isToggle && e.repeat) return;
-  if (code === 'Space'){ e.preventDefault(); togglePlay(); showControls(); }
+  // J, K, L дублируют стрелки и пробел, как в монтажках и на YouTube: на компактных клавиатурах стрелки спрятаны под Fn
+  if (code === 'Space' || code === 'KeyK'){ e.preventDefault(); togglePlay(); showControls(); }
+  else if (code === 'KeyJ'){ e.preventDefault(); seekBy(-5); showControls(); }
+  else if (code === 'KeyL'){ e.preventDefault(); seekBy(5); showControls(); }
   else if (code === 'KeyF'){ e.preventDefault(); fullscreenBtn.click(); }
   else if (code === 'KeyM'){ e.preventDefault(); toggleMute(); showControls(); }
   else if (code === 'ArrowRight' && e.shiftKey){ e.preventDefault(); seekBy(1); showControls(); }
@@ -4906,6 +5015,7 @@ function hotkeyCode(e){
   if (e.code) return e.code;
   const byKey = { ' ': 'Space', 'f': 'KeyF', 'F': 'KeyF', 'а': 'KeyF', 'А': 'KeyF', 'm': 'KeyM', 'M': 'KeyM', 'ь': 'KeyM', 'Ь': 'KeyM',
     ',': 'Comma', 'б': 'Comma', 'Б': 'Comma', '.': 'Period', 'ю': 'Period', 'Ю': 'Period',
+    'j': 'KeyJ', 'J': 'KeyJ', 'о': 'KeyJ', 'О': 'KeyJ', 'k': 'KeyK', 'K': 'KeyK', 'л': 'KeyK', 'Л': 'KeyK', 'l': 'KeyL', 'L': 'KeyL', 'д': 'KeyL', 'Д': 'KeyL',
     'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight', 'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown' };
   return byKey[e.key] || '';
 }
@@ -5059,6 +5169,7 @@ function closePlayer(){
   urlInput.classList.remove('error');
   hideErrMsg();
   hideStorageToast();
+  hideInfoToast();
   hideCodecWarningToast();
   playerView.classList.remove('active');
   dropView.style.display = 'flex';
@@ -5246,6 +5357,7 @@ async function loadUrl(url, meta){
   urlInput.classList.remove('error');
   hideErrMsg();
   hideStorageToast();
+  hideInfoToast();
   hideCodecWarningToast();
   videoErrorEl.style.display = 'none';
   hideBufferingIndicator();
@@ -5996,6 +6108,15 @@ fnameEl.addEventListener('click', () => {
     if (!isEditingTitle) return;
     saveTitle();
   }, { once: true });
+});
+
+// Справка про ссылки на главной свёрнута, раскрывается по клику
+const helpToggle = document.getElementById('help-toggle');
+const hlsInfoWrap = document.getElementById('hls-info-wrap');
+helpToggle.addEventListener('click', () => {
+  const open = !hlsInfoWrap.classList.contains('open');
+  hlsInfoWrap.classList.toggle('open', open);
+  helpToggle.setAttribute('aria-expanded', String(open));
 });
 
 // Обработчики для URL ввода
