@@ -1,0 +1,7 @@
+{
+  "title": "Сериал с главами в mp4",
+  "episodes": [
+    { "title": "С главами", "url": "../chapters.mp4" },
+    { "title": "Без глав", "url": "ep2.mp4" }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "title": "Сериал на HLS",
+  "episodes": [
+    { "title": "Серия 1 с главами и субтитрами", "url": "hls1/index.m3u8" },
+    { "title": "Серия 2 без сидкаров", "url": "hls2/index.m3u8" }
+  ]
+}

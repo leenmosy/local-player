@@ -1,0 +1,1 @@
+{"title":"Опасный","episodes":[{"title":"XSS","url":"javascript:alert(1)"},{"title":"data","url":"data:video/mp4,x"}]}
