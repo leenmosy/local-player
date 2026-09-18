@@ -269,7 +269,7 @@ function endPadDrag(e){
 posPad.addEventListener('pointerup', endPadDrag);
 posPad.addEventListener('pointercancel', endPadDrag);
 posPad.addEventListener('keydown', (e) => {
-  const step = e.shiftKey ? 1 : 4;
+  const step = 4;
   let dx = 0, dy = 0;
   if (e.key === 'ArrowLeft') dx = -step;
   else if (e.key === 'ArrowRight') dx = step;
@@ -3786,6 +3786,7 @@ function setHotkeysHelpOpen(open){
   }
 }
 hotkeysBtn.addEventListener('click', () => setHotkeysHelpOpen(!hotkeysHelp.classList.contains('show')));
+document.getElementById('hotkeys-close').addEventListener('click', () => setHotkeysHelpOpen(false));
 // Клик по затемнению закрывает, клик по карточке нет
 hotkeysHelp.addEventListener('click', e => { if (e.target === hotkeysHelp) setHotkeysHelpOpen(false); });
 
@@ -4931,6 +4932,8 @@ fullscreenBtn.addEventListener('click', () => {
     fullscreenBtn.setAttribute('aria-pressed', String(isFs));
     fullscreenBtn.setAttribute('aria-label', isFs ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим');
     fullscreenBtn.setAttribute('data-tooltip', isFs ? 'Выйти из полного экрана (f)' : 'Полный экран (f)');
+    // Esc в полном экране браузер забирает себе и до страницы не доносит: выход из него закрывает и шпаргалку, чтобы не жать дважды
+    if (!isFs && hotkeysHelp.classList.contains('show')) setHotkeysHelpOpen(false);
   });
 });
 
@@ -5000,8 +5003,6 @@ document.addEventListener('keydown', (e) => {
   else if (code === 'KeyL'){ e.preventDefault(); seekBy(5); showControls(); }
   else if (code === 'KeyF'){ e.preventDefault(); fullscreenBtn.click(); }
   else if (code === 'KeyM'){ e.preventDefault(); toggleMute(); showControls(); }
-  else if (code === 'ArrowRight' && e.shiftKey){ e.preventDefault(); seekBy(1); showControls(); }
-  else if (code === 'ArrowLeft' && e.shiftKey){ e.preventDefault(); seekBy(-1); showControls(); }
   else if (code === 'Comma'){ e.preventDefault(); stepFrame(-1); }
   else if (code === 'Period'){ e.preventDefault(); stepFrame(1); }
   else if (code === 'ArrowRight'){ e.preventDefault(); seekBy(5); showControls(); }
