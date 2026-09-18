@@ -195,7 +195,10 @@ html, body{
   height: 40px;
   stroke: var(--accent);
   transition: transform .3s ease;
+  /* У иконок внизу пустое поле внутри квадрата, съедаем его: от глифа до текста те же 14px, что от текста до подписи */
+  margin-bottom: -5px;
 }
+#dropzone-folder svg{ margin-bottom: -8px; }
 .dropzone .main-txt{
   font-family:'Helvetica', sans-serif;
   letter-spacing: .02em;
