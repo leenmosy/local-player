@@ -5225,7 +5225,7 @@ async function loadUrl(url, meta){
 
   url = String(url || '').trim();
   if (url === ''){
-    showUrlError('Введите ссылку');
+    showUrlError('Вставьте ссылку');
     return;
   }
 
