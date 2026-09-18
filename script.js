@@ -4609,8 +4609,12 @@ function findSubtitleAt(t){
     else hi = mid - 1;
   }
   if (found === -1) return null;
+  // Последняя начавшаяся реплика могла уже кончиться внутри более длинной, которая началась раньше, смотрим немного назад
+  for (let k = found; k >= 0 && k >= found - 8; k--){
+    if (hit(k)){ subSearchIdx = k; return subtitlesData[k]; }
+  }
   subSearchIdx = found;
-  return hit(found) ? subtitlesData[found] : null;
+  return null;
 }
 
 function resetSubtitleRenderState(){
