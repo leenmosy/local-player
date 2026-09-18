@@ -5373,7 +5373,11 @@ async function loadUrl(url, meta){
         maxBufferLength: 180, // целимся держать впереди 3 минуты как запас на просадки сети
         maxMaxBufferLength: 600, // при нехватке позволяем hls.js растянуть буфер сильнее
         maxBufferSize: 150 * 1000 * 1000, // верхний предел буфера по памяти, близко к лимиту браузера на медиа
-        backBufferLength: 90 // просмотренный хвост храним только 90 секунд
+        backBufferLength: 90, // просмотренный хвост храним только 90 секунд
+        // Сегмент, которого нет на CDN, не появится от шести попыток за полминуты, трёх с короткой паузой достаточно
+        fragLoadPolicy: { default: { maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 120000,
+          timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+          errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 4000 } } }
       });
       // Локальная ссылка на именно этот экземпляр, нужна, чтобы отложенные
       // ретраи ниже не трогали чужой/уже уничтоженный hls, если пользователь
@@ -5455,21 +5459,28 @@ async function loadUrl(url, meta){
                 errorMessage = 'Не удалось загрузить сегмент видео';
               }
 
-              // Недоступный ключ сервер отдаёт тем же 404, что и мёртвую ссылку, для KEY_LOAD_ERROR оставляем точный текст
+              // Недоступный ключ и пропавший сегмент сервер отдаёт тем же 404, что и мёртвую ссылку, для них текст точнее
               const deadLinkMessage = data.details === Hls.ErrorDetails.KEY_LOAD_ERROR
                 ? errorMessage
-                : 'Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера';
+                : (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR
+                  ? 'На сервере нет части этого видео, дальше воспроизвести не получится'
+                  : 'Ссылка больше не работает. Похоже, она устарела или файл был удалён с сервера');
 
-              // Если это CORS ошибка (смотрим в response текст или проверяем origin)
+              // Код 0 это и запрет CORS, и обрыв сети. Пока ничего не играло, это доступ, а посреди просмотра это сеть
               if (data.response && data.response.code === 0) {
-                // CORS ошибка - нет доступа к ответу
-                clearTimeout(loadTimeout);
-                urlLoadingSpinner.style.display = 'none';
-                urlLoadBtn.disabled = false;
-                hlsInstance.destroy();
-                hls = null;
-                showPlaybackError('Сайт-источник запрещает встраивание в другие страницы/плееры. Доступ заблокирован на стороне сервера');
-                return;
+                const playbackStarted = video.currentTime > 0 || video.readyState >= 2;
+                if (!playbackStarted){
+                  clearTimeout(loadTimeout);
+                  urlLoadingSpinner.style.display = 'none';
+                  urlLoadBtn.disabled = false;
+                  hlsInstance.destroy();
+                  hls = null;
+                  showPlaybackError(navigator.onLine === false
+                    ? 'Нет соединения с интернетом. Проверьте сеть и попробуйте снова'
+                    : 'Сайт-источник запрещает встраивание в другие страницы/плееры. Доступ заблокирован на стороне сервера');
+                  return;
+                }
+                errorMessage = 'Соединение с сервером прервалось. Проверьте интернет и откройте ссылку снова';
               }
 
               // 404: ссылка мертва (истекла/удалена)
