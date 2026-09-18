@@ -356,6 +356,8 @@ const codecWarningToast = document.getElementById('codec-warning-toast');
 const codecWarningToastText = document.getElementById('codec-warning-toast-text');
 let codecWarningTimeout = null;
 const RISKY_VIDEO_CODECS = ['HEVC'];
+// Эти звуковые дорожки Chrome не декодирует: картинка идёт, звука нет
+const SILENT_AUDIO_CODECS = ['AC-3', 'E-AC-3', 'DTS', 'MLP FBA'];
 
 function showCodecWarningToast(msg){
   codecWarningToastText.textContent = msg;
@@ -378,6 +380,13 @@ function checkCodecWarning(result, token){
   const format = videoTrack && videoTrack.Format ? videoTrack.Format.toUpperCase() : null;
   if (format && RISKY_VIDEO_CODECS.includes(format)) {
     showCodecWarningToast(`Видео в ${format}: если появится чёрный экран со звуком, конвертируйте файл в H.264`);
+    return;
+  }
+  const audioTrack = result.media.track.find(t => t && t['@type'] === 'Audio');
+  const audioFormat = audioTrack && audioTrack.Format ? String(audioTrack.Format).toUpperCase() : null;
+  if (audioFormat && SILENT_AUDIO_CODECS.includes(audioFormat)) {
+    const label = audioFormat === 'MLP FBA' ? 'TrueHD' : audioFormat;
+    showCodecWarningToast(`Звук в ${label}: браузер не воспроизведёт эту дорожку, будет тишина. Перекодируйте звук в AAC`);
   }
 }
 
