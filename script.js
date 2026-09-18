@@ -1255,6 +1255,21 @@ function storedCustomTitle(key, autoName){
   return null;
 }
 
+// Автоматическое имя из прошлого открытия не должно перебивать название серии или title из адреса, своё имя зрителя остаётся
+function adoptTitleForStoredSettings(key, autoName, title){
+  if (!key || storedCustomTitle(key, autoName)) return;
+  // Имя лежит и в настройках, и в записи прогресса, откуда его берёт восстановление позиции
+  for (const [storeKey, field] of [[settingsKey(key), 'titleInput'], [key, 'displayName']]){
+    try{
+      const s = JSON.parse(localStorage.getItem(storeKey) || 'null');
+      if (s && typeof s === 'object' && s[field] !== title){
+        s[field] = title;
+        localStorage.setItem(storeKey, JSON.stringify(s));
+      }
+    } catch(e){ /* повреждённая запись, имя подставится как есть */ }
+  }
+}
+
 const PROGRESS_DURATION_TOLERANCE = 2;
 // Ключ ссылки не учитывает query, поэтому разные видео одного пути могут совпасть,
 // сверяем длительность, прежде чем применять найденную запись
@@ -3255,10 +3270,6 @@ dropzone.addEventListener('drop', async e => {
     return;
   }
 
-  if (files.length > 1){
-    showErrMsg(`Перетащено файлов: ${files.length}. Открыт первый: «${file.name}». Для нескольких серий перетащите папку`);
-  }
-  
   const dtItem = e.dataTransfer.items && e.dataTransfer.items[0];
   let handle = null;
   if (dtItem && typeof dtItem.getAsFileSystemHandle === 'function'){
@@ -3271,6 +3282,8 @@ dropzone.addEventListener('drop', async e => {
     try{ await idbSet(fileKey(file), handle); } catch(err){}
   }
   loadFile(file, handle);
+  // Строка ошибки живёт на главной и прячется при открытии, подсказку про остальные файлы показываем уже в плеере
+  if (files.length > 1) showStorageToast(`Перетащено файлов: ${files.length}. Открыт первый: «${file.name}». Для нескольких серий перетащите папку`);
 });
 
 // --- перетаскивание папки ---
@@ -5309,8 +5322,11 @@ async function loadUrl(url, meta){
   originalFileName = getFileNameFromUrl(url); // Сохраняем исходное имя из URL
   currentFileName = niceTitleFromFilename(getFileNameFromUrl(url)); // Отображаемое имя без расширения
   // Название серии знает только манифест сериала, из имени файла его не вывести
-  const seriesTitle = meta && meta.title ? String(meta.title).trim() : '';
-  if (seriesTitle) currentFileName = seriesTitle;
+  const seriesTitle = meta && meta.title ? String(meta.title).trim().slice(0, MAX_TITLE_LEN) : '';
+  if (seriesTitle){
+    adoptTitleForStoredSettings(currentFileKey, currentFileName, seriesTitle);
+    currentFileName = seriesTitle;
+  }
 
   // Имя из Content-Disposition приходит асинхронно, запоминаем загрузку чтобы ответ не переименовал уже другой источник
   const titleLoadToken = thisLoadToken;
