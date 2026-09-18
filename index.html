@@ -93,7 +93,7 @@
   <div class="toolbar">
     <button id="back-btn" class="back-btn" aria-label="Назад к выбору файла">Назад</button>
     <span class="player-title-box">
-      <h1 class="title-font player-title" id="fname" data-tooltip="Нажмите чтобы изменить" tabindex="0" role="button" aria-label="Изменить название видео"></h1>
+      <h1 class="title-font player-title" id="fname" data-tooltip="Нажмите, чтобы изменить" tabindex="0" role="button" aria-label="Изменить название видео"></h1>
     </span>
   </div>
   <div class="stage" id="stage">
@@ -105,15 +105,15 @@
     </div>
     <div class="subtitles" id="subtitles"></div>
     <div class="video-error" id="video-error" style="display:none;">
-      <div class="ve-title">Ошибка воспроизведения</div>
-      <div class="ve-text">Не удалось загрузить видеофайл. Попробуйте другой файл.</div>
+      <div class="ve-title">Не удалось воспроизвести файл</div>
+      <div class="ve-text">Попробуйте другой файл</div>
     </div>
     <div class="buffering-overlay" id="buffering-overlay" aria-hidden="true">
       <div class="buffering-spinner"></div>
     </div>
     <div class="controls-bar" id="controls-bar">
       <div class="playback-group">
-        <button class="ctrl-btn left-edge" id="play-btn" data-tooltip="Воспроизведение / Пауза (space)" aria-label="Воспроизведение" aria-pressed="false">
+        <button class="ctrl-btn left-edge" id="play-btn" data-tooltip="Воспроизведение / Пауза (пробел)" aria-label="Воспроизведение" aria-pressed="false">
           <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
           <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
         </button>
@@ -184,7 +184,7 @@
             <span class="dr-val" id="dr-strength-val">60%</span>
           </div>
           <div class="dr-row">
-            <label for="dr-boost">Громкость</label>
+            <label for="dr-boost">Усиление</label>
             <input type="range" id="dr-boost" min="100" max="500" step="5" value="100">
             <span class="dr-val" id="dr-boost-val">100%</span>
           </div>
@@ -307,7 +307,7 @@
           <svg class="dr-category-arrow" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
         </button>
         <div class="dr-category-content" id="timings-content">
-          <div class="timing-hint">Плеер будет размыт в указанные промежутки времени (формат чч:мм:сс)</div>
+          <div class="timing-hint">Видео будет размыто в указанные промежутки времени (формат чч:мм:сс)</div>
           <div class="dr-row timing-input-row">
             <div class="dr-text-input timing-time-input timing-segmented" id="timing-from-group">
               <input type="text" class="ts-seg" id="timing-from-hh" placeholder="чч" maxlength="2" inputmode="numeric" aria-label="Часы, начало">

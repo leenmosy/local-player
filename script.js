@@ -2037,7 +2037,7 @@ resumeList.addEventListener('click', async (e) => {
         loadFile(file, handle, loadMeta);
       }
     } catch(err){
-      showErrMsg('Не удалось открыть сохранённый файл – возможно, он был перемещён, переименован или удалён');
+      showErrMsg('Не удалось открыть сохранённый файл: возможно, он перемещён, переименован или удалён');
     }
   }
 });
@@ -3102,7 +3102,7 @@ async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
 
   const rawEpisodes = manifest && Array.isArray(manifest.episodes) ? manifest.episodes : null;
   if (!rawEpisodes || !rawEpisodes.length){
-    showUrlError('В файле сериала нет ни одной серии');
+    showUrlError('В списке серий нет ни одной серии');
     return;
   }
 
@@ -3119,7 +3119,7 @@ async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
     entries.push({ url: parsed.href, title: (rawTitle || 'Серия ' + (idx + 1)).slice(0, MAX_TITLE_LEN) });
   });
   if (!entries.length){
-    showUrlError('В файле сериала нет корректных ссылок на серии');
+    showUrlError('В списке серий нет корректных ссылок');
     return;
   }
 
@@ -3275,7 +3275,7 @@ dropzone.addEventListener('drop', async e => {
     // Для перетащенной папки показываем подсказку с использованием отдельной зоны загрузки
     showErrMsg(looksLikeFolderDrop(file)
       ? 'Похоже, это папка. Перетащите её в зону «Выберите папку» справа'
-      : 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
+      : 'Перетащите видеофайл (.mp4, .webm, .mov)');
     return;
   }
 
@@ -3424,7 +3424,7 @@ document.body.addEventListener('drop', async e => {
   if (!isVideoFile(file)) {
     showErrMsg(looksLikeFolderDrop(file)
       ? 'Похоже, это папка. Перетащите её в зону «Выберите папку» справа'
-      : 'Пожалуйста, перетащите видеофайл (.mp4, .webm, .mov)');
+      : 'Перетащите видеофайл (.mp4, .webm, .mov)');
     return;
   }
 
@@ -3463,7 +3463,7 @@ fileInput.addEventListener('change', (e) => {
   fileInput.value = '';
   if (!file) return;
   if (!isVideoFile(file)) {
-    showErrMsg('Пожалуйста, выберите видеофайл (.mp4, .webm, .mov)');
+    showErrMsg('Выберите видеофайл (.mp4, .webm, .mov)');
     return;
   }
   // Обычный <input> не предоставляет FileSystemFileHandle, поэтому для продолжения потребуется повторный выбор файла
@@ -3591,7 +3591,7 @@ function ensureAudioGraph(){
   } catch(e){
     if (e.name === 'SecurityError') {
       console.warn('CORS не поддерживается сервером, аудио-фичи отключены:', e);
-      showStorageToast('Аудио-фичи недоступны для этого видео (отсутствует CORS)');
+      showStorageToast('Компрессор и усиление недоступны для этого видео: источник не поддерживает CORS');
       drEnabled = false;
       drToggle.checked = false;
     } else {
@@ -4921,7 +4921,7 @@ const ERROR_SOLUTIONS = {
   3: `
     <div class="ve-solution">
       <strong>Как исправить:</strong>
-      <br>• Скорее всего файл использует кодек H.265/HEVC, AC3 или DTS
+      <br>• Скорее всего файл использует кодек H.265/HEVC, AC-3 или DTS
       <br>• Конвертируйте файл в H.264 + AAC (HandBrake, бесплатный)
       <br>• Для стримеров: используйте H.264 для максимальной совместимости
       <br>• Рекомендуемые настройки: H.264, AAC, 1080p или ниже
@@ -4944,7 +4944,7 @@ video.addEventListener('error', () => {
   const solution = ERROR_SOLUTIONS[code] || '';
   
   videoErrorEl.innerHTML = `
-    <div class="ve-title">Не получилось воспроизвести файл</div>
+    <div class="ve-title">Не удалось воспроизвести файл</div>
     <div class="ve-detail">${msg}${code != null ? `<br>Код ошибки браузера: ${code}` : ''}</div>
     ${solution}
   `;
@@ -5387,13 +5387,13 @@ async function loadUrl(url, meta){
         clearTimeout(directLoadTimeout);
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
-        showUrlError('Браузер не поддерживает m3u8 без hls.js библиотеки');
+        showUrlError('Браузер не поддерживает m3u8 без библиотеки hls.js');
       }, { once: true });
       loadUrlCommonInit();
     } else {
       urlLoadingSpinner.style.display = 'none';
       urlLoadBtn.disabled = false;
-      showUrlError('Браузер не поддерживает m3u8 и hls.js библиотека не загружена');
+      showUrlError('Браузер не поддерживает m3u8, а библиотека hls.js не загрузилась');
     }
     return;
   }
@@ -5614,11 +5614,11 @@ async function loadUrl(url, meta){
               clearTimeout(loadTimeout);
               urlLoadingSpinner.style.display = 'none';
               urlLoadBtn.disabled = false;
-              let errorMessage = ' Ссылка может быть недоступной или неправильной';
+              let errorMessage = 'Ссылка недоступна или неправильная';
               if (data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR) {
-                errorMessage = ' Манифест повреждён или имеет неправильный формат.';
+                errorMessage = 'Манифест повреждён или имеет неправильный формат';
               } else if (data.details === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR) {
-                errorMessage = ' Видео использует неподдерживаемые кодеки.';
+                errorMessage = 'Видео использует неподдерживаемые кодеки';
               }
               showPlaybackError(errorMessage);
               hlsInstance.destroy();
