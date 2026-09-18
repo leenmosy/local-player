@@ -3767,7 +3767,6 @@ function makePanelToggler(){
 const toggleDrPanel = makePanelToggler();
 const togglePlaylistPanel = makePanelToggler();
 
-// Не показываем подсказку «Следующая серия», пока открыты настройки, субтитры или плейлист
 // --- Шпаргалка по клавишам ---
 const hotkeysHelp = document.getElementById('hotkeys-help');
 const hotkeysBtn = document.getElementById('hotkeys-btn');
@@ -3790,6 +3789,7 @@ hotkeysBtn.addEventListener('click', () => setHotkeysHelpOpen(!hotkeysHelp.class
 // Клик по затемнению закрывает, клик по карточке нет
 hotkeysHelp.addEventListener('click', e => { if (e.target === hotkeysHelp) setHotkeysHelpOpen(false); });
 
+// Не показываем подсказку «Следующая серия», пока открыты настройки, плейлист или шпаргалка
 function anyPanelOpen(){
   return drPanel.classList.contains('open') || playlistPanel.classList.contains('open') || hotkeysHelp.classList.contains('show');
 }
