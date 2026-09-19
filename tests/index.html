@@ -3883,10 +3883,10 @@ async function runAll(){
   }));
 
   suite('шпаргалка по клавишам');
-  await test('кнопка открывает, Esc и клик по затемнению закрывают, клик по карточке нет, панели при этом закрыты', нужноВидео(async () => {
+  await test('кнопка открывает, Esc и клик по видео закрывают, клик по карточке нет, панели при этом закрыты, стоит в углу как настройки', нужноВидео(async () => {
     const help = $('hotkeys-help');
     $('dr-btn').click(); await sleep(300);
-    $('hotkeys-btn').click(); await sleep(300);
+    $('hotkeys-btn').click(); await sleep(400);
     assert(help.classList.contains('show'), 'шпаргалка не открылась по кнопке');
     assertEq(help.getAttribute('aria-hidden'), 'false', 'aria-hidden при открытии');
     assertEq($('dr-panel').classList.contains('open'), false, 'панель настроек осталась открытой под шпаргалкой');
@@ -3894,24 +3894,68 @@ async function runAll(){
     D.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
     await sleep(300);
     assert(!help.classList.contains('show'), 'Esc не закрыл шпаргалку');
-    $('hotkeys-btn').click(); await sleep(300);
+    $('hotkeys-btn').click(); await sleep(400);
     assert(help.classList.contains('show'), 'кнопка не открыла шпаргалку повторно');
     D.querySelector('.hotkeys-card').click(); await sleep(200);
     assert(help.classList.contains('show'), 'клик по карточке закрыл шпаргалку');
-    help.click(); await sleep(300);
-    assert(!help.classList.contains('show'), 'клик по затемнению не закрыл');
+    // Шпаргалка стоит там же, где панель настроек: у правого края сцены над панелью управления, и не закрывает видео целиком
+    const hr = help.getBoundingClientRect(), st = $('stage').getBoundingClientRect(), cb = $('controls-bar').getBoundingClientRect();
+    assert(Math.abs(st.right - hr.right - 12) < 2, 'шпаргалка не у правого края: отступ ' + (st.right - hr.right).toFixed(0));
+    assert(hr.bottom <= cb.bottom - 50, 'шпаргалка легла на панель управления');
+    assert(hr.width < st.width * 0.7, 'шпаргалка закрывает почти всю сцену: ' + hr.width.toFixed(0) + ' из ' + st.width.toFixed(0));
+    $('click-catcher').click(); await sleep(300);
+    assert(!help.classList.contains('show'), 'клик по видео не закрыл');
+    assertEq(video().paused, true, 'клик по видео закрыл шпаргалку и заодно снял паузу');
+    // Клик вообще вне плеера, по пустому месту страницы, закрывает так же, как настройки
+    $('hotkeys-btn').click(); await sleep(400);
+    assert(help.classList.contains('show'), 'подготовка: не открылась');
+    D.body.click(); await sleep(300);
+    assert(!help.classList.contains('show'), 'клик по пустому месту страницы не закрыл шпаргалку');
+    $('dr-btn').click(); await sleep(300);
+    D.body.click(); await sleep(300);
+    assertEq($('dr-panel').classList.contains('open'), false, 'у настроек клик мимо тоже должен закрывать, иначе сравнивать не с чем');
   }));
-  await test('крестик закрывает шпаргалку, выход из полного экрана тоже закрывает её', нужноВидео(async () => {
+  await test('настройки, список серий и шпаргалка: открытие любой закрывает две другие', нуженСериал(async () => {
+    await openSeries('series.json', 4);
+    const open = () => ({ dr: $('dr-panel').classList.contains('open'), pl: $('playlist-panel').classList.contains('open'), hk: $('hotkeys-help').classList.contains('show') });
+    $('hotkeys-btn').click(); await sleep(350);
+    assertEq(JSON.stringify(open()), JSON.stringify({ dr: false, pl: false, hk: true }), 'после шпаргалки');
+    $('dr-btn').click(); await sleep(350);
+    assertEq(JSON.stringify(open()), JSON.stringify({ dr: true, pl: false, hk: false }), 'настройки не закрыли шпаргалку');
+    $('hotkeys-btn').click(); await sleep(350);
+    assertEq(JSON.stringify(open()), JSON.stringify({ dr: false, pl: false, hk: true }), 'шпаргалка не закрыла настройки');
+    $('playlist-btn').click(); await sleep(350);
+    assertEq(JSON.stringify(open()), JSON.stringify({ dr: false, pl: true, hk: false }), 'список серий не закрыл шпаргалку');
+    $('hotkeys-btn').click(); await sleep(350);
+    assertEq(JSON.stringify(open()), JSON.stringify({ dr: false, pl: false, hk: true }), 'шпаргалка не закрыла список серий');
+    $('dr-btn').click(); await sleep(350);
+    $('playlist-btn').click(); await sleep(350);
+    assertEq(JSON.stringify(open()), JSON.stringify({ dr: false, pl: true, hk: false }), 'список серий не закрыл настройки');
+    W.setPlaylistPanelOpen(false);
+  }));
+  await test('быстрые повторные клики по кнопке не дёргают шпаргалку, пока идёт анимация, как у настроек', нужноВидео(async () => {
     const help = $('hotkeys-help');
-    $('hotkeys-btn').click(); await sleep(300);
+    $('hotkeys-btn').click(); $('hotkeys-btn').click(); $('hotkeys-btn').click();
+    await sleep(100);
+    assert(help.classList.contains('show'), 'три быстрых клика закрыли шпаргалку посреди анимации');
+    await sleep(400);
+    $('dr-btn').click(); $('dr-btn').click(); $('dr-btn').click();
+    await sleep(100);
+    assert($('dr-panel').classList.contains('open'), 'у настроек защита от быстрых кликов пропала');
+    await sleep(400);
+    $('dr-btn').click(); await sleep(400);
+  }));
+  await test('кнопка закрывает шпаргалку повторным нажатием, выход из полного экрана тоже закрывает её', нужноВидео(async () => {
+    const help = $('hotkeys-help');
+    $('hotkeys-btn').click(); await sleep(400);
     assert(help.classList.contains('show'), 'подготовка: шпаргалка не открылась');
-    $('hotkeys-close').click(); await sleep(300);
-    assert(!help.classList.contains('show'), 'крестик не закрыл шпаргалку');
+    $('hotkeys-btn').click(); await sleep(400);
+    assert(!help.classList.contains('show'), 'повторное нажатие кнопки не закрыло шпаргалку');
     const fs = installFullscreenStub();
     try {
       pressF(); await sleep(150);
       assertEq(D.fullscreenElement, $('stage'), 'подготовка: полный экран не включился');
-      $('hotkeys-btn').click(); await sleep(300);
+      $('hotkeys-btn').click(); await sleep(400);
       assert(help.classList.contains('show'), 'шпаргалка не открылась в полном экране');
       // Esc в полном экране браузер забирает себе: страница видит только выход из полного экрана
       D.exitFullscreen(); await sleep(150);
@@ -3923,7 +3967,7 @@ async function runAll(){
     await switchTo(0);
     const p = await probeOverlays(1);
     assertEq(p.skip, 'Пропустить заставку', 'подготовка: кнопки пропуска нет');
-    $('hotkeys-btn').click(); await sleep(300);
+    $('hotkeys-btn').click(); await sleep(400);
     assertEq($('skip-segment-overlay').classList.contains('show'), false, 'кнопка пропуска видна под шпаргалкой');
     $('hotkeys-btn').click(); await sleep(400);
     assertEq($('skip-segment-overlay').classList.contains('show'), true, 'после закрытия шпаргалки кнопка пропуска не вернулась');

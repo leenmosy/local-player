@@ -3837,10 +3837,11 @@ function setHotkeysHelpOpen(open){
     refreshQuickActions();
   }
 }
-hotkeysBtn.addEventListener('click', () => setHotkeysHelpOpen(!hotkeysHelp.classList.contains('show')));
-document.getElementById('hotkeys-close').addEventListener('click', () => setHotkeysHelpOpen(false));
-// Клик по затемнению закрывает, клик по карточке нет
-hotkeysHelp.addEventListener('click', e => { if (e.target === hotkeysHelp) setHotkeysHelpOpen(false); });
+const toggleHotkeysHelp = makePanelToggler();
+hotkeysBtn.addEventListener('click', () => {
+  toggleHotkeysHelp(setHotkeysHelpOpen, hotkeysHelp.classList.contains('show'));
+});
+// Клик по видео закрывает шпаргалку, как и остальные панели
 
 // Не показываем подсказку «Следующая серия», пока открыты настройки, плейлист или шпаргалка
 function anyPanelOpen(){
@@ -3861,6 +3862,7 @@ function setDrPanelOpen(open){
       collapseCategoriesIn(drPanel);
     }
     setPlaylistPanelOpen(false);
+    setHotkeysHelpOpen(false);
     hideNextEpisodeOverlay();
     hideSkipSegmentOverlay();
   } else if (wasOpen) {
@@ -3881,6 +3883,7 @@ function setPlaylistPanelOpen(open){
 
   if (open) {
     setDrPanelOpen(false);
+    setHotkeysHelpOpen(false);
     hideNextEpisodeOverlay();
     hideSkipSegmentOverlay();
     // В длинном сезоне текущая серия должна быть на виду, а не где-то ниже прокрутки
@@ -4374,6 +4377,10 @@ clickCatcher.addEventListener('click', () => {
     setDrPanelOpen(false);
     return;
   }
+  if (hotkeysHelp.classList.contains('show')){
+    setHotkeysHelpOpen(false);
+    return;
+  }
   if (playlistPanel.classList.contains('open')){
     setPlaylistPanelOpen(false);
     return;
@@ -4395,6 +4402,12 @@ document.addEventListener('click', (e) => {
       setPlaylistPanelOpen(false);
     }
   }
+  // Закрытие шпаргалки по клавишам, те же правила, что у настроек
+  if (hotkeysHelp.classList.contains('show')) {
+    if (!hotkeysHelp.contains(e.target) && !hotkeysBtn.contains(e.target)) {
+      setHotkeysHelpOpen(false);
+    }
+  }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -4403,6 +4416,9 @@ document.addEventListener('keydown', (e) => {
     }
     if (playlistPanel.classList.contains('open')) {
       setPlaylistPanelOpen(false);
+    }
+    if (hotkeysHelp.classList.contains('show')) {
+      setHotkeysHelpOpen(false);
     }
   }
 });
@@ -5051,7 +5067,6 @@ document.addEventListener('keydown', (e) => {
   if (isEditingTitle) return; // Блокируем хоткеи при редактировании названия
   // Сочетания с Ctrl, Alt и Win принадлежат браузеру: Ctrl+F это поиск, Alt+Left это назад, а не перемотка
   if (e.ctrlKey || e.altKey || e.metaKey) return;
-  if (e.key === 'Escape' && hotkeysHelp.classList.contains('show')){ e.preventDefault(); setHotkeysHelpOpen(false); return; }
   const code = hotkeyCode(e);
   // Переключатели не должны дребезжать при зажатой клавише, перемотка и громкость при автоповторе как раз удобны
   const isToggle = code === 'Space' || code === 'KeyK' || code === 'KeyF' || code === 'KeyM';
