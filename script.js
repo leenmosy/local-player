@@ -124,6 +124,10 @@ const presetButtons = document.querySelectorAll('.preset-btn');
 
 const OV_POS_MIN = 1.5;
 const OV_POS_MAX = 98.5;
+// Отступ оверлея от краёв кадра в крайних положениях. По вертикали меньше: у строки шрифта есть пустое поле над и под
+// буквами около 4px, и на глаз до самих букв выходит столько же, сколько до них сбоку
+const OV_INSET_X = 12;
+const OV_INSET_Y = 12;
 
 const OV_DEFAULT_SIZE = 17;
 const OV_DEFAULT_COLOR = '#ffffff';
@@ -318,9 +322,13 @@ function applyOverlaySettings(){
   ovTitle.style.textShadow = shadow;
   ovTime.style.textShadow = shadow;
 
-  overlayEl.style.left = ovPosX + '%';
-  overlayEl.style.top = ovPosY + '%';
-  overlayEl.style.transform = `translate(${-ovPosX}%, ${-ovPosY}%)`;
+  // Проценты пада переводятся в положение внутри кадра с одинаковым отступом в пикселях от краёв:
+  // 1.5% ширины и 1.5% высоты это разные расстояния, и в углу оверлей стоял к боковому краю дальше, чем к верхнему
+  const tx = (ovPosX - OV_POS_MIN) / (OV_POS_MAX - OV_POS_MIN);
+  const ty = (ovPosY - OV_POS_MIN) / (OV_POS_MAX - OV_POS_MIN);
+  overlayEl.style.left = `calc(${OV_INSET_X}px + (100% - ${2 * OV_INSET_X}px) * ${tx.toFixed(4)})`;
+  overlayEl.style.top = `calc(${OV_INSET_Y}px + (100% - ${2 * OV_INSET_Y}px) * ${ty.toFixed(4)})`;
+  overlayEl.style.transform = `translate(${(-tx * 100).toFixed(2)}%, ${(-ty * 100).toFixed(2)}%)`;
   overlayEl.style.alignItems = ovAlign === 'left' ? 'flex-start' : (ovAlign === 'right' ? 'flex-end' : 'center');
   overlayEl.style.background = hexToRgba('#000000', ovBgOpacity.value / 100);
 
@@ -1011,7 +1019,8 @@ function startEditingRange(idx, item, rangeText) {
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'timing-add-btn';
-  saveBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+  // Галочка той же толщины и в том же квадрате, что плюс у строки добавления, чтобы сидела по центру кнопки
+  saveBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>`;
   
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
@@ -1795,6 +1804,13 @@ function loadSettings(){
   }
 }
 
+// Позиция в первых секундах не считается просмотром: её не восстанавливаем, не показываем карточкой и не считаем серию начатой
+function isProgressStarted(t, duration){
+  if (typeof t !== 'number') return false;
+  const minT = typeof duration === 'number' && duration > 0 ? Math.min(3, duration * 0.1) : 0;
+  return t > minT;
+}
+
 function restoreProgress(){
   if (!currentFileKey) return;
   try{
@@ -1810,11 +1826,10 @@ function restoreProgress(){
       return;
     }
 
-    // Адаптивные пороги для коротких видео
-    const minThreshold = Math.min(3, video.duration * 0.1); // максимум 3 сек или 10% от длительности
-    const maxThreshold = Math.min(5, video.duration * 0.2); // максимум 5 сек или 20% от длительности
-    
-    if (data && data.t > minThreshold && data.t < video.duration - maxThreshold){
+    // Адаптивный порог конца для коротких видео: максимум 5 сек или 20% от длительности
+    const maxThreshold = Math.min(5, video.duration * 0.2);
+
+    if (data && isProgressStarted(data.t, video.duration) && data.t < video.duration - maxThreshold){
       video.currentTime = data.t;
       // Сразу применяем блюр после восстановления времени
       updateVideoFilter();
@@ -1894,11 +1909,7 @@ function renderResumeList(){
     if (!key || !key.startsWith(PROGRESS_PREFIX)) continue;
     try{
       const data = JSON.parse(localStorage.getItem(key));
-      if (data && typeof data.t === 'number' && !data.completed){
-        // Позицию в первых секундах плеер всё равно не восстановит, карточка «продолжить с 00:00» только мешает
-        const minT = typeof data.duration === 'number' && data.duration > 0 ? Math.min(3, data.duration * 0.1) : 0;
-        if (data.t > minT) items.push(Object.assign({ key }, data));
-      }
+      if (data && !data.completed && isProgressStarted(data.t, data.duration)) items.push(Object.assign({ key }, data));
     } catch(e){ /* пропускаем битую запись */ }
   }
   // Показываем три самые свежие незавершённые записи
@@ -3225,9 +3236,10 @@ function findLastWatchedIndex(files, folderId){
       if (!data && firstUntouched === -1) firstUntouched = idx;
       return;
     }
-    if (firstUntouched === -1 && !(typeof data.t === 'number' && data.t > 0)) firstUntouched = idx;
+    const started = isProgressStarted(data.t, data.duration);
+    if (firstUntouched === -1 && !started) firstUntouched = idx;
     const ts = typeof data.ts === 'number' ? data.ts : 0;
-    if (typeof data.t === 'number' && data.t > 0 && ts > startedTs){ startedTs = ts; startedIdx = idx; }
+    if (started && ts > startedTs){ startedTs = ts; startedIdx = idx; }
   });
   if (startedIdx > -1) return startedIdx;
   if (firstUntouched > -1) return firstUntouched;

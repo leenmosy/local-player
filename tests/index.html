@@ -167,7 +167,8 @@ const GROUPS = [
 ];
 // Эти наборы идут всегда: без них остальным нечего проверять, и итог считает JS-ошибки прогона
 const ALWAYS_SUITES = ['окружение', 'загрузка', 'итог'];
-const SELECT_KEY = 'lp_tests_selected';
+// Ключ без приставки lp_: тесты чистят все lp_-ключи плеера, а стенд живёт на том же origin
+const SELECT_KEY = 'player_tests_selected';
 
 const out = document.getElementById('out');
 const summaryEl = document.getElementById('summary');
@@ -926,6 +927,15 @@ async function runAll(){
     await waitFor(() => video().readyState >= 3, 30000);
     await holdPaused();
     assertEq(plActive(), 0, 'открылась последняя просмотренная серия вместо нажатой');
+  }));
+  await test('запись в первых секундах не делает серию начатой: сериал открывается с первой', нуженСериал(async () => {
+    // Такая запись остаётся после автоперехода, когда следующую серию закрыли почти сразу
+    W.localStorage.setItem('lp_progress:url:' + seriesUrl('ep3.mp4'), JSON.stringify({ t: 1.2, completed: false, duration: 20, ts: Date.now(), name: 'ep3.mp4', displayName: 'Третья серия', source: 'url', url: seriesUrl('ep3.mp4') }));
+    // Список на главной перерисовывается только при возврате из плеера, для проверки зовём перерисовку сами
+    W.renderResumeList();
+    assertEq(D.querySelectorAll('#resume-list .resume-item').length, 0, 'на главной появилась карточка на первой секунде');
+    await openSeries('series.json', 4);
+    assertEq(plActive(), 0, 'открылась серия с записью на первой секунде');
   }));
   await test('удаление карточки не убирает серию из плейлиста', нуженСериал(async () => {
     await openSeries('series.json', 4);
@@ -1867,10 +1877,18 @@ async function runAll(){
     for (const [name, align] of [['top-left', 'flex-start'], ['top-right', 'flex-end'], ['bottom-left', 'flex-start'], ['bottom-right', 'flex-end']]){
       preset(name); await sleep(250);
       assertInsideStage(name);
+      // От самих букв до края кадра одинаковое расстояние по горизонтали и по вертикали.
+      // Строка шрифта выше букв, поэтому вертикальный зазор считаем до чернил: поле строки над буквами берём из метрик шрифта
+      const tt = $('ov-title').getBoundingClientRect(), tm = $('ov-time').getBoundingClientRect(), st0 = stageRect();
+      const ink = el => { const cs = W.getComputedStyle(el); const c = D.createElement('canvas').getContext('2d'); c.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily; const m = c.measureText('Л0'); const r = el.getBoundingClientRect(); return (r.height - (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent)) / 2; };
+      const gx = /left/.test(name) ? tt.left - st0.left : st0.right - tt.right;
+      const gy = /top/.test(name) ? tt.top - st0.top + ink($('ov-title')) : st0.bottom - tm.bottom + ink($('ov-time'));
+      assertClose(gx, gy, 2.5, name + ': отступы от краёв разные, по горизонтали ' + gx.toFixed(1) + ', по вертикали до букв ' + gy.toFixed(1));
       assertEq(ovEl().style.alignItems, align, name + ': выравнивание');
       const o = ovRect(), st = stageRect();
-      if (/left/.test(name)) assert(o.left - st.left < st.width * 0.06, name + ': не у левого края'); else assert(st.right - o.right < st.width * 0.06, name + ': не у правого края');
-      if (/top/.test(name)) assert(o.top - st.top < st.height * 0.06, name + ': не у верхнего края'); else assert(st.bottom - o.bottom < st.height * 0.06, name + ': не у нижнего края');
+      // Отступ от края теперь фиксированный в пикселях, одинаковый по обеим осям, а не процент от кадра
+      if (/left/.test(name)) assert(o.left - st.left <= 13, name + ': не у левого края: ' + (o.left - st.left).toFixed(1)); else assert(st.right - o.right <= 13, name + ': не у правого края: ' + (st.right - o.right).toFixed(1));
+      if (/top/.test(name)) assert(o.top - st.top <= 17, name + ': не у верхнего края: ' + (o.top - st.top).toFixed(1)); else assert(st.bottom - o.bottom <= 17, name + ': не у нижнего края: ' + (st.bottom - o.bottom).toFixed(1));
     }
   }));
   await test('стрелки на паде двигают оверлей и упираются в границы, не вылезая за сцену', нужноВидео(async () => {
