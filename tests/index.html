@@ -2491,11 +2491,14 @@ async function runAll(){
   await test('blur.txt рядом с плейлистом задаёт тайминги: заметки, битые и пересекающиеся строки не мешают', нуженBlurTxt(async () => {
     await openBlurTxtStream();
     await waitFor(() => blurRanges().length > 0, 5000);
-    // В файле: 0:03-0:05 пересекается с 0:02-0:04, 0:09-0:06 задом наперёд, строка без времени и «x:y» пропускаются
-    assertEq(rangesText(), '2-4 7-8', 'тайминги из файла разобраны не так');
-    assertEq(D.querySelectorAll('#timing-list .timing-item').length, 2, 'панель не показала тайминги из файла');
+    // В файле: 0:03-0:05 пересекается с 0:02-0:04, 0:09-0:06 задом наперёд, строка без времени и «x:y» пропускаются.
+    // Ролик идёт 20 с: 0:15-0:40 обрезается до конца, 0:30-0:35 целиком за концом и выбрасывается
+    await waitFor(() => rangesText() === '2-4 7-8 15-20', 5000).catch(() => {});
+    assertEq(rangesText(), '2-4 7-8 15-20', 'тайминги из файла разобраны не так');
+    assertEq(D.querySelectorAll('#timing-list .timing-item').length, 3, 'панель не показала тайминги из файла');
     await seekTo(3); assert(blurAt(), 'блюр из файла не работает');
     await seekTo(6); assert(!blurAt(), 'блюр вне интервала из файла');
+    await seekTo(19); assert(blurAt(), 'обрезанный интервал не блюрит до конца ролика');
   }));
   await test('свои тайминги важнее blur.txt: файл не перекрывает локальные и не возвращает удалённые', нуженBlurTxt(async () => {
     await openBlurTxtStream();

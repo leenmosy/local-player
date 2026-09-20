@@ -771,6 +771,7 @@ function createSegmentedGroup(onEnter = null){
 
 let blurRanges = []; // [{ from: сек, to: сек }, ...], отсортировано по from
 let blurFileApplied = false; // тайминги из blur.txt уже брались для этой ссылки, второй раз файл не читаем
+let blurFileClampPending = false; // интервалы из blur.txt ещё не подогнаны под длительность
 let currentEditingItem = null; // текущий редактируемый элемент
 let isEditing = false; // флаг для предотвращения одновременного редактирования
 
@@ -1660,6 +1661,7 @@ function loadSettings(){
 
     blurRanges = settings.blurRanges;
     blurFileApplied = settings.blurFileApplied === true;
+    blurFileClampPending = false;
     renderBlurRanges();
     updateVideoFilter();
     
@@ -2290,6 +2292,7 @@ function applyDefaultSettingsForNewSource(){
   // Если нет настроек, сбрасываем настройки до дефолтных
   blurRanges = []; // чистим первыми, иначе resetBrightness() размоет новый файл по старым
   blurFileApplied = false;
+  blurFileClampPending = false;
   renderBlurRanges();
   resetSpeed();
   resetBrightness();
@@ -6013,10 +6016,29 @@ async function autoLoadHlsBlurRanges(){
   if (keyAtStart !== currentFileKey || blurRanges.length || !ranges.length) return;
   blurRanges = ranges;
   blurFileApplied = true;
+  blurFileClampPending = true;
+  clampBlurFileRanges();
   renderBlurRanges();
   updateVideoFilter();
   saveSettings();
 }
+
+// Файл читается раньше, чем известна длительность, поэтому подгоняем его интервалы, как только она появится:
+// начавшийся до конца фильма блюрит до самого конца, целиком за концом выбрасывается
+function clampBlurFileRanges(){
+  if (!blurFileClampPending || !isDurationUsable()) return;
+  blurFileClampPending = false;
+  const dur = video.duration;
+  const clamped = blurRanges
+    .filter(r => r.from < dur)
+    .map(r => ({ from: r.from, to: Math.min(r.to, dur) }));
+  if (clamped.length === blurRanges.length && clamped.every((r, i) => r.to === blurRanges[i].to)) return;
+  blurRanges = clamped;
+  renderBlurRanges();
+  updateVideoFilter();
+  saveSettings();
+}
+video.addEventListener('durationchange', clampBlurFileRanges);
 
 // Разбор blur.txt: в строке ищем времена вида м:сс или ч:мм:сс парами, ведущие нули не обязательны, остальной текст это заметка.
 // Строки без пары времён пропускаем, интервалы задом наперёд и пересекающиеся отбрасываем
