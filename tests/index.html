@@ -405,7 +405,7 @@ async function preflight(){
 // Фикстуры сериалов лежат в tests/fixtures/series, без них набор про сериалы пропускается целиком
 async function seriesFixtures(){
   const есть = {};
-  for (const f of ['series.json', 'series-hls.json', 'hls1/chapters.vtt', 'show/series.json']){
+  for (const f of ['series.json', 'series-hls.json', 'hls1/chapters.vtt', 'show/series.json', 'hls-blur/blur.txt']){
     try {
       const r = await fetch(new URL('fixtures/series/' + f, location.href).href);
       есть[f] = r.ok;
@@ -2479,6 +2479,48 @@ async function runAll(){
     await clearRanges();
   }
 
+  const нуженBlurTxt = fn => async () => (клипГотов && фикстуры['hls-blur/blur.txt']) ? fn() : 'skip';
+  async function openBlurTxtStream(){
+    await backToStart();
+    pasteUrl(seriesUrl('hls-blur/index.m3u8'));
+    await waitFor(() => playerOpen() && video().readyState >= 3, 30000);
+    await holdPaused();
+  }
+  const rangesText = () => blurRanges().map(r => r.from + '-' + r.to).join(' ');
+
+  await test('blur.txt рядом с плейлистом задаёт тайминги: заметки, битые и пересекающиеся строки не мешают', нуженBlurTxt(async () => {
+    await openBlurTxtStream();
+    await waitFor(() => blurRanges().length > 0, 5000);
+    // В файле: 0:03-0:05 пересекается с 0:02-0:04, 0:09-0:06 задом наперёд, строка без времени и «x:y» пропускаются
+    assertEq(rangesText(), '2-4 7-8', 'тайминги из файла разобраны не так');
+    assertEq(D.querySelectorAll('#timing-list .timing-item').length, 2, 'панель не показала тайминги из файла');
+    await seekTo(3); assert(blurAt(), 'блюр из файла не работает');
+    await seekTo(6); assert(!blurAt(), 'блюр вне интервала из файла');
+  }));
+  await test('свои тайминги важнее blur.txt: файл не перекрывает локальные и не возвращает удалённые', нуженBlurTxt(async () => {
+    await openBlurTxtStream();
+    await waitFor(() => blurRanges().length > 0, 5000);
+    await clearRanges();
+    addRange('00','00','10','00','00','12'); await sleep(250);
+    await backToStart();
+    await openBlurTxtStream();
+    await sleep(1500);
+    assertEq(rangesText(), '10-12', 'файл перекрыл локальные тайминги');
+    // Удалили всё: при следующем открытии файл не должен вернуть тайминги
+    await clearRanges();
+    await sleep(300);
+    await backToStart();
+    await openBlurTxtStream();
+    await sleep(1500);
+    assertEq(rangesText(), '', 'файл вернул удалённые тайминги');
+  }));
+  await test('blur.txt ищется только у HLS, для mp4 запроса нет', нуженBlurTxt(async () => {
+    const before = W.performance.getEntriesByType('resource').filter(e => /blur\.txt/.test(e.name)).length;
+    await openClip(clipA);
+    await sleep(1000);
+    const after = W.performance.getEntriesByType('resource').filter(e => /blur\.txt/.test(e.name)).length;
+    assertEq(after, before, 'плеер искал blur.txt для обычного файла');
+  }));
   await test('границы диапазона на потоке: включается на начале, держится секунду после конца', нуженHls(async () => {
     await openHlsEpisode(0);
     addRange('00','00','10','00','00','12'); await sleep(250);
