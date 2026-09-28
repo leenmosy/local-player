@@ -712,7 +712,7 @@ async function runAll(){
   await test('настройки и диапазоны переживают перезагрузку', нужноВидео(async () => {
     await clearRanges();
     setVal('dr-strength', 45); setVal('dr-brightness', 115); setVal('dr-zoom', 130);
-    setVal('subs-size', 28);
+    setVal('subs-size', 5.5);
     addRange('00','00','06','00','00','09');
     await sleep(1200);
 
@@ -730,7 +730,7 @@ async function runAll(){
     assertEq($('dr-strength').value, '45', 'компрессор');
     assertEq($('dr-brightness').value, '115', 'яркость');
     assertEq($('dr-zoom').value, '130', 'зум');
-    assertEq($('subs-size').value, '28', 'размер субтитров');
+    assertEq($('subs-size').value, '5.5', 'размер субтитров');
     assertEq(rangeCount(), 1, 'диапазон блюра не восстановлен');
     await seekTo(7.5);
     assert(hasBlur(), 'блюр не работает после восстановления');
@@ -1161,7 +1161,7 @@ async function runAll(){
     await openClip(clipA);
     setVal('dr-speed', 1.5); setVal('dr-brightness', 150); setVal('dr-zoom', 150); setVal('dr-strength', 20); setVal('dr-boost', 300);
     setCheck('dr-toggle', false); setCheck('mirror-toggle', true);
-    setVal('ov-size', 12); setVal('subs-size', 29);
+    setVal('ov-size', 12); setVal('subs-size', 5.75);
     await renameTo('ИСТОЧНИК А');
     await sleep(400);
     await openClip(clipB);
@@ -1170,7 +1170,7 @@ async function runAll(){
     assertEq(b.brightness, '100', 'яркость протекла'); assertEq(b.zoom, '100', 'зум протёк');
     assertEq(b.strength, '50', 'сила компрессора протекла'); assertEq(b.boost, '100', 'буст протёк');
     assertEq(b.dr, true, 'галочка компрессора протекла'); assertEq(b.mirror, false, 'зеркало протекло');
-    assertEq(b.ovSize, '17', 'размер оверлея протёк'); assertEq(b.subsSize, '25', 'размер субтитров протёк');
+    assertEq(b.ovSize, '17', 'размер оверлея протёк'); assertEq(b.subsSize, '5', 'размер субтитров протёк');
     assertEq(b.title, 'ep2', 'название протекло');
     assert(!/^matrix\(-1,/.test(W.getComputedStyle(video()).transform), 'видео у второго источника отзеркалено: ' + W.getComputedStyle(video()).transform);
     // Возврат к первому источнику возвращает всё, что было выставлено
@@ -1180,7 +1180,7 @@ async function runAll(){
     assertEq(a.brightness, '150', 'яркость'); assertEq(a.zoom, '150', 'зум');
     assertEq(a.strength, '20', 'сила компрессора'); assertEq(a.boost, '300', 'буст');
     assertEq(a.dr, false, 'галочка компрессора'); assertEq(a.mirror, true, 'зеркало');
-    assertEq(a.ovSize, '12', 'размер оверлея'); assertEq(a.subsSize, '29', 'размер субтитров');
+    assertEq(a.ovSize, '12', 'размер оверлея'); assertEq(a.subsSize, '5.75', 'размер субтитров');
     assertEq(a.title, 'ИСТОЧНИК А', 'название');
     assertEq($('ov-title').textContent, 'ИСТОЧНИК А', 'оверлей');
     setCheck('mirror-toggle', false); setVal('dr-speed', 1); await sleep(400);
@@ -2047,16 +2047,21 @@ async function runAll(){
     loadSubs('1\n00:00:05,000 --> 00:00:09,000\nСТИЛЬ\n', 'style.srt');
     await sleep(700); await seekTo(7);
     assertEq(subText(), 'СТИЛЬ');
-    setVal('subs-size', 30); await sleep(200);
+    // Размер задаётся в процентах от высоты кадра, ждём ровно столько пикселей, но не меньше нижнего предела в 10
+    const кадр = () => { const v = video(); const b = v.getBoundingClientRect(); return Math.min(b.height, b.width * v.videoHeight / v.videoWidth); };
     const span = $('subtitles').querySelector('span');
-    assert(span && parseFloat(W.getComputedStyle(span).fontSize) >= 29, 'размер не применился: ' + (span && W.getComputedStyle(span).fontSize));
+    for (const pct of [3, 6]){
+      setVal('subs-size', pct); await sleep(200);
+      const ждём = Math.max(10, Math.round(кадр() * pct / 100));
+      assertClose(parseFloat(W.getComputedStyle(span).fontSize), ждём, 1, 'размер при ' + pct + '%');
+    }
     const box = $('subs-toggle'); box.checked = false; box.dispatchEvent(new W.Event('change', { bubbles: true })); await sleep(300);
     assertEq(W.getComputedStyle($('subtitles')).display, 'none', 'выключатель не спрятал субтитры');
     box.checked = true; box.dispatchEvent(new W.Event('change', { bubbles: true })); await sleep(300);
     await seekTo(7.5);
     assertEq(W.getComputedStyle($('subtitles')).display, 'block', 'выключатель не вернул субтитры');
     assertEq(subText(), 'СТИЛЬ', 'реплика пропала после возврата');
-    setVal('subs-size', 25);
+    setVal('subs-size', 5);
   }));
   await test('ручные субтитры переживают выход и повторное открытие', нужноВидео(async () => {
     loadSubs('1\n00:00:05,000 --> 00:00:09,000\nСОХРАНЁННЫЕ\n', 'keep.srt');

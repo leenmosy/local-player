@@ -300,6 +300,10 @@ function hexToRgba(hex, alpha){
 }
 
 
+// Размер и отступ субтитров заданы в процентах от высоты кадра, поэтому в окне и в полном экране текст выглядит одинаково
+const SUBS_SIZE_DEFAULT = 5;
+const SUBS_POSITION_DEFAULT = 4.25;
+
 // Собирает CSS text-shadow из значения 0..100 в мягкую тень
 function textShadowFromPercent(pct){
   const f = Math.max(0, Math.min(100, parseFloat(pct) || 0)) / 100;
@@ -308,6 +312,16 @@ function textShadowFromPercent(pct){
   const blur = (1 + f * 5).toFixed(1);
   const spread = (f * 3).toFixed(1);
   return `0 0 ${blur}px rgba(0,0,0,${alpha}), 0 ${spread}px ${blur}px rgba(0,0,0,${alpha})`;
+}
+
+// Обводка и тень субтитров как в VLC, обе считаются от размера шрифта и потому выглядят одинаково на любом размере
+function subtitleTextShadow(fontSize){
+  const w = Math.max(1, Math.round(fontSize / 22));
+  const shadow = [[-w,-w],[0,-w],[w,-w],[w,0],[w,w],[0,w],[-w,w],[-w,0]]
+    .map(([x, y]) => `${x}px ${y}px 0 #000`);
+  const drop = Math.max(1, Math.round(fontSize / 20));
+  shadow.push(`${drop}px ${drop}px ${(drop * 1.5).toFixed(1)}px rgba(0,0,0,0.5)`);
+  return shadow.join(', ');
 }
 
 // Настройки сохраняются отдельно для каждого видео и не переносятся между файлами
@@ -453,11 +467,7 @@ function collectSettings(){
     titleInput: titleInput.value,
     subsToggle: subsToggle.checked,
     subsSize: parseFloat(subsSize.value),
-    subsColor: subsColor.value,
-    subsOpacity: parseFloat(subsOpacity.value),
     subsPosition: parseFloat(subsPosition.value),
-    subsBgOpacity: parseFloat(subsBgOpacity.value),
-    subsShadow: parseFloat(subsShadow.value),
     ts: Date.now()
   };
 }
@@ -1603,11 +1613,11 @@ function loadSettings(){
     settings.ovShadow = validateNumber(settings.ovShadow, 0, 100, OV_DEFAULT_SHADOW);
     
     // Валидация настроек субтитров
-    settings.subsSize = validateNumber(settings.subsSize, 20, 30, 25);
-    settings.subsOpacity = validateNumber(settings.subsOpacity, 0, 100, 100);
-    settings.subsPosition = validateNumber(settings.subsPosition, 0, 20, 5);
-    settings.subsBgOpacity = validateNumber(settings.subsBgOpacity, 0, 100, 85);
-    settings.subsShadow = validateNumber(settings.subsShadow, 0, 100, 50);
+    // Прежний размер хранился в пикселях, такие записи переводим на новый ползунок в процентах
+    if (typeof settings.subsSize === 'number' && settings.subsSize > 12) settings.subsSize = SUBS_SIZE_DEFAULT;
+    settings.subsSize = validateNumber(settings.subsSize, 3, 6, SUBS_SIZE_DEFAULT);
+    // Прежний отступ считался от всей области плеера, новый от кадра, значения совместимы по диапазону
+    settings.subsPosition = validateNumber(settings.subsPosition, 0, 20, SUBS_POSITION_DEFAULT);
     
     // Валидация позиций оверлея
     if (settings.ovPosX !== undefined) {
@@ -1620,11 +1630,6 @@ function loadSettings(){
     // Валидация цвета
     if (typeof settings.ovColor !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(settings.ovColor)) {
       settings.ovColor = OV_DEFAULT_COLOR;
-    }
-    
-    // Валидация цветов субтитров
-    if (typeof settings.subsColor !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(settings.subsColor)) {
-      settings.subsColor = '#fffef5';
     }
     
     // Валидация boolean значений
@@ -1706,21 +1711,11 @@ function loadSettings(){
     subsToggle.checked = settings.subsToggle !== undefined ? settings.subsToggle : true;
     subtitles.style.display = subsToggle.checked ? 'block' : 'none';
     
-    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : 25;
-    subsSizeVal.textContent = subsSize.value + 'px';
-    
-    subsColor.value = settings.subsColor !== undefined ? settings.subsColor : '#fffef5';
-    subsOpacity.value = settings.subsOpacity !== undefined ? settings.subsOpacity : 100;
-    subsOpacityVal.textContent = subsOpacity.value + '%';
+    subsSize.value = settings.subsSize !== undefined ? settings.subsSize : SUBS_SIZE_DEFAULT;
+    subsSizeVal.textContent = subsSize.value + '%';
 
-    subsPosition.value = settings.subsPosition !== undefined ? settings.subsPosition : 5;
+    subsPosition.value = settings.subsPosition !== undefined ? settings.subsPosition : SUBS_POSITION_DEFAULT;
     subsPositionVal.textContent = subsPosition.value + '%';
-
-    subsBgOpacity.value = settings.subsBgOpacity !== undefined ? settings.subsBgOpacity : 85;
-    subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
-
-    subsShadow.value = settings.subsShadow !== undefined ? settings.subsShadow : 50;
-    subsShadowVal.textContent = subsShadow.value + '%';
 
     applySubtitlesStyle();
     
@@ -2344,17 +2339,10 @@ function applyDefaultSettingsForNewSource(){
 
   subsToggle.checked = true;
   subtitles.style.display = 'block';
-  subsSize.value = 25;
-  subsSizeVal.textContent = '25px';
-  subsColor.value = '#fffef5';
-  subsOpacity.value = 100;
-  subsOpacityVal.textContent = '100%';
-  subsPosition.value = 5;
-  subsPositionVal.textContent = '5%';
-  subsBgOpacity.value = 85;
-  subsBgOpacityVal.textContent = '85%';
-  subsShadow.value = 50;
-  subsShadowVal.textContent = '50%';
+  subsSize.value = SUBS_SIZE_DEFAULT;
+  subsSizeVal.textContent = SUBS_SIZE_DEFAULT + '%';
+  subsPosition.value = SUBS_POSITION_DEFAULT;
+  subsPositionVal.textContent = SUBS_POSITION_DEFAULT + '%';
   applySubtitlesStyle();
 
   applyGlobalVolume();
@@ -3565,15 +3553,8 @@ const subsFile = document.getElementById('subs-file');
 const subsLoadBtn = document.getElementById('subs-load-btn');
 const subsSize = document.getElementById('subs-size');
 const subsSizeVal = document.getElementById('subs-size-val');
-const subsColor = document.getElementById('subs-color');
-const subsOpacity = document.getElementById('subs-opacity');
-const subsOpacityVal = document.getElementById('subs-opacity-val');
 const subsPosition = document.getElementById('subs-position');
 const subsPositionVal = document.getElementById('subs-position-val');
-const subsBgOpacity = document.getElementById('subs-bg-opacity');
-const subsBgOpacityVal = document.getElementById('subs-bg-opacity-val');
-const subsShadow = document.getElementById('subs-shadow');
-const subsShadowVal = document.getElementById('subs-shadow-val');
 const drToggle = document.getElementById('dr-toggle');
 const drStrength = document.getElementById('dr-strength');
 const drStrengthVal = document.getElementById('dr-strength-val');
@@ -4152,29 +4133,29 @@ function parseSubtitles(content, format) {
 }
 
 // --- Настройки субтитров ---
+// Кадр вписан в область плеера с чёрными полями, субтитры считаем от него, иначе на широком фильме текст уезжает в поле
+function subtitleFrame(){
+  const box = video.getBoundingClientRect();
+  let h = box.height;
+  if (video.videoWidth && video.videoHeight && box.width){
+    h = Math.min(h, box.width * video.videoHeight / video.videoWidth);
+  }
+  return { height: h, pad: Math.max(0, (box.height - h) / 2) };
+}
+
 function applySubtitlesStyle() {
-  const size = subsSize.value + 'px';
-  const color = hexToRgba(subsColor.value, subsOpacity.value / 100);
-  const bgColor = hexToRgba('#000000', subsBgOpacity.value / 100);
-
-  const textShadow = textShadowFromPercent(subsShadow.value);
-
+  const frame = subtitleFrame();
+  const fontSize = Math.max(10, Math.round(frame.height * parseFloat(subsSize.value) / 100));
+  let bottom = frame.pad + frame.height * parseFloat(subsPosition.value) / 100;
   const span = subtitles.querySelector('span');
   if (span) {
-    span.style.fontSize = size;
-    span.style.color = color;
-    span.style.background = bgColor;
-    span.style.textShadow = textShadow;
-
-    const textLines = span.innerHTML.split('<br>').length;
-    const fontSize = parseInt(subsSize.value);
-    const offset = Math.round(fontSize * 0.65);
-    const position = subsPosition.value + '%';
-
-    subtitles.style.bottom = textLines > 1 ? `calc(${position} - ${offset}px)` : position;
-  } else {
-    subtitles.style.bottom = subsPosition.value + '%';
+    span.style.fontSize = fontSize + 'px';
+    span.style.textShadow = subtitleTextShadow(fontSize);
+    // Реплика из нескольких строк опускается, чтобы стоять на том же месте, что и одиночная, а не прирастать вверх
+    const lines = span.innerHTML.split('<br>').length;
+    bottom -= Math.round(fontSize * 0.65) * (lines - 1);
   }
+  subtitles.style.bottom = Math.round(bottom) + 'px';
 }
 
 subsToggle.addEventListener('change', () => {
@@ -4183,36 +4164,13 @@ subsToggle.addEventListener('change', () => {
 });
 
 subsSize.addEventListener('input', () => {
-  subsSizeVal.textContent = subsSize.value + 'px';
-  applySubtitlesStyle();
-  saveSettings();
-});
-
-subsColor.addEventListener('input', () => {
-  applySubtitlesStyle();
-  saveSettings();
-});
-
-subsOpacity.addEventListener('input', () => {
-  subsOpacityVal.textContent = subsOpacity.value + '%';
+  subsSizeVal.textContent = subsSize.value + '%';
   applySubtitlesStyle();
   saveSettings();
 });
 
 subsPosition.addEventListener('input', () => {
   subsPositionVal.textContent = subsPosition.value + '%';
-  applySubtitlesStyle();
-  saveSettings();
-});
-
-subsBgOpacity.addEventListener('input', () => {
-  subsBgOpacityVal.textContent = subsBgOpacity.value + '%';
-  applySubtitlesStyle();
-  saveSettings();
-});
-
-subsShadow.addEventListener('input', () => {
-  subsShadowVal.textContent = subsShadow.value + '%';
   applySubtitlesStyle();
   saveSettings();
 });
@@ -5015,9 +4973,14 @@ fullscreenBtn.addEventListener('click', () => {
   }
 });
 
+// Размер субтитров считается от высоты кадра, поэтому пересчитываем его при любой смене размера окна и кадра
+window.addEventListener('resize', applySubtitlesStyle);
+video.addEventListener('loadedmetadata', applySubtitlesStyle);
+
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
   document.addEventListener(evt, () => {
     clearTimeout(fullscreenSafetyTimer);
+    applySubtitlesStyle();
     fullscreenPending = false;
     const isFs = !!getFullscreenElement();
     iconFsOpen.style.display = isFs ? 'none' : '';
