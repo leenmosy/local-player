@@ -2063,6 +2063,95 @@ async function runAll(){
     assertEq(subText(), 'СТИЛЬ', 'реплика пропала после возврата');
     setVal('subs-size', 5);
   }));
+  // Кадр вписан в видео с полями; субтитры считаются от кадра, а не от всей области плеера
+  const кадрСубтитров = () => {
+    const v = video(); const b = v.getBoundingClientRect();
+    const h = Math.min(b.height, b.width * v.videoHeight / v.videoWidth);
+    return { h, bottom: b.bottom - (b.height - h) / 2 };
+  };
+  const низСубтитров = () => $('subtitles').getBoundingClientRect().bottom;
+  const шрифтСубтитров = () => parseFloat(W.getComputedStyle($('subtitles').querySelector('span')).fontSize);
+
+  await test('субтитры по умолчанию: размер 5% кадра, отступ 4.25%, ползунки 3–6% с шагом 0.25', нужноВидео(async () => {
+    assertEq($('subs-size').value, '5', 'размер по умолчанию');
+    assertEq($('subs-position').value, '4.25', 'отступ по умолчанию');
+    assertEq([$('subs-size').min, $('subs-size').max, $('subs-size').step].join(' '), '3 6 0.25', 'пределы ползунка размера');
+    assertEq($('subs-position').step, '0.25', 'шаг ползунка отступа');
+    loadSubs('1\n00:00:05,000 --> 00:00:09,000\nПО УМОЛЧАНИЮ\n', 'def.srt');
+    await sleep(700); await seekTo(7);
+    assertClose(шрифтСубтитров(), Math.max(10, Math.round(кадрСубтитров().h * 0.05)), 1, 'шрифт по умолчанию не 5% кадра');
+  }));
+  await test('на широком кадре с полями сверху и снизу размер считается от кадра, а не от окна', нужноВидео(async () => {
+    loadSubs('1\n00:00:05,000 --> 00:00:09,000\nПОЛЯ\n', 'bars.srt');
+    await sleep(700);
+    // Окно стенда вытягиваем вверх: широкий кадр ляжет с полями сверху и снизу, как фильм 2.39:1 на мониторе 16:9
+    frame.style.height = '700px';
+    try {
+      await sleep(600); await seekTo(7);
+      const v = video(), b = v.getBoundingClientRect(), к = кадрСубтитров();
+      assert(b.height - к.h > 40, 'поля сверху и снизу не появились, проверка не имеет смысла: окно ' + Math.round(b.height) + ', кадр ' + Math.round(к.h));
+      setVal('subs-size', 6); await sleep(250);
+      assertClose(шрифтСубтитров(), Math.max(10, Math.round(к.h * 0.06)), 1, 'шрифт посчитан не от кадра (окно ' + Math.round(b.height) + ', кадр ' + Math.round(к.h) + ')');
+      setVal('subs-position', 10); await sleep(250);
+      assertClose(к.bottom - низСубтитров(), к.h * 0.10, 2, 'отступ посчитан не от нижнего края кадра');
+    } finally {
+      frame.style.height = '';
+      setVal('subs-size', 5); setVal('subs-position', 4.25);
+      await sleep(400);
+    }
+  }));
+  await test('отступ снизу: низ субтитров стоит на заданной доле кадра от его нижнего края', нужноВидео(async () => {
+    loadSubs('1\n00:00:05,000 --> 00:00:09,000\nОТСТУП\n', 'pos.srt');
+    await sleep(700); await seekTo(7);
+    for (const pct of [0, 4.25, 12]){
+      setVal('subs-position', pct); await sleep(250);
+      const к = кадрСубтитров();
+      assertClose(к.bottom - низСубтитров(), к.h * pct / 100, 2, 'отступ при ' + pct + '%');
+    }
+    setVal('subs-position', 4.25);
+  }));
+  await test('обводка и тень субтитров растут вместе со шрифтом', нужноВидео(async () => {
+    loadSubs('1\n00:00:05,000 --> 00:00:09,000\nОБВОДКА\n', 'outline.srt');
+    await sleep(700);
+    // В маленьком окне стенда шрифт 10-14 px, и на нём любая разумная формула даёт обводку в 1 px. Окно растягиваем до экранного размера
+    frame.style.width = '1000px'; frame.style.height = '800px';
+    try {
+    await sleep(600); await seekTo(7);
+    let толще = false;
+    for (const pct of [3, 6]){
+      setVal('subs-size', pct); await sleep(250);
+      const fs = шрифтСубтитров();
+      // Каждая тень: цвет, смещение x, смещение y, размытие. Обводка это восемь теней без размытия вокруг буквы
+      const тени = W.getComputedStyle($('subtitles').querySelector('span')).textShadow.split(/,(?![^(]*\))/).map(s => {
+        const px = (s.match(/-?[\d.]+px/g) || []).map(parseFloat);
+        return { x: px[0], y: px[1], blur: px[2] || 0 };
+      });
+      const обводка = тени.filter(t => t.blur === 0);
+      const w = Math.max(1, Math.round(fs / 22));
+      assertEq(обводка.length, 8, 'обводка не со всех восьми сторон при ' + pct + '%');
+      assertEq(Math.max(...обводка.map(t => Math.max(Math.abs(t.x), Math.abs(t.y)))), w, 'толщина обводки при шрифте ' + fs + 'px');
+      const тень = тени.filter(t => t.blur > 0);
+      const drop = Math.max(1, Math.round(fs / 20));
+      assert(тень.length === 1 && тень[0].x === drop && тень[0].y === drop, 'тень при шрифте ' + fs + 'px: ждали смещение ' + drop + ', получено ' + JSON.stringify(тень));
+      if (w > 1) толще = true;
+    }
+    assert(толще, 'шрифт не дорос до обводки толще 1 px, проверка не имеет смысла');
+    } finally {
+      frame.style.width = ''; frame.style.height = '';
+      setVal('subs-size', 5);
+      await sleep(400);
+    }
+  }));
+  await test('реплика в несколько строк опускается, чтобы первая строка стояла там же, где одиночная', нужноВидео(async () => {
+    loadSubs('1\n00:00:05,000 --> 00:00:07,000\nОДНА\n\n2\n00:00:08,000 --> 00:00:10,000\nПЕРВАЯ\nВТОРАЯ\n\n3\n00:00:11,000 --> 00:00:13,000\nРАЗ\nДВА\nТРИ\n', 'lines.srt');
+    await sleep(700);
+    await seekTo(6); const один = низСубтитров();
+    const сдвиг = Math.round(шрифтСубтитров() * 0.65);
+    await seekTo(9); assert(/ПЕРВАЯ<br>ВТОРАЯ/.test(subHtml()), 'двухстрочная реплика не показалась: ' + subHtml());
+    assertClose(низСубтитров() - один, сдвиг, 2, 'двухстрочная реплика не опустилась');
+    await seekTo(12);
+    assertClose(низСубтитров() - один, сдвиг * 2, 2, 'трёхстрочная реплика не опустилась на две строки');
+  }));
   await test('ручные субтитры переживают выход и повторное открытие', нужноВидео(async () => {
     loadSubs('1\n00:00:05,000 --> 00:00:09,000\nСОХРАНЁННЫЕ\n', 'keep.srt');
     await sleep(900);
@@ -2497,7 +2586,7 @@ async function runAll(){
     await openBlurTxtStream();
     await waitFor(() => blurRanges().length > 0, 5000);
     // В файле: 0:03-0:05 пересекается с 0:02-0:04, 0:09-0:06 задом наперёд, строка без времени и «x:y» пропускаются.
-    // Ролик идёт 20 с: 0:15-0:40 обрезается до конца, 0:30-0:35 целиком за концом и выбрасывается
+    // Ролик идёт 20 с: 0:15-0:40 обрезается до конца, 0:45-0:50 целиком за концом и выбрасывается
     await waitFor(() => rangesText() === '2-4 7-8 15-20', 5000).catch(() => {});
     assertEq(rangesText(), '2-4 7-8 15-20', 'тайминги из файла разобраны не так');
     assertEq(D.querySelectorAll('#timing-list .timing-item').length, 3, 'панель не показала тайминги из файла');
@@ -2521,6 +2610,14 @@ async function runAll(){
     await openBlurTxtStream();
     await sleep(1500);
     assertEq(rangesText(), '', 'файл вернул удалённые тайминги');
+  }));
+  await test('разметка зрителя важнее blur.txt, даже если файл у этой ссылки ещё ни разу не брался', нуженBlurTxt(async () => {
+    // Зритель разметил поток раньше, чем рядом с плейлистом появился blur.txt: флага «файл уже брался» у ссылки нет
+    const u = seriesUrl('hls-blur/index.m3u8');
+    W.localStorage.setItem(W.settingsKey(W.urlKey(u)), JSON.stringify({ blurRanges: [{ from: 10, to: 12 }] }));
+    await openBlurTxtStream();
+    await sleep(1500);
+    assertEq(rangesText(), '10-12', 'файл перекрыл разметку зрителя');
   }));
   await test('blur.txt ищется только у HLS, для mp4 запроса нет', нуженBlurTxt(async () => {
     const before = W.performance.getEntriesByType('resource').filter(e => /blur\.txt/.test(e.name)).length;
