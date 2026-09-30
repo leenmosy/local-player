@@ -716,7 +716,8 @@ function clampBlurFileRanges(){
 }
 
 // Разбор blur.txt: в строке ищем времена вида м:сс или ч:мм:сс парами, ведущие нули не обязательны, остальной текст это заметка.
-// Строки без пары времён пропускаем, интервалы задом наперёд и пересекающиеся отбрасываем
+// Строки без пары времён и интервалы задом наперёд пропускаем. Пересекающиеся интервалы склеиваем в один:
+// выбросить второй значит оставить без блюра его хвост, а блюр защищает стрим
 function parseBlurText(text){
   const timeRe = /(?:(\d{1,2}):)?(\d{1,3}):(\d{2})(?:[.,](\d{1,3}))?/g;
   const toSeconds = m => (m[1] ? parseInt(m[1], 10) * 3600 : 0) + parseInt(m[2], 10) * 60 + parseInt(m[3], 10) + (m[4] ? parseFloat('0.' + m[4]) : 0);
@@ -731,7 +732,11 @@ function parseBlurText(text){
   found.sort((a, b) => a.from - b.from);
   const out = [];
   for (const r of found){
-    if (out.length && r.from < out[out.length - 1].to) continue;
+    const last = out[out.length - 1];
+    if (last && r.from < last.to){
+      last.to = Math.max(last.to, r.to);
+      continue;
+    }
     out.push(r);
   }
   return out;
