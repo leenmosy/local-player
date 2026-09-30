@@ -109,14 +109,6 @@ const TOAST_DURATION_MS = 8000;
 // Устанавливаем громкость по умолчанию для новых файлов
 const DEFAULT_VOLUME = 0.2;
 
-prevEpisodeBtn.addEventListener('click', () => {
-  advanceToPrevPlaylistItem();
-});
-
-nextEpisodeBtn.addEventListener('click', () => {
-  advanceToNextPlaylistItem();
-});
-
 let currentObjectUrl = null;
 let durationChangeHandler = null;
 let loadedMetadataHandler = null;

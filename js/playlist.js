@@ -428,3 +428,11 @@ function openPlaylistEntry(entry){
   });
 });
 
+// Кнопки «предыдущая» и «следующая серия» на панели управления
+prevEpisodeBtn.addEventListener('click', () => {
+  advanceToPrevPlaylistItem();
+});
+
+nextEpisodeBtn.addEventListener('click', () => {
+  advanceToNextPlaylistItem();
+});
