@@ -388,25 +388,6 @@ nextEpOverlay.addEventListener('click', () => {
   advanceToNextPlaylistItem();
 });
 
-// Показывает/обновляет/скрывает плашку "Пропустить" для текущего момента
-function updateSkipSegmentOverlay(suppressed){
-  if (suppressed || anyPanelOpen() || mediaChapters.length === 0){
-    hideSkipSegmentOverlay();
-    return;
-  }
-  const t = video.currentTime;
-  const seg = mediaChapters.find(s => t >= s.start && t < skipSegmentEffectiveEnd(s));
-  if (!seg || dismissedChapterSegments.has(seg.id)){
-    hideSkipSegmentOverlay();
-    return;
-  }
-  activeSkipSegment = seg;
-  // Всегда обновляем текст, даже если плашка уже показана - нужно для случая
-  // когда пользователь перематывает с одного сегмента на другой 
-  skipSegmentOverlay.textContent = seg.label;
-  skipSegmentOverlay.classList.add('show');
-}
-
 video.addEventListener('seeking', () => {
   // Как только браузер зафиксировал начало перемотки, сразу подстраховываемся
   // блюром, если перемотка задевает диапазон блюра
@@ -429,20 +410,6 @@ video.addEventListener('seeked', () => {
   // Всегда обновляем плашку при перемотке, чтобы текст кнопки изменился
   // при переходе с одного сегмента на другой
   updateSkipSegmentOverlay(false);
-});
-
-skipSegmentOverlay.addEventListener('click', () => {
-  if (activeSkipSegment){
-    dismissedChapterSegments.add(activeSkipSegment.id);
-    const end = skipSegmentEffectiveEnd(activeSkipSegment);
-    // Перематываем к концу главы, но с небольшим запасом ВПЕРЁД (0.05с)
-    let target = isFinite(end) ? end + 0.05 : end;
-    if (isDurationUsable()){
-      target = isFinite(target) ? Math.min(target, video.duration - 0.05) : video.duration - 0.05;
-    }
-    if (isFinite(target)) video.currentTime = Math.max(target, activeSkipSegment.start);
-  }
-  hideSkipSegmentOverlay();
 });
 
 // --- Время под курсором над таймлайном ---
