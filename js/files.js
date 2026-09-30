@@ -169,6 +169,7 @@ function loadFile(file, handle, meta){
   currentFolderName = (meta && meta.folderName) || null;
   currentFolderId = (meta && meta.folderId) || null;
   currentFileKey = fileKey(file, currentFileIsFolder, currentFolderId);
+  progressRestoredKey = null; // то же видео открыто заново, его позиция ещё не прочитана
   currentSourceUrl = null;
   if (!currentFileIsFolder) lastOpenedFile = { file, handle: handle || null };
   // Записи, сохранённые до появления folderId в ключе, переносим на новый ключ

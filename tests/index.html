@@ -3993,6 +3993,37 @@ async function runAll(){
     assert(!v.paused && v.currentTime > tHide, 'скрытие вкладки остановило воспроизведение');
     v.pause();
   }));
+  // Плеер открывается и играет с нуля раньше, чем прочитает сохранённую позицию. Если видео грузится дольше
+  // интервала автосохранения или вкладку прячут в это время, ноль не должен лечь поверх сохранённого места
+  await test('медленная загрузка и скрытие вкладки при открытии ссылки не затирают сохранённую позицию', нужноВидео(async () => {
+    await backToStart();
+    const url = seriesUrl('hls2/index.m3u8');
+    W.localStorage.setItem('lp_progress:url:' + url, JSON.stringify({ t: 12, completed: false, duration: 20, ts: Date.now(), name: 'index.m3u8', displayName: 'Медленная загрузка', source: 'url', url }));
+    // Куски видео приходят через 5 с: дольше интервала автосохранения в 4 с, как первый сегмент 4K на медленном интернете
+    const proto = W.XMLHttpRequest.prototype, open = proto.open, send = proto.send;
+    proto.open = function(m, u){ this.__url = String(u); return open.apply(this, arguments); };
+    proto.send = function(){
+      const args = arguments;
+      if (/\.ts(\?|$)/.test(this.__url || '')){ W.setTimeout(() => send.apply(this, args), 5000); return; }
+      return send.apply(this, args);
+    };
+    try {
+      pasteUrl(url);
+      await waitFor(() => playerOpen(), 15000);
+      await sleep(600);
+      Object.defineProperty(D, 'hidden', { get: () => true, configurable: true });
+      try { D.dispatchEvent(new W.Event('visibilitychange')); } finally { delete D.hidden; }
+      await sleep(4200);
+      assert(video().readyState < 2, 'подготовка: видео загрузилось раньше задержки, окно не поймано');
+      assertEq(progressOf(url).t, 12, 'пока видео грузилось, сохранённая позиция затёрта');
+      await waitFor(() => video().readyState >= 2, 20000);
+      await waitFor(() => Math.abs(video().currentTime - 12) < 1.5, 5000)
+        .catch(() => { throw new Error('позиция не восстановилась: currentTime = ' + video().currentTime.toFixed(2)); });
+    } finally {
+      proto.open = open; proto.send = send;
+      video().pause();
+    }
+  }));
 
   suite('утечки при переключении серий');
   // Считаем, что создаёт плеер при смене серии: экземпляры hls.js, аудиоконтексты, слушатели на video и интервалы

@@ -247,6 +247,7 @@ async function loadUrl(url, meta){
 
   migrateLegacyUrlKey(url);
   currentFileKey = urlKey(url);
+  progressRestoredKey = null; // то же видео открыто заново, его позиция ещё не прочитана
   currentSourceUrl = url;
   // Сбрасываем folder-поля, иначе они попадут от прошлого плейлиста в запись прогресса ссылки
   currentFileIsFolder = false;

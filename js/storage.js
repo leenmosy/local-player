@@ -17,6 +17,9 @@ const STORAGE_LIMITS = {
 };
 const DEFAULT_STORAGE_LIMIT = 100;
 let currentFileKey = null;
+// Ключ источника, для которого уже отработал restoreProgress. До этого позицию не пишем:
+// плеер уже играет с нуля, и запись затёрла бы сохранённое место раньше, чем его прочитают
+let progressRestoredKey = null;
 let currentSourceUrl = null; // ссылка текущего источника, нужна чтобы найти файл субтитров рядом с плейлистом
 let currentFileName = null;
 let originalFileName = null; 
@@ -190,7 +193,7 @@ function cleanupStorageNow(prefix){
 // Отметка «досмотрено» вместо удаления записи: по ней строятся значки в плейлисте
 // и выбор серии при повторном открытии папки
 function markProgressCompleted(){
-  if (!currentFileKey) return;
+  if (!currentFileKey || progressRestoredKey !== currentFileKey) return;
   try{
     const raw = localStorage.getItem(currentFileKey);
     const data = (raw && JSON.parse(raw)) || {};
@@ -211,7 +214,8 @@ function markProgressCompleted(){
 }
 
 function saveProgress(){
-  if (!currentFileKey || !video.duration || !isFinite(video.duration)) return;
+  if (!currentFileKey || progressRestoredKey !== currentFileKey) return;
+  if (!video.duration || !isFinite(video.duration)) return;
   if (video.currentTime >= video.duration - 0.5){
     markProgressCompleted();
     return;
@@ -583,6 +587,7 @@ function isProgressStarted(t, duration){
 
 function restoreProgress(){
   if (!currentFileKey) return;
+  progressRestoredKey = currentFileKey;
   try{
     const raw = localStorage.getItem(currentFileKey);
     if (!raw) return;
