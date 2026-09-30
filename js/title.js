@@ -121,6 +121,8 @@ fnameEl.addEventListener('click', () => {
   }, { once: true });
 });
 
+// --- запуск страницы: справка, поле ссылки, открытие по ?src=. Этот код идёт последним, когда весь плеер уже загружен ---
+
 // Справка про ссылки на главной свёрнута, раскрывается по клику
 const helpToggle = document.getElementById('help-toggle');
 const hlsInfoWrap = document.getElementById('hls-info-wrap');

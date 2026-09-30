@@ -254,3 +254,15 @@ function formatTimePair(t, duration){
   return `${cur} / ${formatTime(duration)}`;
 }
 
+// Подпись скорости одним форматом: 1x, 1.5x, 1.25x
+function formatSpeedLabel(rate){
+  const n = Number(rate);
+  return (Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)))) + 'x';
+}
+
+// Название из имени файла: без расширения, точки и подчёркивания становятся пробелами
+function niceTitleFromFilename(name){
+  const withoutExt = name.replace(/\.[^/.]+$/, '');
+  const pretty = withoutExt.replace(/[._]/g, ' ').trim();
+  return pretty || String(name || 'Видео').trim() || 'Видео';
+}

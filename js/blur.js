@@ -624,11 +624,7 @@ timingAddBtn.addEventListener('click', () => {
   timingFromHH.focus();
 });
 
-// Учитываем точность до секунды при расчёте конца блюра и используем единый формат отображения скорости
-function formatSpeedLabel(rate){
-  const n = Number(rate);
-  return (Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)))) + 'x';
-}
+// Учитываем точность до секунды при расчёте конца блюра
 function isInBlurRange(t){
   // "до" указывается с точностью до секунды, считаем её включительно
   // до конца этой секунды, а не только до её начала
@@ -643,12 +639,6 @@ function updateVideoFilter(forceBlur){
   const blurOn = (typeof forceBlur === 'boolean') ? forceBlur : isInBlurRange(video.currentTime);
   if (blurOn) parts.push(`blur(${BLUR_AMOUNT_PX}px)`);
   video.style.filter = parts.join(' ');
-}
-
-function niceTitleFromFilename(name){
-  const withoutExt = name.replace(/\.[^/.]+$/, '');
-  const pretty = withoutExt.replace(/[._]/g, ' ').trim();
-  return pretty || String(name || 'Видео').trim() || 'Видео';
 }
 
 
