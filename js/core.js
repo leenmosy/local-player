@@ -300,10 +300,6 @@ function hexToRgba(hex, alpha){
 }
 
 
-// Размер и отступ субтитров заданы в процентах от высоты кадра, поэтому в окне и в полном экране текст выглядит одинаково
-const SUBS_SIZE_DEFAULT = 5;
-const SUBS_POSITION_DEFAULT = 4.25;
-
 // Собирает CSS text-shadow из значения 0..100 в мягкую тень
 function textShadowFromPercent(pct){
   const f = Math.max(0, Math.min(100, parseFloat(pct) || 0)) / 100;
@@ -312,16 +308,6 @@ function textShadowFromPercent(pct){
   const blur = (1 + f * 5).toFixed(1);
   const spread = (f * 3).toFixed(1);
   return `0 0 ${blur}px rgba(0,0,0,${alpha}), 0 ${spread}px ${blur}px rgba(0,0,0,${alpha})`;
-}
-
-// Обводка и тень субтитров как в VLC, обе считаются от размера шрифта и потому выглядят одинаково на любом размере
-function subtitleTextShadow(fontSize){
-  const w = Math.max(1, Math.round(fontSize / 22));
-  const shadow = [[-w,-w],[0,-w],[w,-w],[w,0],[w,w],[0,w],[-w,w],[-w,0]]
-    .map(([x, y]) => `${x}px ${y}px 0 #000`);
-  const drop = Math.max(1, Math.round(fontSize / 20));
-  shadow.push(`${drop}px ${drop}px ${(drop * 1.5).toFixed(1)}px rgba(0,0,0,0.5)`);
-  return shadow.join(', ');
 }
 
 // Настройки сохраняются отдельно для каждого видео и не переносятся между файлами

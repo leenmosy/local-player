@@ -652,10 +652,3 @@ function niceTitleFromFilename(name){
 }
 
 
-// Имя файла обрезается многоточием, дублируем в title для наведения
-function setSubsFileNameDisplay(name){
-  const nameWithoutExt = name === 'Файл не выбран' ? name : name.replace(/\.[^/.]+$/, '');
-  subsFileName.textContent = nameWithoutExt;
-  subsFileName.title = name === 'Файл не выбран' ? '' : name;
-}
-

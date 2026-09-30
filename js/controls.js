@@ -474,62 +474,6 @@ skipSegmentOverlay.addEventListener('click', () => {
   hideSkipSegmentOverlay();
 });
 
-// Реплика, которая сейчас нарисована. Нужна, чтобы не трогать DOM на каждом кадре
-let renderedSub = null;
-
-let subSearchIdx = 0;
-function findSubtitleAt(t){
-  const n = subtitlesData.length;
-  if (!n) return null;
-  const hit = i => i >= 0 && i < n && t >= subtitlesData[i].start && t < subtitlesData[i].end;
-  if (hit(subSearchIdx)) return subtitlesData[subSearchIdx];
-  if (hit(subSearchIdx + 1)) { subSearchIdx += 1; return subtitlesData[subSearchIdx]; }
-
-  let lo = 0, hi = n - 1, found = -1;
-  while (lo <= hi){
-    const mid = (lo + hi) >> 1;
-    if (subtitlesData[mid].start <= t){ found = mid; lo = mid + 1; }
-    else hi = mid - 1;
-  }
-  if (found === -1) return null;
-  // Последняя начавшаяся реплика могла уже кончиться внутри более длинной, которая началась раньше, смотрим немного назад
-  for (let k = found; k >= 0 && k >= found - 8; k--){
-    if (hit(k)){ subSearchIdx = k; return subtitlesData[k]; }
-  }
-  subSearchIdx = found;
-  return null;
-}
-
-function resetSubtitleRenderState(){
-  // Чистим узел: updateSubtitles() при null === null выйдет раньше и оставит на экране старую реплику
-  subtitles.innerHTML = '';
-  renderedSub = null;
-  subSearchIdx = 0;
-}
-
-function updateSubtitles() {
-  if (!subsToggle.checked || subtitlesData.length === 0) {
-    if (renderedSub !== null){
-      subtitles.innerHTML = '';
-      renderedSub = null;
-    }
-    return;
-  }
-
-  const currentSub = findSubtitleAt(video.currentTime) || null;
-
-  // Ничего не изменилось, DOM не трогаем
-  if (currentSub === renderedSub) return;
-  renderedSub = currentSub;
-
-  if (currentSub) {
-    subtitles.innerHTML = `<span>${escapeHtml(currentSub.text).replace(/\n/g, '<br>')}</span>`;
-    applySubtitlesStyle();
-  } else {
-    subtitles.innerHTML = '';
-  }
-}
-
 // --- Время под курсором над таймлайном ---
 const seekWrap = document.getElementById('seek-wrap');
 const seekTip = document.getElementById('seek-tip');
