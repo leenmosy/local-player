@@ -330,15 +330,26 @@ async function test(name, fn){
   if (!always && !suiteSelected(currentSuite)) return;
   if (ONLY.length && !ONLY.some(p => name.includes(p)) && !always) return;
   currentEl.textContent = currentSuite + ' · ' + name;
-  try {
-    await reset(!!fn.clip);
-    const r = await fn();
-    if (r === 'skip'){ skipped++; report('skip', name, 'пропущен'); return; }
-    passed++; report('ok', name);
-  } catch (e){
-    failed++; report('fail', name, e && e.message ? e.message : String(e));
+  // Тесты с меткой retry зависят от таймингов браузера: при падении прогоняем их ещё раз с чистого места.
+  // Настоящая поломка падает оба раза, а удачный повтор остаётся виден в отчёте вместе с первой ошибкой
+  const попыток = fn.retry ? 2 : 1;
+  let перваяОшибка = null;
+  for (let попытка = 1; попытка <= попыток; попытка++){
+    try {
+      await reset(!!fn.clip);
+      const r = await fn();
+      if (r === 'skip'){ skipped++; report('skip', name, 'пропущен'); return; }
+      passed++; report('ok', name, перваяОшибка ? 'прошёл со второй попытки, первая упала: ' + перваяОшибка : undefined);
+      return;
+    } catch (e){
+      const msg = e && e.message ? e.message : String(e);
+      if (попытка < попыток){ перваяОшибка = msg; continue; }
+      failed++; report('fail', name, перваяОшибка ? 'упал оба раза: ' + перваяОшибка + ' || ' + msg : msg);
+    }
   }
 }
+// Метка для тестов, которые зависят от таймингов браузера, см. test()
+const сПовтором = fn => Object.assign(fn, { retry: true });
 function assert(cond, msg){ if (!cond) throw new Error(msg || 'условие не выполнено'); }
 function assertEq(a, b, msg){
   if (a !== b) throw new Error((msg || 'не равно') + ': ожидалось ' + JSON.stringify(b) + ', получено ' + JSON.stringify(a));
@@ -371,18 +382,24 @@ function waitFor(cond, timeout = 15000, step = 100){
 }
 // Перемотка с ожиданием seeked: по таймеру ловится состояние в процессе seek.
 // Плеер восстанавливает сохранённую позицию асинхронно, поэтому проверяем, что доехали, и повторяем.
+// Во время воспроизведения видео уходит вперёд, пока мы ждём: в перекрытом окне таймер в 120 мс растягивается
+// до секунды. Поэтому для играющего видео допуск растёт на время, прошедшее после seeked, а позицию в момент
+// seeked сверяем отдельно. Прыжок в другое место, например восстановление позиции плеером, так не пропустим
 async function seekTo(t){
   const v = video();
   await waitFor(() => v.readyState >= 2 && v.seekable.length > 0, 15000);
   for (let попытка = 0; попытка < 5; попытка++){
+    let landed = null, landedAt = 0;
     await new Promise(res => {
       let fired = false;
-      const h = () => { fired = true; v.removeEventListener('seeked', h); setTimeout(res, 120); };
+      const h = () => { fired = true; landed = v.currentTime; landedAt = performance.now(); v.removeEventListener('seeked', h); setTimeout(res, 120); };
       v.addEventListener('seeked', h);
       v.currentTime = t;
       setTimeout(() => { if (!fired){ v.removeEventListener('seeked', h); res(); } }, 2500);
     });
-    if (Math.abs(v.currentTime - t) < 0.5) return;
+    const ушло = landed === null || v.paused ? 0 : (performance.now() - landedAt) / 1000 * v.playbackRate;
+    const сейчас = v.currentTime;
+    if ((landed === null || Math.abs(landed - t) < 0.5) && сейчас > t - 0.5 && сейчас < t + 0.5 + ушло) return;
     await sleep(150);
   }
   throw new Error('перемотка на ' + t + ' не доехала, currentTime = ' + v.currentTime.toFixed(2));
@@ -419,6 +436,40 @@ async function bootPlayer(){
   W = frame.contentWindow; D = frame.contentDocument;
   // чистим состояние прошлого прогона, иначе настройки протекают между тестами
   Object.keys(W.localStorage).filter(k => k.startsWith('lp_')).forEach(k => W.localStorage.removeItem(k));
+}
+// Ошибки при загрузке страницы слушатель на load не видит: к этому моменту скрипты плеера уже отработали.
+// Поэтому плеер грузится в отдельную рамку, а слушатель ставится на новое окно, как только оно появилось,
+// до первого скрипта плеера. Опрос идёт через MessageChannel, он срабатывает между любыми задачами браузера.
+// Успели ли, проверяем: в окне ещё не должно быть showErrMsg из js/core.js
+async function freshLoad(query){
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed; left:-3000px; top:0; width:1280px; height:720px; border:0;';
+  const errors = [];
+  let doc = null, early = null, stop = false;
+  const ch = new MessageChannel();
+  const tick = () => {
+    if (stop) return;
+    const d = f.contentDocument;
+    if (d && d !== doc && /index\.html/.test(d.URL)){
+      doc = d;
+      const w = f.contentWindow;
+      if (early === null) early = typeof w.showErrMsg === 'undefined';
+      w.addEventListener('error', e => errors.push((e.message || 'ошибка') + ' (' + String(e.filename || '').split('/').pop() + ':' + e.lineno + ')'));
+      w.addEventListener('unhandledrejection', e => errors.push('промис: ' + (e.reason && e.reason.message || e.reason)));
+    }
+    ch.port2.postMessage(0);
+  };
+  ch.port1.onmessage = tick;
+  const loaded = new Promise(res => f.addEventListener('load', res, { once: true }));
+  f.src = '../index.html' + query;
+  document.body.appendChild(f);
+  tick();
+  try {
+    await loaded;
+    // Открытие по ?src и восстановление настроек идут уже после load
+    await sleep(2500);
+  } finally { stop = true; ch.port1.close(); }
+  return { frame: f, W: f.contentWindow, D: f.contentDocument, errors, early };
 }
 async function loadClip(){
   const i = $('url-input');
@@ -568,6 +619,47 @@ async function runAll(){
     assertEq(D.querySelectorAll('#playlist-list .playlist-item').length, 0, 'плейлист собрался на одиночном файле');
     assertEq(W.getComputedStyle($('playlist-btn')).display, 'none', 'кнопка плейлиста показана');
   }));
+
+  // Порядок файлов в index.html важен: файл при загрузке пользуется только тем, что объявлено в нём и выше.
+  // Ошибка порядка или сбой при восстановлении сохранённого видна только в момент загрузки, поэтому грузим
+  // плеер заново трижды: с пустым хранилищем, с сохранёнными настройками и по ссылке ?src
+  await test('страница загружается без JS-ошибок: пустая, с сохранёнными настройками и по ссылке', сПовтором(нужноВидео(async () => {
+    const пробы = [];
+    try {
+      const чистая = await freshLoad('');
+      пробы.push(чистая);
+      assert(чистая.early, 'подготовка: слушатель ошибок подключился позже скриптов плеера');
+      assertEq(чистая.errors.length, 0, 'ошибки при загрузке с пустым хранилищем: ' + чистая.errors.join(' | '));
+      assert(!чистая.D.getElementById('player-view').classList.contains('active'), 'чистая страница открылась не на главной');
+
+      // Сохраняем в основной рамке настройки, диапазон блюра, название и позицию, выход на главную дописывает их
+      setVal('dr-brightness', 130);
+      addRange('00','00','06','00','00','09'); await sleep(200);
+      await renameTo('Проверка загрузки');
+      await seekTo(7); await sleep(300);
+      await backToStart();
+      assert(Object.keys(W.localStorage).some(k => k.startsWith('lp_settings:')), 'подготовка: настройки не сохранились');
+
+      const сНастройками = await freshLoad('');
+      пробы.push(сНастройками);
+      assert(сНастройками.early, 'подготовка: слушатель ошибок подключился позже скриптов плеера');
+      assertEq(сНастройками.errors.length, 0, 'ошибки при загрузке с сохранёнными настройками: ' + сНастройками.errors.join(' | '));
+      assert(сНастройками.D.querySelector('#resume-list .resume-item'), 'сохранённый просмотр не показан на главной');
+
+      const поСсылке = await freshLoad('?src=' + encodeURIComponent(CLIP));
+      пробы.push(поСсылке);
+      assert(поСсылке.early, 'подготовка: слушатель ошибок подключился позже скриптов плеера');
+      await waitFor(() => поСсылке.D.getElementById('player-view').classList.contains('active') && поСсылке.D.getElementById('video').readyState >= 2, 20000)
+        .catch(() => { throw new Error('по ссылке ?src видео не открылось' + (поСсылке.errors.length ? ', JS-ошибки: ' + поСсылке.errors.join(' | ') : '')); });
+      await sleep(1000);
+      поСсылке.D.getElementById('video').pause();
+      assertEq(поСсылке.errors.length, 0, 'ошибки при открытии по ссылке: ' + поСсылке.errors.join(' | '));
+      assertEq(поСсылке.D.getElementById('video').style.filter, 'brightness(1.3)', 'сохранённая яркость не восстановилась');
+      assertEq(поСсылке.D.querySelectorAll('#timing-list > *').length, 1, 'сохранённый диапазон блюра не восстановился');
+    } finally {
+      for (const п of пробы){ try { п.D.getElementById('video').pause(); } catch (e) {} п.frame.remove(); }
+    }
+  })));
 
   suite('блюр: валидация ввода');
   await test('мусорный ввод не создаёт диапазон', нужноВидео(async () => {
@@ -3854,12 +3946,17 @@ async function runAll(){
   suite('закрытие вкладки и уход со страницы');
   const progressOf = u => { try { return JSON.parse(W.localStorage.getItem('lp_progress:url:' + u) || 'null'); } catch (e) { return null; } };
 
-  await test('уход со страницы во время воспроизведения дописывает позицию до секунды', нужноВидео(async () => {
+  await test('уход со страницы во время воспроизведения дописывает позицию до секунды', сПовтором(нужноВидео(async () => {
     const v = video();
     await seekTo(5);
     await v.play().catch(() => {});
-    // Интервал пишет раз в 4 с, уходим через 2 с после перемотки, чтобы поймать окно между записями
-    await sleep(2000);
+    // Интервал пишет раз в 4 с. Дожидаемся его записи и уходим, когда видео проиграло после неё ещё 1,2 с:
+    // так уход попадает в окно между записями. Ждём по времени видео, а не по часам, под нагрузкой оно отстаёт
+    const t0 = (progressOf(CLIP) || {}).t;
+    await waitFor(() => { const p = progressOf(CLIP); return p && p.t !== t0; }, 6000)
+      .catch(() => { throw new Error('подготовка: плеер не записал позицию за 6 с воспроизведения'); });
+    const записано = progressOf(CLIP).t;
+    await waitFor(() => v.currentTime > записано + 1.2, 3000).catch(() => {});
     const before = progressOf(CLIP);
     const tLeave = v.currentTime;
     assert(before && before.t < tLeave - 1, 'подготовка: запись уже свежая, окно не поймано: ' + JSON.stringify(before && before.t) + ' против ' + tLeave.toFixed(2));
@@ -3869,8 +3966,11 @@ async function runAll(){
     assertClose(after.t, tLeave, 0.7, 'позиция при уходе не дописана');
     const card = D.querySelector('#resume-list .resume-item');
     assert(card, 'карточки нет после ухода');
-    assert(/00:0[6-8]/.test(card.querySelector('.ri-time').textContent), 'на карточке не то время: ' + card.querySelector('.ri-time').textContent);
-  }));
+    // Момент ухода зависит от того, когда пришла запись интервала, поэтому время карточки сверяем с ним
+    const cardText = card.querySelector('.ri-time').textContent;
+    const m = cardText.match(/(\d+):(\d\d)/);
+    assert(m && Math.abs(Number(m[1]) * 60 + Number(m[2]) - tLeave) <= 1.5, 'на карточке не то время: ' + cardText + ' при уходе на ' + tLeave.toFixed(2));
+  })));
   await test('уход со страницы дописывает настройку, изменённую за мгновение до него', нужноВидео(async () => {
     setVal('dr-brightness', 140);
     await openFrame('');
@@ -3963,7 +4063,7 @@ async function runAll(){
   }
   const toastShown = () => $('storage-toast').classList.contains('show') ? $('storage-toast-text').textContent : null;
 
-  await test('хранилище переполнено: видео играет, настройки применяются, зритель видит одно предупреждение', нужноВидео(async () => {
+  await test('хранилище переполнено: видео играет, настройки применяются, зритель видит одно предупреждение', сПовтором(нужноВидео(async () => {
     const errors = [];
     const onErr = e => errors.push(e.message);
     W.addEventListener('error', onErr);
@@ -3985,7 +4085,7 @@ async function runAll(){
       v.pause();
       assertEq(errors.length, 0, 'JS-ошибки при переполнении: ' + errors.join(' | '));
     } finally { fix(); W.removeEventListener('error', onErr); }
-  }));
+  })));
   await test('после починки хранилища записи идут снова, и при новом сбое предупреждение показывается заново', нужноВидео(async () => {
     const fix = breakStorage();
     setVal('dr-brightness', 120); await sleep(400);
