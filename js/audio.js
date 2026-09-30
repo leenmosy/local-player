@@ -1,4 +1,4 @@
-// --- оверлей и синхронизация controls ---
+// --- элементы сцены, панели управления и настроек ---
 const stage = document.getElementById('stage');
 const clickCatcher = document.getElementById('click-catcher');
 const playBtn = document.getElementById('play-btn');
