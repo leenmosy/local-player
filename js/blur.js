@@ -652,3 +652,97 @@ function niceTitleFromFilename(name){
 }
 
 
+// --- блюр по ходу воспроизведения и перемотки, тайминги из blur.txt ---
+let lastBlurActive = false;
+// Время последнего кадра, который браузер ГАРАНТИРОВАННО отрисовал
+let lastConfirmedTime = 0;
+
+// Проверяет, задевает ли отрезок [from, to] хотя бы один диапазон блюра
+function rangeTouchesBlur(from, to){
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  return blurRanges.some(r => hi >= r.from && lo <= r.to + 1);
+}
+
+function syncBlurFilter(){
+  const target = video.currentTime;
+  let blurActive;
+
+  if (video.seeking) {
+    blurActive = isInBlurRange(target) ||
+                 isInBlurRange(lastConfirmedTime) ||
+                 rangeTouchesBlur(lastConfirmedTime, target);
+  } else {
+    blurActive = isInBlurRange(target);
+    lastConfirmedTime = target;
+  }
+
+  if (blurActive !== lastBlurActive) {
+    updateVideoFilter(blurActive);
+    lastBlurActive = blurActive;
+  }
+}
+
+// Для HLS тайминги блюра можно положить рядом с плейлистом в blur.txt, по интервалу на строку: «20:09 - 20:30» или «1:05:28 - 1:05:31».
+// Файл берётся один раз, пока у ссылки нет своих таймингов: локальная разметка важнее, удалённые не возвращаются
+async function autoLoadHlsBlurRanges(){
+  if (!currentSourceUrl || !/\.m3u8($|[?#])/i.test(currentSourceUrl)) return;
+  if (blurRanges.length || blurFileApplied) return;
+  const keyAtStart = currentFileKey;
+  const url = currentSourceUrl.split(/[?#]/)[0].replace(/[^/]+$/, 'blur.txt');
+  let ranges = [];
+  try {
+    const res = await fetch(url);
+    if (keyAtStart !== currentFileKey) return; // открыли другой источник
+    if (!res.ok) return;
+    ranges = parseBlurText(await res.text());
+  } catch (e) {
+    console.warn('Тайминги блюра HLS (blur.txt) не подгрузились:', e && e.message ? e.message : e);
+    return;
+  }
+  if (keyAtStart !== currentFileKey || blurRanges.length || !ranges.length) return;
+  blurRanges = ranges;
+  blurFileApplied = true;
+  blurFileClampPending = true;
+  clampBlurFileRanges();
+  renderBlurRanges();
+  updateVideoFilter();
+  saveSettings();
+}
+
+// Файл читается раньше, чем известна длительность, поэтому подгоняем его интервалы, как только она появится:
+// начавшийся до конца фильма блюрит до самого конца, целиком за концом выбрасывается
+function clampBlurFileRanges(){
+  if (!blurFileClampPending || !isDurationUsable()) return;
+  blurFileClampPending = false;
+  const dur = video.duration;
+  const clamped = blurRanges
+    .filter(r => r.from < dur)
+    .map(r => ({ from: r.from, to: Math.min(r.to, dur) }));
+  if (clamped.length === blurRanges.length && clamped.every((r, i) => r.to === blurRanges[i].to)) return;
+  blurRanges = clamped;
+  renderBlurRanges();
+  updateVideoFilter();
+  saveSettings();
+}
+
+// Разбор blur.txt: в строке ищем времена вида м:сс или ч:мм:сс парами, ведущие нули не обязательны, остальной текст это заметка.
+// Строки без пары времён пропускаем, интервалы задом наперёд и пересекающиеся отбрасываем
+function parseBlurText(text){
+  const timeRe = /(?:(\d{1,2}):)?(\d{1,3}):(\d{2})(?:[.,](\d{1,3}))?/g;
+  const toSeconds = m => (m[1] ? parseInt(m[1], 10) * 3600 : 0) + parseInt(m[2], 10) * 60 + parseInt(m[3], 10) + (m[4] ? parseFloat('0.' + m[4]) : 0);
+  const found = [];
+  for (const line of String(text).split(/\r?\n/)){
+    const times = Array.from(line.matchAll(timeRe)).map(toSeconds);
+    // Времена идут парами, в одной строке их может быть несколько: «48:21 - 48:25, 48:30 - 48:35»
+    for (let i = 0; i + 1 < times.length; i += 2){
+      if (times[i + 1] > times[i]) found.push({ from: times[i], to: times[i + 1] });
+    }
+  }
+  found.sort((a, b) => a.from - b.from);
+  const out = [];
+  for (const r of found){
+    if (out.length && r.from < out[out.length - 1].to) continue;
+    out.push(r);
+  }
+  return out;
+}

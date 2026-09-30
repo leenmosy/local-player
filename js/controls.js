@@ -233,10 +233,6 @@ video.addEventListener('ended', () => {
   advanceToNextPlaylistItem();
 });
 
-let lastBlurActive = false;
-// Время последнего кадра, который браузер ГАРАНТИРОВАННО отрисовал
-let lastConfirmedTime = 0;
-
 // Сбрасываем состояние блюра при загрузке любого нового файла
 video.addEventListener('loadedmetadata', () => {
   lastConfirmedTime = 0;
@@ -279,31 +275,6 @@ function updateRangeFill(el){
 // У ползунков в панели настроек value ставится из сохранённых настроек без события input
 function refreshPanelRangeFills(){
   drPanel.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
-}
-
-// Проверяет, задевает ли отрезок [from, to] хотя бы один диапазон блюра
-function rangeTouchesBlur(from, to){
-  const lo = Math.min(from, to), hi = Math.max(from, to);
-  return blurRanges.some(r => hi >= r.from && lo <= r.to + 1);
-}
-
-function syncBlurFilter(){
-  const target = video.currentTime;
-  let blurActive;
-
-  if (video.seeking) {
-    blurActive = isInBlurRange(target) ||
-                 isInBlurRange(lastConfirmedTime) ||
-                 rangeTouchesBlur(lastConfirmedTime, target);
-  } else {
-    blurActive = isInBlurRange(target);
-    lastConfirmedTime = target;
-  }
-
-  if (blurActive !== lastBlurActive) {
-    updateVideoFilter(blurActive);
-    lastBlurActive = blurActive;
-  }
 }
 
 // Событие timeupdate спецификация разрешает слать не чаще раза в 250 мс, и на этой
