@@ -539,6 +539,9 @@ async function runAll(){
   const jsErrors = [];
   await bootPlayer();
   W.addEventListener('error', e => jsErrors.push(e.message));
+  // Часть наборов перезагружает плеер, у нового окна свой слушатель, иначе его ошибки никто не увидит
+  const следитьЗаОшибками = () => { try { frame.contentWindow.addEventListener('error', e => jsErrors.push(e.message)); } catch (e) {} };
+  frame.addEventListener('load', следитьЗаОшибками);
 
   suite('окружение');
   const беды = await preflight();
@@ -551,6 +554,7 @@ async function runAll(){
   await test('локальный ролик открывается', async () => {
     if (беды.length) return 'skip';
     await loadClip();
+    assert(playerOpen(), 'видео загрузилось, а плеер не открылся');
     assert(video().readyState >= 3, 'видео не готово');
     assertClose(video().duration, 20, 1.5, 'длительность');
     клипГотов = true; clipOk = true;
@@ -661,12 +665,14 @@ async function runAll(){
   }));
 
   suite('громкость');
-  await test('значения зажимаются в 0..1', нужноВидео(async () => {
+  await test('ползунок громкости зажимает ввод в 0..1 и громкость видео идёт за ним', нужноВидео(async () => {
     const vr = $('volume-range'); const v = video();
-    for (const val of [-1, 0, 0.5, 1, 2, 99]){
+    for (const [val, ждём] of [[-1, 0], [0, 0], [0.5, 0.5], [0.37, 0.37], [1, 1], [2, 1], [99, 1]]){
       vr.value = val; vr.dispatchEvent(new W.Event('input', { bubbles: true }));
-      assert(v.volume >= 0 && v.volume <= 1 && isFinite(v.volume), 'громкость вне диапазона при ' + val);
+      assertClose(parseFloat(vr.value), ждём, 0.001, 'ползунок не зажал ввод ' + val);
+      assertClose(v.volume, ждём, 0.001, 'громкость видео не равна ползунку при ' + val);
     }
+    v.muted = false; v.volume = 0.2;
   }));
   await test('стрелки упираются в потолок и пол', нужноВидео(async () => {
     const v = video();
@@ -696,9 +702,12 @@ async function runAll(){
     assertEq(subText(), 'ЭТАЛОН', 'субтитры затёрты мусором');
   }));
   await test('обратные и нулевые тайминги отбрасываются', нужноВидео(async () => {
-    loadSubs('1\n00:00:09,000 --> 00:00:05,000\nОБРАТНАЯ\n\n2\n00:00:07,000 --> 00:00:07,000\nНОЛЬ\n', 'bad.srt');
+    loadSubs('1\n00:00:09,000 --> 00:00:05,000\nОБРАТНАЯ\n\n2\n00:00:07,000 --> 00:00:07,000\nНОЛЬ\n\n3\n00:00:10,000 --> 00:00:12,000\nЦЕЛАЯ\n', 'bad.srt');
     await sleep(700); await seekTo(7);
     assert(subText() !== 'ОБРАТНАЯ' && subText() !== 'НОЛЬ', 'принята реплика с некорректным таймингом');
+    assert(/2 реплик/.test($('storage-toast-text').textContent), 'зрителю не сказали про две пропущенные реплики: ' + $('storage-toast-text').textContent);
+    await seekTo(11);
+    assertEq(subText(), 'ЦЕЛАЯ', 'из-за битых реплик пропала целая');
   }));
   await test('удаление очищает и файл, и экран', нужноВидео(async () => {
     loadSubs('1\n00:00:05,000 --> 00:00:09,000\nЭТАЛОН\n', 'ok.srt'); await sleep(700); await seekTo(7);
@@ -831,7 +840,12 @@ async function runAll(){
     await sleep(300);
     assert($('playlist-panel').classList.contains('open'), 'список не раскрылся');
     assertEq($('playlist-btn').getAttribute('aria-expanded'), 'true', 'aria-expanded при открытом списке');
-    await switchTo(2);
+    plItems()[2].click();
+    await sleep(60);
+    assert(!$('playlist-panel').classList.contains('open'), 'список не свернулся сразу по клику, а ждёт загрузки серии');
+    await waitFor(() => plActive() === 2, 15000);
+    await waitFor(() => video().readyState >= 3, 30000);
+    await holdPaused();
     assertEq($('playlist-btn-label').textContent, 'Третья серия', 'подпись после выбора');
     assertEq(D.querySelector('#playlist-list .playlist-item.active .playlist-item-name').title, 'Третья серия', 'подсказка с полным названием');
     assert(!$('playlist-panel').classList.contains('open'), 'список не свернулся после выбора серии');
@@ -927,6 +941,17 @@ async function runAll(){
     await waitFor(() => video().readyState >= 3, 30000);
     await holdPaused();
     assertEq(plActive(), 0, 'открылась последняя просмотренная серия вместо нажатой');
+  }));
+  await test('ссылка на сериал без карточки открывает серию, на которой остановились', нуженСериал(async () => {
+    try { Object.keys(W.localStorage).filter(k => k.startsWith('lp_progress')).forEach(k => W.localStorage.removeItem(k)); } catch (e) {}
+    await openSeries('series.json', 4);
+    await switchTo(2);
+    await seekTo(6);
+    await waitFor(() => { const r = progressFor('ep3.mp4'); return r && Math.abs(r.t - 6) < 1.5; }, 12000);
+    await backToStart();
+    await openSeries('series.json', 4);
+    assertEq(plActive(), 2, 'сериал открылся не на начатой серии');
+    await waitFor(() => Math.abs(video().currentTime - 6) < 1, 8000).catch(() => { throw new Error('позиция начатой серии не восстановилась: ' + video().currentTime); });
   }));
   await test('запись в первых секундах не делает серию начатой: сериал открывается с первой', нуженСериал(async () => {
     // Такая запись остаётся после автоперехода, когда следующую серию закрыли почти сразу
@@ -1030,6 +1055,18 @@ async function runAll(){
     const наЗаставке = await probeOverlays(1);
     assertEq(наЗаставке.skip, 'Пропустить заставку', 'обычная глава перестала давать кнопку пропуска');
     assertEq(наЗаставке.next, false, 'кнопка перехода показана на заставке');
+    // В сериале кнопка перехода заслоняет кнопку пропуска, поэтому ту же серию открываем одиночной ссылкой: следующей серии нет
+    await backToStart();
+    pasteUrl(seriesUrl('hls1/index.m3u8'));
+    await waitFor(() => playerOpen() && video().readyState >= 3, 30000);
+    await holdPaused();
+    // Главы потока приходят отдельным запросом, ждём, пока на заставке появится кнопка
+    let заставка = null;
+    for (let i = 0; i < 12 && !заставка; i++){ заставка = (await probeOverlays(1)).skip; if (!заставка) await sleep(400); }
+    assertEq(заставка, 'Пропустить заставку', 'подготовка: главы одиночной серии не прочитались');
+    const одна = await probeOverlays(15);
+    assertEq(одна.next, false, 'у одиночной серии показана кнопка перехода');
+    assertEq(одна.skip, null, 'метка перехода без сериала стала кнопкой пропуска');
   }));
   await test('без глав работает порог по времени', нуженСериал(async () => {
     await openSeries('series.json', 4);
@@ -1095,6 +1132,7 @@ async function runAll(){
     await sleep(200);
     W.resetSpeed();
     await sleep(200);
+    assertEq(video().playbackRate, 1, 'сброс не вернул видео нормальную скорость');
     assertEq($('dr-speed').value, '1', 'значение скорости после сброса');
     assertClose(заливка($('dr-speed')), ожидаемаяЗаливка($('dr-speed')), 0.5, 'заливка ползунка скорости');
   }));
@@ -1287,9 +1325,11 @@ async function runAll(){
   await test('битые настройки не ломают открытие и перезаписываются', нужноВидео(async () => {
     await backToStart();
     wipeLp();
+    await openClip(clipB);
+    setVal('dr-brightness', 170); await sleep(400);
     W.localStorage.setItem(W.settingsKey(W.urlKey(clipA)), '{"drBrightness": 150, oops');
     await openClip(clipA);
-    assertEq($('dr-brightness').value, '100', 'битая запись частично применилась');
+    assertEq($('dr-brightness').value, '100', 'битая запись частично применилась или протекла яркость прошлого источника');
     setVal('dr-brightness', 110); await sleep(400);
     const raw = W.localStorage.getItem(W.settingsKey(W.urlKey(clipA)));
     assertEq(JSON.parse(raw).drBrightness, 110, 'битая запись не перезаписана');
@@ -1304,6 +1344,9 @@ async function runAll(){
     assertEq($('ov-size').value, '20', 'размер оверлея не зажат'); assertEq($('subs-position').value, '20', 'позиция субтитров не зажата');
     assertEq($('ov-color').value, '#ffffff', 'цвет оверлея не сброшен');
     assertEq(rangeCount(), 1, 'битые диапазоны блюра не отброшены');
+    assertEq(video().style.transform, 'scale(0.5)', 'в картинку ушёл незажатый зум');
+    assertEq($('zoom-val').textContent, '50%', 'подпись зума показывает незажатое значение');
+    assertEq(video().playbackRate, 2, 'скорость видео не зажата');
     W.resetSpeed(); W.resetBrightness(); W.resetZoom(); await sleep(400);
   }));
   await test('переименование обратно в автоназвание убирает своё название', нужноВидео(async () => {
@@ -1402,6 +1445,7 @@ async function runAll(){
     await waitFor(() => Math.abs(video().currentTime - 7) < 1, 8000);
     assertEq($('fname').textContent, 'Фильм', 'заголовок после продолжения');
     assertEq(h.calls.getFile, 1, 'getFile не вызван ровно один раз при продолжении');
+    assertEq(h.calls.request, 0, 'доступ спросили, хотя он уже был выдан');
     assert(W.getComputedStyle($('playlist-btn')).display === 'none', 'у одиночного файла появилась кнопка серий');
   }));
   await test('доступ спрашивается один раз и только если его нет', нужноFs(async () => {
@@ -1969,8 +2013,10 @@ async function runAll(){
     $('stage').classList.add('controls-hidden');
     await sleep(350);
     const cs = W.getComputedStyle(ovEl());
+    // Объект стиля живой: снимаем значения, пока контролы ещё спрятаны
+    const вид = { display: cs.display, opacity: parseFloat(cs.opacity), visibility: cs.visibility };
     $('stage').classList.remove('controls-hidden');
-    assert(cs.display !== 'none' && parseFloat(cs.opacity) > 0.9 && cs.visibility !== 'hidden', 'оверлей спрятался с контролами');
+    assert(вид.display !== 'none' && вид.opacity > 0.9 && вид.visibility !== 'hidden', 'оверлей спрятался с контролами: ' + JSON.stringify(вид));
   }));
   await test('выключатель прячет оверлей, позиция и выключение переживают повторное открытие', нужноВидео(async () => {
     preset('bottom-left'); await sleep(200);
@@ -2382,8 +2428,9 @@ async function runAll(){
     for (let i = 0; i < d.length; i++) d[i] = Math.sin(i / 44100 * 440 * 2 * Math.PI) * 0.5;
     src.buffer = buf;
     const gain = ctx.createGain(); gain.gain.value = 5;
+    // Лимитер собираем с параметрами настоящего узла плеера: поломка его настройки должна уронить этот тест
     const lim = ctx.createDynamicsCompressor();
-    lim.threshold.value = -2; lim.ratio.value = 20; lim.knee.value = 0; lim.attack.value = 0.001; lim.release.value = 0.1;
+    for (const k of ['threshold', 'ratio', 'knee', 'attack', 'release']) lim[k].value = audioSpy.lim[k].value;
     src.connect(gain); gain.connect(lim); lim.connect(ctx.destination);
     src.start();
     const out = await ctx.startRendering();
@@ -2458,7 +2505,11 @@ async function runAll(){
     assertClose(audioSpy.post.gain.value, 0.5, 0.005, 'громкость на выходе не пересчиталась');
     D.dispatchEvent(new W.KeyboardEvent('keydown', { code: 'ArrowUp', key: 'ArrowUp', bubbles: true, cancelable: true })); await sleep(400);
     assertClose(audioSpy.post.gain.value, 0.52, 0.005, 'громкость с клавиатуры не дошла до графа');
-    // Компрессор сжимает диалог и взрыв одинаково при 8% и при 100%: разница уровней на выходе не зависит от громкости
+    // Компрессор сжимает диалог и взрыв одинаково при 8% и при 100%: разница уровней на выходе не зависит от громкости.
+    // Параметры берём с настоящего компрессора плеера при силе по умолчанию
+    setVal('dr-strength', 50); await sleep(400);
+    const compParams = {};
+    for (const k of ['threshold', 'ratio', 'knee', 'attack', 'release']) compParams[k] = audioSpy.comp[k].value;
     const render = async (levelDb, vol) => {
       const ctx = new W.OfflineAudioContext(1, 44100 * 2, 44100);
       const src = ctx.createBufferSource(); const buf = ctx.createBuffer(1, 44100 * 2, 44100); const d = buf.getChannelData(0);
@@ -2466,7 +2517,8 @@ async function runAll(){
       for (let i = 0; i < d.length; i++) d[i] = Math.sin(i / 44100 * 440 * 2 * Math.PI) * amp;
       src.buffer = buf;
       const pre = ctx.createGain(); pre.gain.value = 1 / vol;
-      const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -34; comp.ratio.value = 10; comp.knee.value = 6; comp.attack.value = 0.003; comp.release.value = 0.25;
+      const comp = ctx.createDynamicsCompressor();
+      for (const k of ['threshold', 'ratio', 'knee', 'attack', 'release']) comp[k].value = compParams[k];
       const post = ctx.createGain(); post.gain.value = vol;
       src.connect(pre); pre.connect(comp); comp.connect(post); post.connect(ctx.destination); src.start();
       const o = (await ctx.startRendering()).getChannelData(0);
@@ -2664,7 +2716,10 @@ async function runAll(){
     await seekTo(11);
     assert(blurAt(), 'блюр не включён на 11 с');
     const v = video();
+    const seekingFired = new Promise(res => v.addEventListener('seeking', res, { once: true }));
     v.currentTime = 2;
+    await seekingFired;
+    assertEq(v.seeking, true, 'перемотка на потоке завершилась мгновенно, проверка не имеет смысла');
     assert(blurAt(), 'блюр снят до того, как кадр на 2 с доехал');
     await waitFor(() => !v.seeking, 10000);
     await sleep(150);
@@ -2808,7 +2863,7 @@ async function runAll(){
   }));
   await test('ссылка на html-страницу отклоняется без попытки играть', нуженNet(async () => {
     pasteUrl(netUrl('page.html'));
-    await waitError(/Неподдерживаемый формат|не видео|не удалось/i, 8000);
+    await waitError(/Неподдерживаемый формат/, 8000);
     assertEq(playerOpen(), false, 'плеер открылся на html');
     assertIdle();
   }));
@@ -2867,7 +2922,7 @@ async function runAll(){
     await waitFor(() => playerOpen() && video().readyState >= 3, 30000);
     await holdPaused();
     assertEq(overlayShown(), false, 'старый оверлей ошибки остался на новом видео');
-    assert(!$('url-input').classList.contains('error') || true, '');
+    assert(!$('url-input').classList.contains('error'), 'поле ссылки осталось подсвеченным ошибкой после удачного открытия');
     assertIdle();
   }));
   await test('ошибка во время просмотра не убивает следующую ссылку', нуженNet(async () => {
@@ -3200,12 +3255,29 @@ async function runAll(){
     assertEq($('codec-warning-toast-text').getAttribute('aria-live'), 'polite', 'предупреждение о кодеке без aria-live');
   }));
   await test('фокус виден на кнопках панели управления', нужноВидео(async () => {
+    // Рамку фокуса с клавиатуры рисует сам браузер, а фокус из скрипта после кликов он по своим правилам не подсвечивает.
+    // Поэтому проверяем стили: ни одно правило не должно гасить рамку у кнопок панели в состоянии фокуса
+    const кнопки = ['play-btn', 'mute-btn', 'dr-btn', 'fullscreen-btn', 'back-btn'].map(id => $(id)).filter(Boolean);
+    const гасят = [];
+    const обойти = rules => { for (const r of rules){
+      if (r.cssRules && !r.selectorText) { обойти(r.cssRules); continue; }
+      if (!r.selectorText || !/:focus/.test(r.selectorText)) continue;
+      const убирает = r.style.outlineStyle === 'none' || /^(none|0(px)?)$/.test(r.style.outline.trim()) || r.style.outlineWidth === '0px';
+      if (!убирает) continue;
+      for (const sel of r.selectorText.split(',')){
+        const bare = sel.replace(/:focus(-visible|-within)?/g, '').trim() || '*';
+        let hit = []; try { hit = кнопки.filter(b => b.matches(bare)); } catch (e) {}
+        if (hit.length) гасят.push(sel.trim() + ' → ' + hit.map(b => b.id).join(','));
+      }
+    } };
+    for (const sh of Array.from(D.styleSheets)){ try { обойти(Array.from(sh.cssRules)); } catch (e) {} }
+    assertEq(гасят.length, 0, 'стили гасят рамку фокуса: ' + гасят.join(' | '));
+    // Фокус на кнопку при этом ставится, иначе с клавиатуры до неё не добраться
     const b = $('play-btn');
     b.focus();
-    const cs = W.getComputedStyle(b);
-    const ring = cs.outlineStyle !== 'none' || cs.boxShadow !== 'none';
+    const есть = D.activeElement === b;
     b.blur();
-    assert(ring || D.activeElement !== b, 'у сфокусированной кнопки нет ни outline, ни box-shadow');
+    assert(есть, 'кнопка воспроизведения не принимает фокус');
   }));
 
   suite('скорость, зеркало, зум, яркость');
@@ -3711,6 +3783,7 @@ async function runAll(){
     await waitFor(() => !bufShown(), 1000).catch(() => { throw new Error('пауза не спрятала спиннер'); });
     v.dispatchEvent(new W.Event('waiting'));
     await sleep(100);
+    assertEq(bufShown(), false, 'спиннер показан сразу, без задержки на короткие рывки');
     v.dispatchEvent(new W.Event('playing'));
     await sleep(500);
     assertEq(bufShown(), false, 'рывок короче задержки показал спиннер');
@@ -4100,11 +4173,11 @@ async function runAll(){
   }));
   await test('быстрые повторные клики по кнопке не дёргают шпаргалку, пока идёт анимация, как у настроек', нужноВидео(async () => {
     const help = $('hotkeys-help');
-    $('hotkeys-btn').click(); $('hotkeys-btn').click(); $('hotkeys-btn').click();
+    $('hotkeys-btn').click(); $('hotkeys-btn').click();
     await sleep(100);
-    assert(help.classList.contains('show'), 'три быстрых клика закрыли шпаргалку посреди анимации');
+    assert(help.classList.contains('show'), 'второй быстрый клик закрыл шпаргалку посреди анимации');
     await sleep(400);
-    $('dr-btn').click(); $('dr-btn').click(); $('dr-btn').click();
+    $('dr-btn').click(); $('dr-btn').click();
     await sleep(100);
     assert($('dr-panel').classList.contains('open'), 'у настроек защита от быстрых кликов пропала');
     await sleep(400);
