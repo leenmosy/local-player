@@ -98,11 +98,31 @@ function processSubtitlesContent(content, file, previousName){
   subsRemoveBtn.style.display = 'flex';
 }
 
+// Ссылка на субтитры из параметра ?subs= страницы: расширение прокидывает сюда дорожку плеера-источника.
+// Читается один раз и сбрасывается, чтобы не липнуть к следующему открытому видео
+let urlSubsFile = null;
+
 // Для HLS субтитры лежат рядом с плейлистом, пробуем subs.srt, затем subs.vtt
 async function autoLoadHlsSubtitles(){
   if (!currentSourceUrl || !/\.m3u8($|[?#])/i.test(currentSourceUrl)) return;
   if (localStorage.getItem(subsKey(currentFileKey))) return; // для этой ссылки субтитры уже выбраны
   const keyAtStart = currentFileKey;
+  const passed = urlSubsFile && urlSubsFile.src === currentSourceUrl ? urlSubsFile.url : '';
+  urlSubsFile = null;
+  if (passed){
+    try {
+      const res = await fetch(passed);
+      if (keyAtStart !== currentFileKey) return; // открыли другой источник
+      if (res.ok){
+        const name = decodeURIComponent(new URL(passed).pathname.split('/').pop() || 'subs');
+        setSubsFileNameDisplay(name);
+        processSubtitlesContent(await res.text(), { name }, 'Файл не выбран');
+        if (subtitlesData.length) return; // разобралось
+      }
+    } catch (e) {
+      console.warn('Субтитры по ссылке не подгрузились:', e && e.message ? e.message : e);
+    }
+  }
   const base = currentSourceUrl.split(/[?#]/)[0].replace(/[^/]+$/, '');
   for (const name of ['subs.srt', 'subs.vtt']){
     try {

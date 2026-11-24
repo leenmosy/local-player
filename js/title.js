@@ -171,8 +171,10 @@ if (!FS_ACCESS_SUPPORTED){
   const src = (params.get('src') || '').trim();
   if (!src) return;
   const title = (params.get('title') || '').trim();
+  const subs = (params.get('subs') || '').trim();
   try { history.replaceState(null, '', location.pathname + location.hash); } catch(e){}
   urlInput.value = src;
+  if (subs) urlSubsFile = { src, url: subs };
   loadUrl(src, title ? { title } : undefined);
 })();
 
