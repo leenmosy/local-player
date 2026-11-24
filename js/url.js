@@ -1,5 +1,8 @@
 // --- Загрузка видео по URL (m3u8 и обычные ссылки) ---
 let hls = null;
+// Качество, переданное в адрес плеера (?v=<url варианта>) — например расширением при «Открыть плеер».
+// Привязано к src: применяется один раз к тому источнику, с которым пришло
+let urlLevel = null;
 let urlErrorHandler = null;
 let urlLoadedHandler = null;
 let urlLoadToken = 0;
@@ -376,6 +379,16 @@ async function loadUrl(url, meta){
         clearTimeout(loadTimeout);
         urlLoadingSpinner.style.display = 'none';
         urlLoadBtn.disabled = false;
+        // Открыли с конкретным качеством (?v=<url варианта>): включаем этот уровень, иначе авто
+        if (urlLevel && urlLevel.src === url){
+          const wanted = urlLevel.url;
+          urlLevel = null;
+          const idx = (hlsInstance.levels || []).findIndex((l) => {
+            const urls = Array.isArray(l.url) ? l.url : [l.url];
+            return urls.some((u) => (typeof u === 'string' ? u : u && (u.uri || u.url)) === wanted);
+          });
+          if (idx >= 0) hlsInstance.currentLevel = idx;
+        }
         initAudioGraphForCurrentSource();
         showPlayer();
         safePlay();

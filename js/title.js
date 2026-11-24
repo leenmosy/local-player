@@ -172,9 +172,11 @@ if (!FS_ACCESS_SUPPORTED){
   if (!src) return;
   const title = (params.get('title') || '').trim();
   const subs = (params.get('subs') || '').trim();
+  const level = (params.get('v') || '').trim();
   try { history.replaceState(null, '', location.pathname + location.hash); } catch(e){}
   urlInput.value = src;
   if (subs) urlSubsFile = { src, url: subs };
+  if (level) urlLevel = { src, url: level };
   loadUrl(src, title ? { title } : undefined);
 })();
 
