@@ -105,10 +105,26 @@ let urlSubsFile = null;
 // Для HLS субтитры лежат рядом с плейлистом, пробуем subs.srt, затем subs.vtt
 async function autoLoadHlsSubtitles(){
   if (!currentSourceUrl || !/\.m3u8($|[?#])/i.test(currentSourceUrl)) return;
-  if (localStorage.getItem(subsKey(currentFileKey))) return; // для этой ссылки субтитры уже выбраны
   const keyAtStart = currentFileKey;
-  const passed = urlSubsFile && urlSubsFile.src === currentSourceUrl ? urlSubsFile.url : '';
+  // Параметр ?subs= — явный выбор на странице расширения, он важнее сохранённых для
+  // этой ссылки субтитров: непустой перезапишет выбор, пустой — «без субтитров»
+  const explicit = !!(urlSubsFile && urlSubsFile.src === currentSourceUrl);
+  const passed = explicit ? urlSubsFile.url : '';
   urlSubsFile = null;
+  if (explicit && !passed){
+    try { localStorage.removeItem(subsKey(currentFileKey)); } catch(e){}
+    idbDelete(SUBS_PREFIX + 'data:' + stripProgressPrefix(currentFileKey)).catch(() => {});
+    subtitlesData = [];
+    resetSubtitleRenderState();
+    savedSubsContent = null;
+    isSubtitlesLoaded = false;
+    subtitles.innerHTML = '';
+    setSubsFileNameDisplay('Файл не выбран');
+    subsFile.value = '';
+    subsRemoveBtn.style.display = 'none';
+    return;
+  }
+  if (localStorage.getItem(subsKey(currentFileKey)) && !explicit) return; // для этой ссылки субтитры уже выбраны
   if (passed){
     try {
       const res = await fetch(passed);

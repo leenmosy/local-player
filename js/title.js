@@ -175,7 +175,9 @@ if (!FS_ACCESS_SUPPORTED){
   const level = (params.get('v') || '').trim();
   try { history.replaceState(null, '', location.pathname + location.hash); } catch(e){}
   urlInput.value = src;
-  if (subs) urlSubsFile = { src, url: subs };
+  // subs= важно самим фактом присутствия: пустое значение — явное «без субтитров»,
+  // сохранённые для этой ссылки субтитры поднимать не надо
+  if (params.has('subs')) urlSubsFile = { src, url: subs };
   if (level) urlLevel = { src, url: level };
   loadUrl(src, title ? { title } : undefined);
 })();
