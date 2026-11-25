@@ -617,23 +617,10 @@ fullscreenBtn.addEventListener('click', () => {
 window.addEventListener('resize', applySubtitlesStyle);
 video.addEventListener('loadedmetadata', applySubtitlesStyle);
 
-// object-fit перевыставляется после перехода в полный экран и обратно: браузер пересчитывает раскладку кадра внутри видео
-function refitVideo(){
-  const fit = video.style.objectFit;
-  video.style.objectFit = 'fill';
-  void video.offsetHeight;
-  video.style.objectFit = fit;
-}
-function refitVideoAfterTransition(){
-  refitVideo();
-  setTimeout(refitVideo, 300);
-}
-
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
   document.addEventListener(evt, () => {
     clearTimeout(fullscreenSafetyTimer);
     applySubtitlesStyle();
-    refitVideoAfterTransition();
     fullscreenPending = false;
     const isFs = !!getFullscreenElement();
     iconFsOpen.style.display = isFs ? 'none' : '';
