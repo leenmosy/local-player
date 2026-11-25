@@ -1,6 +1,8 @@
 // --- Субтитры: загрузка, разбор, стиль и показ реплики на экране ---
 
-// Размер и отступ субтитров заданы в процентах от высоты кадра, поэтому в окне и в полном экране текст выглядит одинаково
+// Размер задан в процентах от высоты области плеера: кегль одинаковый на любом фильме независимо
+// от его пропорций (на широких 2.4:1 кадр ниже, и процент от него мельчил текст). Отступ снизу —
+// по-прежнему от кадра, чтобы текст не уезжал в чёрные поля
 const SUBS_SIZE_DEFAULT = 4;
 const SUBS_POSITION_DEFAULT = 4.25;
 
@@ -299,12 +301,12 @@ function subtitleFrame(){
   if (video.videoWidth && video.videoHeight && box.width){
     h = Math.min(h, box.width * video.videoHeight / video.videoWidth);
   }
-  return { height: h, pad: Math.max(0, (box.height - h) / 2) };
+  return { height: h, pad: Math.max(0, (box.height - h) / 2), boxHeight: box.height };
 }
 
 function applySubtitlesStyle() {
   const frame = subtitleFrame();
-  const fontSize = Math.max(10, Math.round(frame.height * parseFloat(subsSize.value) / 100));
+  const fontSize = Math.max(10, Math.round(frame.boxHeight * parseFloat(subsSize.value) / 100));
   let bottom = frame.pad + frame.height * parseFloat(subsPosition.value) / 100;
   const span = subtitles.querySelector('span');
   if (span) {
