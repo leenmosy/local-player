@@ -307,7 +307,9 @@ function subtitleFrame(){
 function applySubtitlesStyle() {
   const frame = subtitleFrame();
   const fontSize = Math.max(10, Math.round(frame.boxHeight * parseFloat(subsSize.value) / 100));
-  let bottom = frame.pad + frame.height * parseFloat(subsPosition.value) / 100;
+  // отступ от нижней кромки кадра — тоже от высоты плеера: одинаковый зазор на любом фильме,
+  // при этом якорь — кромка кадра, поэтому в чёрные поля текст по-прежнему не уезжает
+  let bottom = frame.pad + frame.boxHeight * parseFloat(subsPosition.value) / 100;
   const span = subtitles.querySelector('span');
   if (span) {
     span.style.fontSize = fontSize + 'px';
