@@ -15,7 +15,10 @@
       'fit  ' + cs.objectFit + '  pos ' + cs.objectPosition,
       'tfm  ' + (cs.transform === 'none' ? 'none' : cs.transform.slice(0, 40)),
       'scr  ' + innerWidth + 'x' + innerHeight + '  fs ' + (document.fullscreenElement ? 1 : 0),
-      'dpr  ' + devicePixelRatio
+      'dpr  ' + devicePixelRatio,
+      'lvl  ' + (window.hls
+        ? hls.currentLevel + ' of ' + hls.levels.map((l, i) => (i === hls.currentLevel ? '*' : '') + l.width + 'x' + l.height).join(' ')
+        : 'нет hls')
     ].join('\n');
   }, 250);
 })();
