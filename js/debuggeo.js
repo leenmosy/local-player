@@ -4,7 +4,7 @@
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;top:8px;left:8px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;' +
     'font:14px monospace;padding:8px 10px;white-space:pre;pointer-events:none;line-height:1.5';
-  document.body.appendChild(box);
+  (document.querySelector('.stage') || document.body).appendChild(box);
   setInterval(() => {
     if (!window.video) return;
     const r = video.getBoundingClientRect();
