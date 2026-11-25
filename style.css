@@ -842,7 +842,9 @@ video{ width:100%; height:100%; max-height: 76vh; display:block; background:#000
 }
 
 /* ---------- ПАНЕЛЬ УПРАВЛЕНИЯ ---------- */
-.stage:fullscreen, .stage:-webkit-full-screen{ margin: 0; border-radius: 0; }
+/* В полном экране сцене нельзя оставлять оконные ограничения: max-height 76vh прибивал
+   картинку к верху экрана, а нижняя четверть оставалась мёртвым чёрным полем */
+.stage:fullscreen, .stage:-webkit-full-screen{ margin: 0; border-radius: 0; max-width: none; max-height: none; }
 .stage:fullscreen video, .stage:-webkit-full-screen video{ max-height: 100vh; }
 
 .click-catcher{ position:absolute; inset:0; z-index: 1; cursor: default; }
