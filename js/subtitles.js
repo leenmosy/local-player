@@ -1,7 +1,6 @@
 // --- Субтитры: загрузка, разбор, стиль и показ реплики на экране ---
 
-// Размер — в процентах от высоты области плеера, одинаковый кегль на фильме любых пропорций.
-// Строка висит в чёрном поле под кадром, если поле есть; без поля — внутри картинки у нижней кромки
+// Размер и отступ субтитров заданы в процентах от высоты кадра, поэтому в окне и в полном экране текст выглядит одинаково
 const SUBS_SIZE_DEFAULT = 4;
 const SUBS_POSITION_DEFAULT = 4.25;
 
@@ -300,29 +299,22 @@ function subtitleFrame(){
   if (video.videoWidth && video.videoHeight && box.width){
     h = Math.min(h, box.width * video.videoHeight / video.videoWidth);
   }
-  return { height: h, pad: Math.max(0, (box.height - h) / 2), boxHeight: box.height };
+  return { height: h, pad: Math.max(0, (box.height - h) / 2) };
 }
 
 function applySubtitlesStyle() {
   const frame = subtitleFrame();
-  const fontSize = Math.max(10, Math.round(frame.boxHeight * parseFloat(subsSize.value) / 100));
+  const fontSize = Math.max(10, Math.round(frame.height * parseFloat(subsSize.value) / 100));
+  let bottom = frame.pad + frame.height * parseFloat(subsPosition.value) / 100;
   const span = subtitles.querySelector('span');
-  let textH = fontSize;
   if (span) {
     span.style.fontSize = fontSize + 'px';
     span.style.textShadow = subtitleTextShadow(fontSize);
-    textH = span.offsetHeight || fontSize;
+    // Реплика из нескольких строк опускается, чтобы стоять на том же месте, что и одиночная, а не прирастать вверх
+    const lines = span.innerHTML.split('<br>').length;
+    bottom -= Math.round(fontSize * 0.65) * (lines - 1);
   }
-  // Под кадром есть чёрное поле высотой pad: если блок строки в него влезает, он висит в поле,
-  // чуть заходя верхом на картинку; поля нет — строка внутри картинки у нижней кромки
-  const overlap = Math.round(fontSize * 0.35);
-  let bottom;
-  if (frame.pad >= textH) {
-    bottom = frame.pad - textH + overlap;
-  } else {
-    bottom = frame.pad + frame.boxHeight * parseFloat(subsPosition.value) / 100;
-  }
-  subtitles.style.bottom = Math.max(4, Math.round(bottom)) + 'px';
+  subtitles.style.bottom = Math.round(bottom) + 'px';
 }
 
 subsToggle.addEventListener('change', () => {
