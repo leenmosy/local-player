@@ -1,7 +1,7 @@
 // --- Субтитры: загрузка, разбор, стиль и показ реплики на экране ---
 
 // Размер — в процентах от высоты области плеера, одинаковый кегль на фильме любых пропорций.
-// Отступ снизу — от нижней кромки кадра, чтобы текст не уезжал в чёрные поля
+// Строка висит в чёрном поле под кадром, если поле есть; без поля — внутри картинки у нижней кромки
 const SUBS_SIZE_DEFAULT = 4;
 const SUBS_POSITION_DEFAULT = 4.25;
 
@@ -306,17 +306,23 @@ function subtitleFrame(){
 function applySubtitlesStyle() {
   const frame = subtitleFrame();
   const fontSize = Math.max(10, Math.round(frame.boxHeight * parseFloat(subsSize.value) / 100));
-  // отступ считается от высоты плеера, а величина pad привязывает текст к нижней кромке кадра
-  let bottom = frame.pad + frame.boxHeight * parseFloat(subsPosition.value) / 100;
   const span = subtitles.querySelector('span');
+  let textH = fontSize;
   if (span) {
     span.style.fontSize = fontSize + 'px';
     span.style.textShadow = subtitleTextShadow(fontSize);
-    // Реплика из нескольких строк опускается, чтобы стоять на том же месте, что и одиночная, а не прирастать вверх
-    const lines = span.innerHTML.split('<br>').length;
-    bottom -= Math.round(fontSize * 0.65) * (lines - 1);
+    textH = span.offsetHeight || fontSize;
   }
-  subtitles.style.bottom = Math.round(bottom) + 'px';
+  // Под кадром есть чёрное поле высотой pad: если блок строки в него влезает, он висит в поле,
+  // чуть заходя верхом на картинку; поля нет — строка внутри картинки у нижней кромки
+  const overlap = Math.round(fontSize * 0.35);
+  let bottom;
+  if (frame.pad >= textH) {
+    bottom = frame.pad - textH + overlap;
+  } else {
+    bottom = frame.pad + frame.boxHeight * parseFloat(subsPosition.value) / 100;
+  }
+  subtitles.style.bottom = Math.max(4, Math.round(bottom)) + 'px';
 }
 
 subsToggle.addEventListener('change', () => {
