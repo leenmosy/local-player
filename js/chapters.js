@@ -6,6 +6,55 @@ let nextEpisodeSegment = null;
 let dismissedChapterSegments = new Set();
 let chapterParseToken = 0;
 let activeSkipSegment = null;
+// Точные интервалы пропуска, переданные извне (расширением параметром адреса,
+// полем series.json или соседним skip.txt). У потокового видео собственных глав нет,
+// а у Alloha формат генеральный: "0-66,224-319,3632-3741" — лого, опенинг и титры
+let externalSkipSegments = [];
+let externalSkipRank = 0;
+
+function parseExternalSkipIntervals(skipTime){
+  if (typeof skipTime !== 'string') return [];
+  const out = [];
+  for (const piece of skipTime.split(',')){
+    const m = /^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/.exec(piece);
+    if (!m) continue;
+    const start = Number(m[1]);
+    const end = Number(m[2]);
+    if (!isFinite(start) || !isFinite(end) || end <= start) continue;
+    out.push({ start, end });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out.filter((item, i) => !i || item.start !== out[i - 1].start || item.end !== out[i - 1].end).slice(0, 10);
+}
+
+// Поздний интервал у разметки Alloha — титры; ранние могут быть студийным лого
+// и опенингом после холодного открытия, для пользователя оба — заставка
+function externalSkipLabel(interval){
+  return interval.start >= 20 * 60 ? 'Пропустить титры' : 'Пропустить заставку';
+}
+
+// rank защищает точный источник от более слабого: skip.txt рядом с копией не должен
+// затирать тайминг, переданный параметром адреса или конкретной серией series.json
+function setExternalSkipTimes(skipTime, rank){
+  rank = rank || 2;
+  if (rank < externalSkipRank) return false;
+  const intervals = parseExternalSkipIntervals(skipTime);
+  if (!intervals.length) return false;
+  externalSkipRank = rank;
+  externalSkipSegments = intervals.map((interval, i) => ({
+    id: 'ext_' + i + '_' + Math.round(interval.start * 1000),
+    start: interval.start,
+    end: interval.end,
+    label: externalSkipLabel(interval)
+  }));
+  // Плашка может понадобиться сразу: источник уже играет, а глав у него нет вовсе
+  if (!video.paused) updateSkipSegmentOverlay(false);
+  return true;
+}
+
+function allSkipSegments(){
+  return externalSkipSegments.length ? [...externalSkipSegments, ...mediaChapters] : mediaChapters;
+}
 
 const CHAPTER_TIME_KEY_RE = /^_?(\d{1,2})_(\d{2})_(\d{2})_(\d{3})$/;
 
@@ -260,6 +309,17 @@ async function parseChaptersFromUrl(url, token){
   }
 }
 
+// Тайминги пропуска копии витрины лежат соседним skip.txt строкой вида
+// "0-88" или "0-66,224-319,3632-3741". Это слабый источник: явный параметр
+// адреса или поле конкретной серии важнее и затираться им не должен
+async function probeSkipTimeFile(url, token){
+  try {
+    const res = await fetch(url);
+    if (!res.ok || token !== chapterParseToken) return;
+    setExternalSkipTimes((await res.text()).trim(), 1);
+  } catch { /* файла нет или CORS — штатно остаёмся без внешней разметки */ }
+}
+
 // Для HLS главы лежат в соседнем chapters.vtt, каждая реплика это одна глава
 async function parseChaptersFromVtt(url, token){
   try {
@@ -373,6 +433,8 @@ function resetMediaChapters(){
   chapterParseToken += 1;
   mediaChapters = [];
   nextEpisodeSegment = null;
+  externalSkipSegments = [];
+  externalSkipRank = 0;
   dismissedChapterSegments = new Set();
   hideSkipSegmentOverlay();
   hideCodecWarningToast();
@@ -385,12 +447,14 @@ function hideSkipSegmentOverlay(){
 
 // Показывает/обновляет/скрывает плашку "Пропустить" для текущего момента
 function updateSkipSegmentOverlay(suppressed){
-  if (suppressed || anyPanelOpen() || mediaChapters.length === 0){
+  const skipSegments = allSkipSegments();
+  if (suppressed || anyPanelOpen() || skipSegments.length === 0){
     hideSkipSegmentOverlay();
     return;
   }
   const t = video.currentTime;
-  const seg = mediaChapters.find(s => t >= s.start && t < skipSegmentEffectiveEnd(s));
+  // внешние интервалы стоят впереди глав: у них точные секунды из конфига сайта
+  const seg = skipSegments.find(s => t >= s.start && t < skipSegmentEffectiveEnd(s));
   if (!seg || dismissedChapterSegments.has(seg.id)){
     hideSkipSegmentOverlay();
     return;

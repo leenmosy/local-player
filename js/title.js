@@ -173,12 +173,15 @@ if (!FS_ACCESS_SUPPORTED){
   const title = (params.get('title') || '').trim();
   const subs = (params.get('subs') || '').trim();
   const level = (params.get('v') || '').trim();
+  const skip = (params.get('skip') || '').trim();
   try { history.replaceState(null, '', location.pathname + location.hash); } catch(e){}
   urlInput.value = src;
   // subs= важно самим фактом присутствия: пустое значение — явное «без субтитров»,
   // сохранённые для этой ссылки субтитры поднимать не надо
   if (params.has('subs')) urlSubsFile = { src, url: subs };
   if (level) urlLevel = { src, url: level };
+  // интервалы пропуска от расширения: применятся в loadUrl к тому источнику, с которым пришли
+  if (skip) urlSkipTime = { src, skipTime: skip };
   loadUrl(src, title ? { title } : undefined);
 })();
 

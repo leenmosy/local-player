@@ -3,6 +3,9 @@ let hls = null;
 // Качество, переданное в адрес плеера (?v=<url варианта>) — например расширением при «Открыть плеер».
 // Привязано к src: применяется один раз к тому источнику, с которым пришло
 let urlLevel = null;
+// Тайминги пропуска (?skip=0-66,224-319), переданные расширением из конфига плеера сайта.
+// Привязаны к src так же, как качество: чужой источник их не наследует
+let urlSkipTime = null;
 let urlErrorHandler = null;
 let urlLoadedHandler = null;
 let urlLoadToken = 0;
@@ -182,6 +185,14 @@ async function loadUrl(url, meta){
   // как только понятно, что это не m3u8-поток).
   resetMediaChapters();
 
+  // Тайминги пропуска приехали параметром адреса от расширения или полем конкретной
+  // серии. Сначала запоминаем их для возможного разворота series.json: без этого
+  // тайминг стартовой серии терялся, когда ссылка превращалась в сериальный плейлист
+  const inheritedSkipTime = meta && meta.skipTime ? meta.skipTime : (urlSkipTime && urlSkipTime.src === url ? urlSkipTime.skipTime : '');
+  if (urlSkipTime && urlSkipTime.src === url) setExternalSkipTimes(urlSkipTime.skipTime, 2);
+  // у серий из series.json тайминг свой у каждой — он важнее общего параметра адреса
+  if (meta && meta.skipTime) setExternalSkipTimes(meta.skipTime, 3);
+
   // Испорченность относится к источнику, а не к сессии, сбрасываем всегда: retryWithoutCrossOriginOnError() вернёт флаг если CORS правда нет
   audioSourceTainted = false;
   setAudioFeaturesAvailable(true);
@@ -204,7 +215,7 @@ async function loadUrl(url, meta){
 
   // Манифест сериала разворачиваем в плейлист, дальше грузится уже конкретная серия
   if (/\.json$/i.test(parsedUrl.pathname)){
-    await openSeriesPlaylist(url, thisLoadToken, meta && meta.startUrl);
+    await openSeriesPlaylist(url, thisLoadToken, meta && meta.startUrl, inheritedSkipTime);
     return;
   }
 
@@ -213,7 +224,7 @@ async function loadUrl(url, meta){
     const manifestUrl = await findSeriesManifestFor(url);
     if (thisLoadToken !== urlLoadToken) return;   // пользователь уже открыл другой источник
     if (manifestUrl){
-      await openSeriesPlaylist(manifestUrl, thisLoadToken, url);
+      await openSeriesPlaylist(manifestUrl, thisLoadToken, url, inheritedSkipTime);
       return;
     }
   }
@@ -240,6 +251,8 @@ async function loadUrl(url, meta){
   if (isM3U8){
     const chaptersUrl = url.split(/[?#]/)[0].replace(/[^/]+$/, 'chapters.vtt');
     parseChaptersFromVtt(chaptersUrl, chapterParseToken);
+    // тайминги пропуска копии витрины лежат соседним skip.txt — тем же зондом, что и главы
+    probeSkipTimeFile(url.split(/[?#]/)[0].replace(/[^/]+$/, 'skip.txt'), chapterParseToken);
   }
 
   // Останавливаем предыдущий HLS экземпляр

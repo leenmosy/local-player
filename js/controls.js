@@ -207,7 +207,7 @@ video.addEventListener('play', () => {
   
   // Сразу показываем кнопку "Пропустить заставку", если chapters уже загружены
   // Это гарантирует появление кнопки даже если chapters загрузились до начала воспроизведения
-  if (mediaChapters.length > 0) {
+  if (allSkipSegments().length > 0) {
     updateSkipSegmentOverlay(false);
   }
 });
@@ -398,10 +398,11 @@ video.addEventListener('seeked', () => {
   // Пересчитываем blur-фильтр сразу по завершении перемотки, не ждём timeupdate
   syncBlurFilter();
 
-  if (mediaChapters.length === 0) return;
+  const skipSegments = allSkipSegments();
+  if (skipSegments.length === 0) return;
   const t = video.currentTime;
   let changed = false;
-  for (const s of mediaChapters){
+  for (const s of skipSegments){
     if (dismissedChapterSegments.has(s.id) && t < skipSegmentEffectiveEnd(s)){
       dismissedChapterSegments.delete(s.id);
       changed = true;

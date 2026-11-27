@@ -276,7 +276,7 @@ async function findSeriesManifestFor(episodeUrl){
 }
 
 // Разворачивает series.json в плейлист, чтобы на сериал была одна ссылка вместо ссылки на серию
-async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
+async function openSeriesPlaylist(manifestUrl, loadToken, startUrl, inheritedSkipTime){
   let manifest = null;
   try{
     const res = await fetch(manifestUrl);
@@ -299,6 +299,7 @@ async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
 
   // Ссылки серий разрешаем относительно манифеста, чтобы внутри можно было писать короткие пути
   const entries = [];
+  const wantedStart = startUrl ? normalizeUrlForKey(startUrl) : '';
   rawEpisodes.forEach((ep, idx) => {
     const raw = typeof ep === 'string' ? ep : (ep && ep.url);
     if (!raw) return;
@@ -307,7 +308,13 @@ async function openSeriesPlaylist(manifestUrl, loadToken, startUrl){
     // Манифест это внешний файл, в src пускаем только сетевые схемы
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
     const rawTitle = (ep && ep.title) ? String(ep.title).trim() : '';
-    entries.push({ url: parsed.href, title: (rawTitle || 'Серия ' + (idx + 1)).slice(0, MAX_TITLE_LEN) });
+    // Тайминг пропуска серии (skip: "0-88") читаем из манифеста. Если сериал открыли
+    // прямой ссылкой на серию с параметром ?skip=, этот тайминг наследует именно
+    // стартовая серия — иначе он терялся при развороте ссылки в сериальный плейлист
+    const ownSkip = (ep && typeof ep.skip === 'string') ? ep.skip.trim() : '';
+    const inherited = !ownSkip && wantedStart && normalizeUrlForKey(parsed.href) === wantedStart ? String(inheritedSkipTime || '').trim() : '';
+    const skip = ownSkip || inherited;
+    entries.push({ url: parsed.href, title: (rawTitle || 'Серия ' + (idx + 1)).slice(0, MAX_TITLE_LEN), ...(skip ? { skip } : {}) });
   });
   if (!entries.length){
     showUrlError('В списке серий нет корректных ссылок');
@@ -413,7 +420,7 @@ function playlistEntryTitle(entry, folderId){
 function openPlaylistEntry(entry){
   if (!entry) return;
   if (isUrlPlaylistEntry(entry)){
-    loadUrl(entry.url, { title: entry.title || null });
+    loadUrl(entry.url, { title: entry.title || null, skipTime: entry.skip || null });
     return;
   }
   loadFile(entry.file, entry.handle || null, { isFolder: true, folderName: playlistFolderName, folderId: playlistFolderId });
